@@ -18,16 +18,26 @@ pub fn write_atomic(p: &Path, data: impl AsRef<[u8]>) -> std::io::Result<()> {
 fn write_atomic_replaces_and_leaves_no_tmp() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("a.cutline");
-    std::fs::write(&p, "alt").unwrap();
-    write_atomic(&p, "neu").unwrap();
-    assert_eq!(std::fs::read_to_string(&p).unwrap(), "neu");
+    std::fs::write(&p, "old").unwrap();
+    write_atomic(&p, "new").unwrap();
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "new");
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 }
 
 /// Read a JSON settings file. If missing: default. If broken or unreadable, it is
 /// renamed to `<name>.bad-<seconds>` so the next save does not overwrite it.
 pub fn read_json_or_quarantine<T: serde::de::DeserializeOwned + Default>(p: &Path) -> T {
-    let r = std::fs::read_to_string(p).map_err(|e| e.to_string()).and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string()));
+    read_json_converted(p, &|_| None)
+}
+
+/// Like [`read_json_or_quarantine`]; ids and paths of bundled content as versions up to 0.19.3
+/// stored them are converted on the way (`extra`: names only this file has, see `crate::legacy`).
+pub fn read_json_converted<T: serde::de::DeserializeOwned + Default>(p: &Path, extra: &dyn Fn(&str) -> Option<String>) -> T {
+    let r = std::fs::read_to_string(p).map_err(|e| e.to_string()).and_then(|t| {
+        let mut v: serde_json::Value = serde_json::from_str(&t).map_err(|e| e.to_string())?;
+        cl_core::legacy::upgrade(&mut v, extra);
+        serde_json::from_value(v).map_err(|e| e.to_string())
+    });
     match r {
         Ok(v) => v,
         Err(_) if !p.exists() => T::default(),
@@ -82,12 +92,12 @@ fn shown_paths_use_one_separator() {
 }
 
 /// File name from a project name: only letters, digits, spaces and `-`
-/// At most 100 characters (Windows: 255 per name, plus extension and „ (Kopie 2)“), never empty,
+/// At most 100 characters (Windows: 255 per name, plus extension and " (Copy 2)"), never empty,
 /// no reserved device names (`CON`, `NUL` …).
 pub fn safe_name(name: &str) -> String {
     let s: String = name.chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { '_' }).collect();
     match fit_name(&s) {
-        s if s.is_empty() => "Projekt".into(),
+        s if s.is_empty() => "Project".into(),
         s => s,
     }
 }
@@ -112,7 +122,7 @@ fn safe_name_is_a_writable_file_name() {
     for n in ["", "   ", "CON", "nul", "COM1", "lpt9", &"Ä".repeat(400), "a/b\\c:d*e?f\"g<h>i|j", "Ünïcödé 🎬 Name", "..", "."] {
         let s = safe_name(n);
         assert!(!s.is_empty() && s.chars().count() <= 101, "{n:?} → {s:?}");
-        let p = d.path().join(format!("{s} (Kopie 12).cutline"));
+        let p = d.path().join(format!("{s} (Copy 12).cutline"));
         std::fs::write(&p, "{}").unwrap_or_else(|e| panic!("{n:?} → {s:?}: {e}"));
         assert_eq!(p.parent(), Some(d.path()));
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "{}", "{n:?} → {s:?}");
@@ -187,11 +197,11 @@ fn stale_lock_of_dead_process_is_taken_over() {
     let d = tempfile::tempdir().unwrap();
     let lock = d.path().join("a.cutline.lock");
     let me = std::process::id();
-    assert!(!lock_held_by_other(&lock, me), "keine Sperre");
+    assert!(!lock_held_by_other(&lock, me), "no lock");
     // another running window: this test process as seen from another PID
     std::fs::write(&lock, me.to_string()).unwrap();
     assert!(lock_held_by_other(&lock, me + 1));
-    assert!(!lock_held_by_other(&lock, me), "eigene Sperre");
+    assert!(!lock_held_by_other(&lock, me), "own lock");
     // process has ended (hard kill): the lock no longer applies
     let mut c = if cfg!(windows) {
         std::process::Command::new("cmd").args(["/c", "exit"]).spawn().unwrap()
@@ -202,7 +212,7 @@ fn stale_lock_of_dead_process_is_taken_over() {
     c.wait().unwrap();
     assert!(!pid_alive(dead));
     std::fs::write(&lock, dead.to_string()).unwrap();
-    assert!(!lock_held_by_other(&lock, me), "liegengebliebene Sperre");
+    assert!(!lock_held_by_other(&lock, me), "stale lock");
     for junk in ["", "abc", "-5", "99999999999"] {
         std::fs::write(&lock, junk).unwrap();
         assert!(!lock_held_by_other(&lock, me), "{junk:?}");
@@ -210,7 +220,7 @@ fn stale_lock_of_dead_process_is_taken_over() {
 }
 
 /// Folder for generated files that projects point to (cutout masks, SVG images).
-/// Deliberately not in the cache that „Cache leeren“ deletes.
+/// Deliberately not in the cache that „Clear cache“ deletes.
 pub fn generated_dir() -> PathBuf {
     data_dir().join("Generated")
 }
@@ -330,10 +340,10 @@ pub fn remove_older(dir: &Path, age: std::time::Duration, skip: &[&str]) -> usiz
 fn remove_older_keeps_fresh_files() {
     let d = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(d.path().join("sub")).unwrap();
-    std::fs::write(d.path().join("sub/neu.bin"), b"x").unwrap();
+    std::fs::write(d.path().join("sub/new.bin"), b"x").unwrap();
     assert_eq!(remove_older(d.path(), std::time::Duration::from_secs(3600), &[]), 0);
-    assert!(d.path().join("sub/neu.bin").is_file());
-    set_age(&d.path().join("sub/neu.bin"), 7200);
+    assert!(d.path().join("sub/new.bin").is_file());
+    set_age(&d.path().join("sub/new.bin"), 7200);
     assert_eq!(remove_older(d.path(), std::time::Duration::from_secs(3600), &[]), 1);
 }
 
@@ -390,7 +400,7 @@ pub fn move_projects(old: &Path, new: &Path) -> (Vec<(PathBuf, PathBuf)>, Vec<St
     let mut moved = Vec::new();
     let mut errs = Vec::new();
     if new.starts_with(old) || old.starts_with(new) {
-        return (moved, vec![crate::tr("Der neue Ordner darf nicht im alten liegen (oder umgekehrt)")]);
+        return (moved, vec![crate::tr("The new folder must not be inside the old one (or the other way round)")]);
     }
     if let Err(e) = std::fs::create_dir_all(new) {
         return (moved, vec![e.to_string()]);
@@ -466,7 +476,7 @@ pub fn move_projects(old: &Path, new: &Path) -> (Vec<(PathBuf, PathBuf)>, Vec<St
 fn moves_projects_and_media_folders() {
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
-    let new = b.path().join("Meine Projekte");
+    let new = b.path().join("My Projects");
     let mut proj = cl_core::Project::new("Clip");
     std::fs::create_dir_all(a.path().join("Clip-media")).unwrap();
     std::fs::write(a.path().join("Clip-media").join("x.mp3"), b"x").unwrap();
@@ -486,7 +496,7 @@ fn moves_projects_and_media_folders() {
     };
     proj.media.push(m.clone());
     std::fs::write(a.path().join("Clip.cutline"), proj.to_json()).unwrap();
-    std::fs::write(a.path().join("notes.txt"), "bleibt").unwrap();
+    std::fs::write(a.path().join("notes.txt"), "stays").unwrap();
     let (moved, errs) = move_projects(a.path(), &new);
     assert!(errs.is_empty(), "{errs:?}");
     assert_eq!(moved.len(), 1);
@@ -501,16 +511,16 @@ fn moves_projects_and_media_folders() {
     assert!(!move_projects(&new, &new.join("sub")).1.is_empty());
     // Retry after an abort: the media folder is already over there, the project still in the old folder
     let c = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(c.path().join("Neu-media")).unwrap();
-    m.path = a.path().join("Neu-media").join("y.mp3");
-    std::fs::write(c.path().join("Neu-media").join("y.mp3"), b"y").unwrap();
+    std::fs::create_dir_all(c.path().join("New-media")).unwrap();
+    m.path = a.path().join("New-media").join("y.mp3");
+    std::fs::write(c.path().join("New-media").join("y.mp3"), b"y").unwrap();
     proj.media = vec![m.clone()];
     std::fs::write(a.path().join("Neu.cutline"), proj.to_json()).unwrap();
-    std::fs::rename(c.path().join("Neu-media"), new.join("Neu-media")).unwrap();
+    std::fs::rename(c.path().join("New-media"), new.join("New-media")).unwrap();
     let (moved, errs) = move_projects(a.path(), &new);
     assert!(errs.is_empty() && moved.len() == 1, "{errs:?}");
     let back = cl_core::Project::from_json(&std::fs::read_to_string(new.join("Neu.cutline")).unwrap()).unwrap();
-    assert_eq!(back.media[0].path, new.join("Neu-media").join("y.mp3"));
+    assert_eq!(back.media[0].path, new.join("New-media").join("y.mp3"));
 }
 
 /// Bundled fonts (OFL/Apache, see `assets/fonts/FONTS.md`) for the text templates

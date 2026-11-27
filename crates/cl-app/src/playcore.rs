@@ -5,15 +5,15 @@
 //! fetches due frames ([`PlayCore::pull`]) and carries out the audio commands ([`PlayCore::cmds`]).
 //!
 //! States and transitions:
-//! - `Stand` --Play--> `Puffern` (open streams, prepare sound, clock stands)
-//! - `Puffern` --all streams at the playhead have a frame, otherwise after 0.5 s, and the first sound is
-//!   ready (at most 10 s)--> `Spielen` (clock runs, sound comes in at the clock)
-//! - `Spielen` --Pause (sound running, speed 1)--> `Pause` (streams and sound stay open)
-//! - `Pause` --Play at the same place without change--> `Spielen` (without new streams)
-//! - `Pause` --playhead moved or project changed--> `Stand` (streams freed)
-//! - `Spielen`/`Puffern` --jump--> `Puffern` from the new place
-//! - J/K/L (`shuttle`) --> `Spielen` with speed ≠ 1 (single frames, no sound)
-//! - Stop, project end, project change --> `Stand`
+//! - `Stopped` --Play--> `Buffering` (open streams, prepare sound, clock stands)
+//! - `Buffering` --all streams at the playhead have a frame, otherwise after 0.5 s, and the first sound is
+//!   ready (at most 10 s)--> `Playing` (clock runs, sound comes in at the clock)
+//! - `Playing` --Pause (sound running, speed 1)--> `Pause` (streams and sound stay open)
+//! - `Pause` --Play at the same place without change--> `Playing` (without new streams)
+//! - `Pause` --playhead moved or project changed--> `Stopped` (streams freed)
+//! - `Playing`/`Buffering` --jump--> `Buffering` from the new place
+//! - J/K/L (`shuttle`) --> `Playing` with speed ≠ 1 (single frames, no sound)
+//! - Stop, project end, project change --> `Stopped`
 //!
 //! In sync instead of behind: if a stream lies more than two frame intervals behind the clock for
 //! longer than [`CATCH_UP_AFTER`], it is reopened from "clock + startup time" (the old one keeps
@@ -43,10 +43,10 @@ impl Source for cl_media::FrameStream {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     /// stopped; frames come as single frames
-    Stand,
+    Stopped,
     /// Play pressed: streams start up, the clock still stands
-    Puffern,
-    Spielen,
+    Buffering,
+    Playing,
     /// paused with open streams and sound (resume without new buffering)
     Pause,
 }
@@ -193,7 +193,7 @@ const KEY_SETTLE: f64 = 0.15;
 /// not replaced just because the clock is further – its frame is shown even if it is a few frames
 /// old (otherwise every job starves). Only renewed after this long as a safeguard.
 const STILL_PATIENCE: f64 = 10.0;
-/// Stand: a neighbour shows and the exact frame has not come after this long – request it again
+/// Stopped: a neighbour shows and the exact frame has not come after this long – request it again
 const NEAR_RETRY: f64 = 0.5;
 
 struct Slot<S: Source> {
@@ -332,7 +332,7 @@ pub struct PlayCore<S: Source> {
 impl<S: Source> Default for PlayCore<S> {
     fn default() -> Self {
         Self {
-            mode: Mode::Stand,
+            mode: Mode::Stopped,
             pos: Time::ZERO,
             rate: 1.0,
             clock: None,
@@ -391,7 +391,7 @@ impl<S: Source> PlayCore<S> {
     }
     /// Clock runs or is about to run (buffering)
     pub fn playing(&self) -> bool {
-        matches!(self.mode, Mode::Puffern | Mode::Spielen)
+        matches!(self.mode, Mode::Buffering | Mode::Playing)
     }
     /// Frames come from streams (otherwise single frames)
     pub fn streaming(&self) -> bool {
@@ -453,9 +453,9 @@ impl<S: Source> PlayCore<S> {
     /// stopped: no matching frame has been delivered for a requested single frame yet.
     pub fn waiting(&self) -> bool {
         match self.mode {
-            Mode::Puffern => true,
-            Mode::Spielen => false,
-            Mode::Stand | Mode::Pause => self.requested.iter().any(|(id, (k, _))| self.shown.get(id) != Some(k)),
+            Mode::Buffering => true,
+            Mode::Playing => false,
+            Mode::Stopped | Mode::Pause => self.requested.iter().any(|(id, (k, _))| self.shown.get(id) != Some(k)),
         }
     }
 
@@ -499,14 +499,14 @@ impl<S: Source> PlayCore<S> {
             // draws (no tick), otherwise the whole pause would count as a window without frames
             self.win_start = now;
             self.win_catch_up = false;
-            self.mode = Mode::Spielen;
+            self.mode = Mode::Playing;
             self.clock = Some((now, at));
             self.last_primary = None;
             self.cmds.push(Cmd::ResumeAudio);
             return;
         }
         self.reset(at);
-        self.mode = Mode::Puffern;
+        self.mode = Mode::Buffering;
         self.warm_since = now;
         self.win_start = now;
         self.start_audio(at, false);
@@ -515,7 +515,7 @@ impl<S: Source> PlayCore<S> {
     /// Free everything, stand at `at`
     fn reset(&mut self, at: Time) {
         self.clear_streams();
-        self.mode = Mode::Stand;
+        self.mode = Mode::Stopped;
         self.rate = 1.0;
         self.pos = at;
         self.clock = None;
@@ -538,7 +538,7 @@ impl<S: Source> PlayCore<S> {
     /// Pause. Only with sound running at speed 1 (`can_hold`, e.g. not with multicam) do
     /// streams and sound stay open, otherwise it stops.
     pub fn pause(&mut self, revision: u64, audio_running: bool, can_hold: bool) {
-        if self.mode != Mode::Spielen || !audio_running || !can_hold || (self.rate - 1.0).abs() > 1e-6 {
+        if self.mode != Mode::Playing || !audio_running || !can_hold || (self.rate - 1.0).abs() > 1e-6 {
             self.stop();
             return;
         }
@@ -554,7 +554,7 @@ impl<S: Source> PlayCore<S> {
     }
 
     pub fn stop(&mut self) {
-        let was = self.mode != Mode::Stand || !self.cur.is_empty();
+        let was = self.mode != Mode::Stopped || !self.cur.is_empty();
         self.reset(self.pos);
         if was {
             self.cmds.push(Cmd::StopAudio);
@@ -565,7 +565,7 @@ impl<S: Source> PlayCore<S> {
     pub fn shuttle(&mut self, rate: f64, at: Time, now: f64) {
         self.reset(at);
         self.rate = rate;
-        self.mode = Mode::Spielen;
+        self.mode = Mode::Playing;
         self.clock = Some((now, at));
         self.start_audio(at, true);
     }
@@ -573,9 +573,9 @@ impl<S: Source> PlayCore<S> {
     /// Jump to `at` (during playback: buffer again from there)
     pub fn seek(&mut self, at: Time, now: f64) {
         match self.mode {
-            Mode::Stand => self.pos = at,
+            Mode::Stopped => self.pos = at,
             Mode::Pause => self.stop(),
-            Mode::Puffern | Mode::Spielen => {
+            Mode::Buffering | Mode::Playing => {
                 let rate = self.rate;
                 if (rate - 1.0).abs() > 1e-6 {
                     self.shuttle(rate, at, now);
@@ -603,7 +603,7 @@ impl<S: Source> PlayCore<S> {
             return;
         }
         self.audio_due = None;
-        let anchor = self.mode == Mode::Spielen;
+        let anchor = self.mode == Mode::Playing;
         self.start_audio(self.pos, anchor);
         if anchor {
             self.clock = Some((now, self.pos));
@@ -635,16 +635,16 @@ impl<S: Source> PlayCore<S> {
     pub fn tick(&mut self, t: &Tick) -> Time {
         let now = t.now;
         match self.mode {
-            Mode::Stand => self.pos = t.playhead,
+            Mode::Stopped => self.pos = t.playhead,
             Mode::Pause => {
                 if self.paused.is_some_and(|(at, rev)| at != t.playhead || rev != t.revision) {
                     self.stop();
                 }
                 self.pos = t.playhead;
             }
-            Mode::Puffern | Mode::Spielen if t.playhead != self.pos => self.seek(t.playhead, now),
-            Mode::Puffern => self.warm(t),
-            Mode::Spielen => self.run(t),
+            Mode::Buffering | Mode::Playing if t.playhead != self.pos => self.seek(t.playhead, now),
+            Mode::Buffering => self.warm(t),
+            Mode::Playing => self.run(t),
         }
         self.max_level = t.max_quality_level;
         self.measure(now, t.max_quality_level);
@@ -662,7 +662,7 @@ impl<S: Source> PlayCore<S> {
         // first sound still on its way: do not start on system time, or the sound would chase the clock
         let audio_late = t.audio == AudioIn::Loading && waited < AUDIO_WAIT_MAX;
         if !audio_late && ((ready && (any || waited > 0.05)) || waited > WARM_MAX) {
-            self.mode = Mode::Spielen;
+            self.mode = Mode::Playing;
             for s in self.cur.values_mut().filter(|s| s.t0 <= pos) {
                 // first frame = now (do not skip frames that became due during buffering)
                 s.t0 = pos - Time::from_secs_f64(s.taken.saturating_sub(1) as f64 / s.fps);
@@ -738,8 +738,8 @@ impl<S: Source> PlayCore<S> {
     /// When stopped back to full quality; while buffering and paused the level stays (otherwise
     /// resuming would need new streams), measured only while playing.
     fn measure(&mut self, now: f64, max: usize) {
-        if self.mode != Mode::Spielen {
-            if self.mode == Mode::Stand || max == 0 {
+        if self.mode != Mode::Playing {
+            if self.mode == Mode::Stopped || max == 0 {
                 self.quality.decide(now, None, max, false);
             }
             self.win_start = now;
@@ -789,7 +789,7 @@ impl<S: Source> PlayCore<S> {
         // stalled or prematurely ended stream: reopen at the current place (the last frame
         // stays until the new one delivers), with a blocking period against a restart loop
         if !w.prefetch
-            && self.mode == Mode::Spielen
+            && self.mode == Mode::Playing
             && (w.end - self.pos).as_secs_f64() > 0.25
             && self.reopened.get(&id).is_none_or(|t| now - t >= REOPEN_BLOCK)
             && self.cur.get(&id).is_some_and(|s| s.key == w.key && s.t0 <= self.pos && s.stalled(now))
@@ -820,7 +820,7 @@ impl<S: Source> PlayCore<S> {
             return None;
         }
         // replacement for a running stream: only once the new key stays for a moment
-        if !cur && !w.prefetch && self.mode == Mode::Spielen && self.cur.contains_key(&id) {
+        if !cur && !w.prefetch && self.mode == Mode::Playing && self.cur.contains_key(&id) {
             let since = match self.settle.get(&id) {
                 Some((k, t)) if *k == w.key => *t,
                 _ => {
@@ -845,7 +845,7 @@ impl<S: Source> PlayCore<S> {
             _ if w.prefetch => w.start,
             // replacement during playback: open where the clock stands when it starts up – the old
             // stream's startup says nothing about a new source, so not before the place it is needed from
-            Some(s) if self.mode == Mode::Spielen => (self.pos + Time::from_secs_f64(s.lead())).max(w.start),
+            Some(s) if self.mode == Mode::Playing => (self.pos + Time::from_secs_f64(s.lead())).max(w.start),
             _ => self.pos,
         };
         Some(Open { id, key: w.key, at, gen: self.gen, seq: self.seq })
@@ -917,7 +917,7 @@ impl<S: Source> PlayCore<S> {
         // quality level smaller (due frames are skipped up to the clock anyway). Reopen from
         // clock + startup time only when the quality is already down and the lag grows –
         // a restart seeks from the keyframe and costs time itself.
-        if let Some(lag) = s.lag(pos).filter(|_| self.mode == Mode::Spielen) {
+        if let Some(lag) = s.lag(pos).filter(|_| self.mode == Mode::Playing) {
             self.stats.max_lag = self.stats.max_lag.max(lag);
             if lag > LAG_FRAMES / s.fps {
                 let since = *s.behind_since.get_or_insert(now);
@@ -947,7 +947,7 @@ impl<S: Source> PlayCore<S> {
             self.shown.insert(id, key);
             self.held = Some(id);
             self.stats.frames += 1;
-            if primary && self.mode == Mode::Spielen {
+            if primary && self.mode == Mode::Playing {
                 if let Some(last) = self.last_primary {
                     self.stats.max_gap = self.stats.max_gap.max(now - last);
                 }
@@ -963,9 +963,9 @@ impl<S: Source> PlayCore<S> {
     pub fn still(&mut self, id: Lid, key: u64, now: f64) -> bool {
         match self.requested.get(&id) {
             Some((k, since)) if *k == key => {
-                // Stand: a neighbour bridges and the exact frame is overdue – ask again (safety net:
+                // Stopped: a neighbour bridges and the exact frame is overdue – ask again (safety net:
                 // the decoder starts the newest waiting job by itself and ignores a duplicate)
-                let retry = self.mode == Mode::Stand && self.near.contains(&id) && self.shown.get(&id) != Some(k) && now - since >= NEAR_RETRY;
+                let retry = self.mode == Mode::Stopped && self.near.contains(&id) && self.shown.get(&id) != Some(k) && now - since >= NEAR_RETRY;
                 if retry {
                     self.requested.insert(id, (key, now));
                 }
@@ -981,12 +981,12 @@ impl<S: Source> PlayCore<S> {
 
     /// Neighbour instead of the requested frame (reverse window during playback): shown like it,
     /// but in the pause the job is asked again, so the exact frame replaces it.
-    /// Stand (scrubbing): any frame of the layer (an overtaken job that was allowed to finish) bridges
+    /// Stopped (scrubbing): any frame of the layer (an overtaken job that was allowed to finish) bridges
     /// while the exact frame of the current request is still open; the request stays open (wait line
     /// keeps running, no flicker) until the exact frame comes – never shown over an exact frame.
     pub fn still_near(&mut self, id: Lid, key: u64) -> bool {
         // `key` may be the requested one itself (scrub window: a lower-resolution or neighbouring frame)
-        if self.mode == Mode::Stand {
+        if self.mode == Mode::Stopped {
             let open = self.requested.get(&id).is_some_and(|(k, _)| self.shown.get(&id) != Some(k));
             if open {
                 self.near.insert(id);

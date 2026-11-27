@@ -6,55 +6,55 @@ api = 1
 kind = "asset-pack"
 name = { de = "Sounds für Creator", en = "Sounds for creators" }
 description = { de = "Whoosh, Riser, Impacts, Jingles, Tippen, Glocken und mehr – selbst erzeugt", en = "Whooshes, risers, impacts, jingles, typing, bells and more – generated in-house" }
-authors = ["Cutline-Projekt"]
+authors = ["Cutline project"]
 license = "CC0-1.0"
 source = "https://github.com/zqqqqx/cutline"
 
 [[asset]]
-id = "whoosh-lang"
+id = "long-whoosh"
 kind = "sound"
 name = { de = "Whoosh lang", en = "Long whoosh" }
-category = ["Übergang"]
-file = "audio/whoosh-lang.ogg"
+category = ["Transition"]
+file = "audio/long-whoosh.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "whoosh-links-rechts"
+id = "whoosh-left-to-right"
 kind = "sound"
 name = { de = "Whoosh links nach rechts", en = "Whoosh left to right" }
-category = ["Übergang"]
-file = "audio/whoosh-links-rechts.ogg"
+category = ["Transition"]
+file = "audio/whoosh-left-to-right.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "whoosh-rechts-links"
+id = "whoosh-right-to-left"
 kind = "sound"
 name = { de = "Whoosh rechts nach links", en = "Whoosh right to left" }
-category = ["Übergang"]
-file = "audio/whoosh-rechts-links.ogg"
+category = ["Transition"]
+file = "audio/whoosh-right-to-left.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "whoosh-tief"
+id = "deep-whoosh"
 kind = "sound"
 name = { de = "Whoosh tief", en = "Deep whoosh" }
-category = ["Übergang"]
-file = "audio/whoosh-tief.ogg"
+category = ["Transition"]
+file = "audio/deep-whoosh.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "swoosh-hoch"
+id = "airy-swoosh"
 kind = "sound"
 name = { de = "Swoosh luftig", en = "Airy swoosh" }
-category = ["Übergang"]
-file = "audio/swoosh-hoch.ogg"
+category = ["Transition"]
+file = "audio/airy-swoosh.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
 id = "riser-1s"
 kind = "sound"
 name = { de = "Riser 1 s", en = "Riser 1 s" }
-category = ["Übergang"]
+category = ["Transition"]
 file = "audio/riser-1s.ogg"
 tags = ["selbst erzeugt"]
 
@@ -62,7 +62,7 @@ tags = ["selbst erzeugt"]
 id = "riser-2s"
 kind = "sound"
 name = { de = "Riser 2 s", en = "Riser 2 s" }
-category = ["Übergang"]
+category = ["Transition"]
 file = "audio/riser-2s.ogg"
 tags = ["selbst erzeugt"]
 
@@ -70,7 +70,7 @@ tags = ["selbst erzeugt"]
 id = "riser-4s"
 kind = "sound"
 name = { de = "Riser 4 s", en = "Riser 4 s" }
-category = ["Übergang"]
+category = ["Transition"]
 file = "audio/riser-4s.ogg"
 tags = ["selbst erzeugt"]
 
@@ -78,7 +78,7 @@ tags = ["selbst erzeugt"]
 id = "downer-1s"
 kind = "sound"
 name = { de = "Downer 1 s", en = "Downer 1 s" }
-category = ["Übergang"]
+category = ["Transition"]
 file = "audio/downer-1s.ogg"
 tags = ["selbst erzeugt"]
 
@@ -86,7 +86,7 @@ tags = ["selbst erzeugt"]
 id = "downer-2s"
 kind = "sound"
 name = { de = "Downer 2 s", en = "Downer 2 s" }
-category = ["Übergang"]
+category = ["Transition"]
 file = "audio/downer-2s.ogg"
 tags = ["selbst erzeugt"]
 
@@ -94,480 +94,480 @@ tags = ["selbst erzeugt"]
 id = "sub-drop"
 kind = "sound"
 name = { de = "Sub-Drop", en = "Sub drop" }
-category = ["Übergang"]
+category = ["Transition"]
 file = "audio/sub-drop.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "impact-hart"
+id = "hard-impact"
 kind = "sound"
 name = { de = "Impact hart", en = "Hard impact" }
-category = ["Übergang"]
-file = "audio/impact-hart.ogg"
+category = ["Transition"]
+file = "audio/hard-impact.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "impact-kino"
+id = "cinematic-impact"
 kind = "sound"
 name = { de = "Impact Kino", en = "Cinematic impact" }
-category = ["Übergang"]
-file = "audio/impact-kino.ogg"
+category = ["Transition"]
+file = "audio/cinematic-impact.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "tapestop-lang"
+id = "long-tape-stop"
 kind = "sound"
 name = { de = "Bandstopp lang", en = "Long tape stop" }
-category = ["Übergang"]
-file = "audio/tapestop-lang.ogg"
+category = ["Transition"]
+file = "audio/long-tape-stop.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "ruecklauf"
+id = "rewind"
 kind = "sound"
 name = { de = "Rücklauf", en = "Rewind" }
-category = ["Übergang"]
-file = "audio/ruecklauf.ogg"
+category = ["Transition"]
+file = "audio/rewind.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "glitch-digital"
+id = "digital-glitch"
 kind = "sound"
 name = { de = "Glitch digital", en = "Digital glitch" }
-category = ["Übergang"]
-file = "audio/glitch-digital.ogg"
+category = ["Transition"]
+file = "audio/digital-glitch.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "stottern"
+id = "stutter"
 kind = "sound"
 name = { de = "Stottern", en = "Stutter" }
-category = ["Übergang"]
-file = "audio/stottern.ogg"
+category = ["Transition"]
+file = "audio/stutter.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "blubb"
+id = "bubble"
 kind = "sound"
 name = { de = "Blubb", en = "Bubble" }
-category = ["Oberfläche"]
-file = "audio/blubb.ogg"
+category = ["Interface"]
+file = "audio/bubble.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "plopp-tief"
+id = "low-plop"
 kind = "sound"
 name = { de = "Plopp tief", en = "Low plop" }
-category = ["Oberfläche"]
-file = "audio/plopp-tief.ogg"
+category = ["Interface"]
+file = "audio/low-plop.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "ding-hell"
+id = "bright-ding"
 kind = "sound"
 name = { de = "Ding hell", en = "Bright ding" }
-category = ["Oberfläche"]
-file = "audio/ding-hell.ogg"
+category = ["Interface"]
+file = "audio/bright-ding.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "glocke"
+id = "bell"
 kind = "sound"
 name = { de = "Glocke", en = "Bell" }
-category = ["Oberfläche"]
-file = "audio/glocke.ogg"
+category = ["Interface"]
+file = "audio/bell.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "hinweis-zwei-ton"
+id = "two-tone-notice"
 kind = "sound"
 name = { de = "Hinweis Zwei-Ton", en = "Two-tone notice" }
-category = ["Oberfläche"]
-file = "audio/hinweis-zwei-ton.ogg"
+category = ["Interface"]
+file = "audio/two-tone-notice.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "hinweis-drei-ton"
+id = "three-tone-notice"
 kind = "sound"
 name = { de = "Hinweis Drei-Ton", en = "Three-tone notice" }
-category = ["Oberfläche"]
-file = "audio/hinweis-drei-ton.ogg"
+category = ["Interface"]
+file = "audio/three-tone-notice.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "falsch-summer"
+id = "wrong-buzzer"
 kind = "sound"
 name = { de = "Falsch-Summer", en = "Wrong buzzer" }
-category = ["Oberfläche"]
-file = "audio/falsch-summer.ogg"
+category = ["Interface"]
+file = "audio/wrong-buzzer.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "erfolg-arpeggio"
+id = "success-arpeggio"
 kind = "sound"
 name = { de = "Erfolg Arpeggio", en = "Success arpeggio" }
-category = ["Oberfläche"]
-file = "audio/erfolg-arpeggio.ogg"
+category = ["Interface"]
+file = "audio/success-arpeggio.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "kasse-glocke"
+id = "cash-bell"
 kind = "sound"
 name = { de = "Kassenklingel", en = "Cash bell" }
-category = ["Oberfläche"]
-file = "audio/kasse-glocke.ogg"
+category = ["Interface"]
+file = "audio/cash-bell.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "kamera-ausloeser"
+id = "camera-release"
 kind = "sound"
 name = { de = "Kamera Auslöser", en = "Camera release" }
-category = ["Oberfläche"]
-file = "audio/kamera-ausloeser.ogg"
+category = ["Interface"]
+file = "audio/camera-release.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "tippen"
+id = "typing"
 kind = "sound"
 name = { de = "Tastatur tippen", en = "Keyboard typing" }
-category = ["Oberfläche"]
-file = "audio/tippen.ogg"
+category = ["Interface"]
+file = "audio/typing.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "tippen-schnell"
+id = "fast-typing"
 kind = "sound"
 name = { de = "Tastatur schnell", en = "Fast typing" }
-category = ["Oberfläche"]
-file = "audio/tippen-schnell.ogg"
+category = ["Interface"]
+file = "audio/fast-typing.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "maus-klick"
+id = "mouse-click"
 kind = "sound"
 name = { de = "Maus-Klick", en = "Mouse click" }
-category = ["Oberfläche"]
-file = "audio/maus-klick.ogg"
+category = ["Interface"]
+file = "audio/mouse-click.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "schalter"
+id = "switch"
 kind = "sound"
 name = { de = "Schalter", en = "Switch" }
-category = ["Oberfläche"]
-file = "audio/schalter.ogg"
+category = ["Interface"]
+file = "audio/switch.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "tick-tack"
+id = "tick-tock"
 kind = "sound"
 name = { de = "Uhr Tick-Tack", en = "Clock tick-tock" }
-category = ["Spannung"]
-file = "audio/tick-tack.ogg"
+category = ["Tension"]
+file = "audio/tick-tock.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "herzschlag-schnell"
+id = "fast-heartbeat"
 kind = "sound"
 name = { de = "Herzschlag schnell", en = "Fast heartbeat" }
-category = ["Spannung"]
-file = "audio/herzschlag-schnell.ogg"
+category = ["Tension"]
+file = "audio/fast-heartbeat.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "trommelwirbel"
+id = "drum-roll"
 kind = "sound"
 name = { de = "Trommelwirbel mit Becken", en = "Drum roll with cymbal" }
-category = ["Spannung"]
-file = "audio/trommelwirbel.ogg"
+category = ["Tension"]
+file = "audio/drum-roll.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "spannung-schwellen"
+id = "swelling-tension"
 kind = "sound"
 name = { de = "Spannung Schwellen", en = "Swelling tension" }
-category = ["Spannung"]
-file = "audio/spannung-schwellen.ogg"
+category = ["Tension"]
+file = "audio/swelling-tension.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "streicher-spannung"
+id = "tense-strings"
 kind = "sound"
 name = { de = "Streicher Spannung", en = "Tense strings" }
-category = ["Spannung"]
-file = "audio/streicher-spannung.ogg"
+category = ["Tension"]
+file = "audio/tense-strings.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "sirene"
+id = "siren"
 kind = "sound"
 name = { de = "Sirene", en = "Siren" }
-category = ["Spannung"]
-file = "audio/sirene.ogg"
+category = ["Tension"]
+file = "audio/siren.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
 id = "sonar-ping"
 kind = "sound"
 name = { de = "Sonar-Ping", en = "Sonar ping" }
-category = ["Spannung"]
+category = ["Tension"]
 file = "audio/sonar-ping.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "treffer-punch"
+id = "punch-hit"
 kind = "sound"
 name = { de = "Treffer Punch", en = "Punch hit" }
-category = ["Treffer"]
-file = "audio/treffer-punch.ogg"
+category = ["Hit marker"]
+file = "audio/punch-hit.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "treffer-knack"
+id = "crack-hit"
 kind = "sound"
 name = { de = "Treffer Knack", en = "Crack hit" }
-category = ["Treffer"]
-file = "audio/treffer-knack.ogg"
+category = ["Hit marker"]
+file = "audio/crack-hit.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "treffer-metall"
+id = "metal-clang"
 kind = "sound"
 name = { de = "Treffer Metall", en = "Metal clang" }
-category = ["Treffer"]
-file = "audio/treffer-metall.ogg"
+category = ["Hit marker"]
+file = "audio/metal-clang.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "treffer-glas"
+id = "glass-hit"
 kind = "sound"
 name = { de = "Treffer Glas", en = "Glass hit" }
-category = ["Treffer"]
-file = "audio/treffer-glas.ogg"
+category = ["Hit marker"]
+file = "audio/glass-hit.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "treffer-dumpf"
+id = "dull-thud"
 kind = "sound"
 name = { de = "Treffer dumpf", en = "Dull thud" }
-category = ["Treffer"]
-file = "audio/treffer-dumpf.ogg"
+category = ["Hit marker"]
+file = "audio/dull-thud.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "treffer-klatsch"
+id = "slap"
 kind = "sound"
 name = { de = "Treffer Klatsch", en = "Slap" }
-category = ["Treffer"]
-file = "audio/treffer-klatsch.ogg"
+category = ["Hit marker"]
+file = "audio/slap.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
 id = "explosion"
 kind = "sound"
 name = { de = "Explosion", en = "Explosion" }
-category = ["Treffer"]
+category = ["Hit marker"]
 file = "audio/explosion.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "knall"
+id = "bang"
 kind = "sound"
 name = { de = "Knall", en = "Bang" }
-category = ["Treffer"]
-file = "audio/knall.ogg"
+category = ["Hit marker"]
+file = "audio/bang.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "doppelschlag"
+id = "double-hit"
 kind = "sound"
 name = { de = "Doppelschlag", en = "Double hit" }
-category = ["Treffer"]
-file = "audio/doppelschlag.ogg"
+category = ["Hit marker"]
+file = "audio/double-hit.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "jingle-fanfare"
+id = "short-fanfare"
 kind = "sound"
 name = { de = "Fanfare kurz", en = "Short fanfare" }
 category = ["Jingles"]
-file = "audio/jingle-fanfare.ogg"
+file = "audio/short-fanfare.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "jingle-erfolg"
+id = "success-jingle"
 kind = "sound"
 name = { de = "Jingle Erfolg", en = "Success jingle" }
 category = ["Jingles"]
-file = "audio/jingle-erfolg.ogg"
+file = "audio/success-jingle.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "jingle-aufstieg"
+id = "rising-jingle"
 kind = "sound"
 name = { de = "Jingle Aufstieg", en = "Rising jingle" }
 category = ["Jingles"]
-file = "audio/jingle-aufstieg.ogg"
+file = "audio/rising-jingle.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "jingle-fehlschlag"
+id = "failure-jingle"
 kind = "sound"
 name = { de = "Jingle Fehlschlag", en = "Failure jingle" }
 category = ["Jingles"]
-file = "audio/jingle-fehlschlag.ogg"
+file = "audio/failure-jingle.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "jingle-geheimnis"
+id = "mystery-jingle"
 kind = "sound"
 name = { de = "Jingle Geheimnis", en = "Mystery jingle" }
 category = ["Jingles"]
-file = "audio/jingle-geheimnis.ogg"
+file = "audio/mystery-jingle.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "jingle-heiter"
+id = "cheerful-jingle"
 kind = "sound"
 name = { de = "Jingle heiter", en = "Cheerful jingle" }
 category = ["Jingles"]
-file = "audio/jingle-heiter.ogg"
+file = "audio/cheerful-jingle.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "jingle-abspann"
+id = "outro-jingle"
 kind = "sound"
 name = { de = "Jingle Abspann", en = "Outro jingle" }
 category = ["Jingles"]
-file = "audio/jingle-abspann.ogg"
+file = "audio/outro-jingle.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "jingle-glockenspiel"
+id = "glockenspiel-jingle"
 kind = "sound"
 name = { de = "Jingle Glockenspiel", en = "Glockenspiel jingle" }
 category = ["Jingles"]
-file = "audio/jingle-glockenspiel.ogg"
+file = "audio/glockenspiel-jingle.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "jingle-quiz-richtig"
+id = "quiz-correct-jingle"
 kind = "sound"
 name = { de = "Jingle Quiz richtig", en = "Quiz correct jingle" }
 category = ["Jingles"]
-file = "audio/jingle-quiz-richtig.ogg"
+file = "audio/quiz-correct-jingle.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "jingle-level-geschafft"
+id = "level-cleared-jingle"
 kind = "sound"
 name = { de = "Jingle Level geschafft", en = "Level cleared jingle" }
 category = ["Jingles"]
-file = "audio/jingle-level-geschafft.ogg"
+file = "audio/level-cleared-jingle.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "tuer-klopfen"
+id = "door-knock"
 kind = "sound"
 name = { de = "Tür klopfen", en = "Door knock" }
-category = ["Alltag"]
-file = "audio/tuer-klopfen.ogg"
+category = ["Everyday"]
+file = "audio/door-knock.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "schritte"
+id = "footsteps"
 kind = "sound"
 name = { de = "Schritte", en = "Footsteps" }
-category = ["Alltag"]
-file = "audio/schritte.ogg"
+category = ["Everyday"]
+file = "audio/footsteps.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "wassertropfen"
+id = "water-drops"
 kind = "sound"
 name = { de = "Wassertropfen", en = "Water drops" }
-category = ["Alltag"]
-file = "audio/wassertropfen.ogg"
+category = ["Everyday"]
+file = "audio/water-drops.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "tuerklingel"
+id = "doorbell"
 kind = "sound"
 name = { de = "Türklingel", en = "Doorbell" }
-category = ["Alltag"]
-file = "audio/tuerklingel.ogg"
+category = ["Everyday"]
+file = "audio/doorbell.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "wecker-klingeln"
+id = "alarm-clock-ring"
 kind = "sound"
 name = { de = "Wecker klingeln", en = "Alarm clock ring" }
-category = ["Alltag"]
-file = "audio/wecker-klingeln.ogg"
+category = ["Everyday"]
+file = "audio/alarm-clock-ring.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "papier-rascheln"
+id = "paper-rustle"
 kind = "sound"
 name = { de = "Papier rascheln", en = "Paper rustle" }
-category = ["Alltag"]
-file = "audio/papier-rascheln.ogg"
+category = ["Everyday"]
+file = "audio/paper-rustle.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "korken-plopp"
+id = "cork-pop"
 kind = "sound"
 name = { de = "Korken-Plopp", en = "Cork pop" }
-category = ["Alltag"]
-file = "audio/korken-plopp.ogg"
+category = ["Everyday"]
+file = "audio/cork-pop.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "klatschen-einzeln"
+id = "single-clap"
 kind = "sound"
 name = { de = "Klatschen einzeln", en = "Single clap" }
-category = ["Alltag"]
-file = "audio/klatschen-einzeln.ogg"
+category = ["Everyday"]
+file = "audio/single-clap.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "fingerschnipsen"
+id = "finger-snap"
 kind = "sound"
 name = { de = "Fingerschnipsen", en = "Finger snap" }
-category = ["Alltag"]
-file = "audio/fingerschnipsen.ogg"
+category = ["Everyday"]
+file = "audio/finger-snap.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
 id = "gong"
 kind = "sound"
 name = { de = "Gong", en = "Gong" }
-category = ["Alltag"]
+category = ["Everyday"]
 file = "audio/gong.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "dampf-zischen"
+id = "steam-hiss"
 kind = "sound"
 name = { de = "Dampf-Zischen", en = "Steam hiss" }
-category = ["Alltag"]
-file = "audio/dampf-zischen.ogg"
+category = ["Everyday"]
+file = "audio/steam-hiss.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "reissverschluss"
+id = "zipper"
 kind = "sound"
 name = { de = "Reißverschluss", en = "Zipper" }
-category = ["Alltag"]
-file = "audio/reissverschluss.ogg"
+category = ["Everyday"]
+file = "audio/zipper.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "platsch"
+id = "splash"
 kind = "sound"
 name = { de = "Platsch", en = "Splash" }
-category = ["Alltag"]
-file = "audio/platsch.ogg"
+category = ["Everyday"]
+file = "audio/splash.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
@@ -595,19 +595,19 @@ file = "audio/checkpoint.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "menue-blip"
+id = "menu-blip"
 kind = "sound"
 name = { de = "Menü-Blip", en = "Menu blip" }
 category = ["Gaming"]
-file = "audio/menue-blip.ogg"
+file = "audio/menu-blip.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "menue-bestaetigung"
+id = "menu-confirm"
 kind = "sound"
 name = { de = "Menü bestätigen", en = "Menu confirm" }
 category = ["Gaming"]
-file = "audio/menue-bestaetigung.ogg"
+file = "audio/menu-confirm.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
@@ -627,65 +627,65 @@ file = "audio/scanner.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "laser-salve"
+id = "laser-burst"
 kind = "sound"
 name = { de = "Laser-Salve", en = "Laser burst" }
 category = ["Gaming"]
-file = "audio/laser-salve.ogg"
+file = "audio/laser-burst.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "schatztruhe"
+id = "treasure-chest"
 kind = "sound"
 name = { de = "Schatztruhe", en = "Treasure chest" }
 category = ["Gaming"]
-file = "audio/schatztruhe.ogg"
+file = "audio/treasure-chest.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "zaehler"
+id = "counter-ticks"
 kind = "sound"
 name = { de = "Zähler", en = "Counter ticks" }
 category = ["Gaming"]
-file = "audio/zaehler.ogg"
+file = "audio/counter-ticks.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "roboter-piepen"
+id = "robot-beeps"
 kind = "sound"
 name = { de = "Roboter-Piepen", en = "Robot beeps" }
 category = ["Gaming"]
-file = "audio/roboter-piepen.ogg"
+file = "audio/robot-beeps.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "rutschpfeife-auf"
+id = "slide-whistle-up"
 kind = "sound"
 name = { de = "Rutschpfeife auf", en = "Slide whistle up" }
 category = ["Comedy"]
-file = "audio/rutschpfeife-auf.ogg"
+file = "audio/slide-whistle-up.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "rutschpfeife-ab"
+id = "slide-whistle-down"
 kind = "sound"
 name = { de = "Rutschpfeife ab", en = "Slide whistle down" }
 category = ["Comedy"]
-file = "audio/rutschpfeife-ab.ogg"
+file = "audio/slide-whistle-down.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "quietscher"
+id = "squeak"
 kind = "sound"
 name = { de = "Quietscher", en = "Squeak" }
 category = ["Comedy"]
-file = "audio/quietscher.ogg"
+file = "audio/squeak.ogg"
 tags = ["selbst erzeugt"]
 
 [[asset]]
-id = "holz-bonk"
+id = "wood-bonk"
 kind = "sound"
 name = { de = "Holz-Bonk", en = "Wood bonk" }
 category = ["Comedy"]
-file = "audio/holz-bonk.ogg"
+file = "audio/wood-bonk.ogg"
 tags = ["selbst erzeugt"]

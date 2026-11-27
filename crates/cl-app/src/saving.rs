@@ -81,7 +81,7 @@ fn run(job: Job, rescued: &mut HashSet<(PathBuf, u64)>) -> Done {
     let t = Instant::now();
     let r = write(&job);
     if crate::app::perf() {
-        eprintln!("perf: speichern {:?} {:.0} ms im Hintergrund", job.kind, t.elapsed().as_secs_f64() * 1000.0);
+        eprintln!("perf: save {:?} {:.0} ms in the background", job.kind, t.elapsed().as_secs_f64() * 1000.0);
     }
     match r {
         Ok(()) => {
@@ -129,7 +129,7 @@ impl Saver {
                     ctx.request_repaint();
                 }
             })
-            .expect("Speicher-Thread");
+            .expect("save thread");
         Self { tx, rx, pending, last_err: None, failed: None }
     }
 
@@ -184,9 +184,9 @@ impl crate::app::App {
             }
             if self.saver.last_err.is_none_or(|t| t.elapsed() > Duration::from_secs(60)) {
                 self.saver.last_err = Some(Instant::now());
-                self.toast_err(format!("Projekt konnte nicht gespeichert werden: {err}"));
+                self.toast_err(format!("Could not save the project: {err}"));
                 if let Some(r) = rescued {
-                    self.toast_err(format!("Stand gesichert in {}", r.display()));
+                    self.toast_err(format!("Current state saved to {}", r.display()));
                 }
             }
         }
@@ -322,7 +322,7 @@ pub(crate) mod tests {
     #[test]
     fn leaving_waits_for_the_write_and_stays_open_on_failure() {
         let mut app = test_app();
-        app.set_doc(Project::new("Verlassen"));
+        app.set_doc(Project::new("Left"));
         let bad = app.dir().join("ordner.cutline");
         std::fs::create_dir_all(&bad).unwrap();
         app.project_path = Some(bad);
@@ -331,18 +331,18 @@ pub(crate) mod tests {
         let good = app.dir().join("gut.cutline");
         app.project_path = Some(good.clone());
         assert!(app.flush_before_leaving());
-        assert_eq!(Project::from_json(&std::fs::read_to_string(&good).unwrap()).unwrap().name, "Verlassen");
+        assert_eq!(Project::from_json(&std::fs::read_to_string(&good).unwrap()).unwrap().name, "Left");
     }
 
     /// An explicit save shows its failure even right after an earlier one (no 60 s throttle).
     #[test]
     fn explicit_save_reports_its_own_failure() {
         let mut app = test_app();
-        app.set_doc(Project::new("Fehler"));
+        app.set_doc(Project::new("Error"));
         let bad = app.dir().join("ordner.cutline");
         std::fs::create_dir_all(&bad).unwrap();
         app.project_path = Some(bad);
-        let errors = |app: &crate::app::App| app.toasts.iter().filter(|t| t.2 && t.0.contains("nicht gespeichert")).count();
+        let errors = |app: &crate::app::App| app.toasts.iter().filter(|t| t.2 && t.0.contains("Could not save")).count();
         for _ in 0..2 {
             // the first toast closed (a still shown identical one is not stacked twice)
             app.toasts.clear();
@@ -354,7 +354,7 @@ pub(crate) mod tests {
     }
 
     /// A second window on a project that another running window has open keeps its hands off
-    /// the file and the lock; its edits go to the backups, „Speichern unter“ elsewhere works.
+    /// the file and the lock; its edits go to the backups, „Save as“ elsewhere works.
     #[test]
     fn second_window_never_writes_a_project_open_elsewhere() {
         let mut app = test_app();

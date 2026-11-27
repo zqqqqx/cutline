@@ -41,7 +41,7 @@ fn secs(v: &Value, key: &str) -> Result<Time, ToolErr> {
     v.get(key)
         .and_then(Value::as_f64)
         .map(Time::from_secs_f64)
-        .ok_or_else(|| ToolErr(format!("'{key}' (Sekunden) fehlt")))
+        .ok_or_else(|| ToolErr(format!("'{key}' (seconds) is missing")))
 }
 fn opt_secs(v: &Value, key: &str) -> Option<Time> {
     v.get(key).and_then(Value::as_f64).map(Time::from_secs_f64)
@@ -50,7 +50,7 @@ fn id<T: std::str::FromStr>(v: &Value, key: &str) -> Result<T, ToolErr> {
     v.get(key)
         .and_then(Value::as_str)
         .and_then(|s| s.parse().ok())
-        .ok_or_else(|| ToolErr(format!("'{key}' fehlt oder ist keine gültige ID")))
+        .ok_or_else(|| ToolErr(format!("'{key}' is missing or not a valid ID")))
 }
 
 struct Tool {
@@ -68,49 +68,49 @@ fn none() -> Value {
 }
 
 const TOOLS: &[Tool] = &[
-    Tool { name: "project_info", description: "Projektname, Format (Auflösung, Bildrate, Seitenverhältnis), Dauer und Anzahl Spuren/Clips.", write: false, schema: none },
-    Tool { name: "list_timeline", description: "Alle Spuren mit ihren Clips (ID, Typ, Start/Dauer in Sekunden, Bezeichnung).", write: false, schema: none },
-    Tool { name: "list_media", description: "Importierte Medien mit ID, Pfad, Typ, Dauer, Auflösung und Codecs.", write: false, schema: none },
-    Tool { name: "list_fonts", description: "Importierte Schriftfamilien der Schriftbibliothek.", write: false, schema: none },
-    Tool { name: "history", description: "Änderungsverlauf (älteste zuerst) mit Quelle (Oberfläche, MCP, Plugin).", write: false, schema: none },
+    Tool { name: "project_info", description: "Project name, format (resolution, frame rate, aspect ratio), duration and number of tracks/clips.", write: false, schema: none },
+    Tool { name: "list_timeline", description: "All tracks with their clips (ID, type, start/duration in seconds, label).", write: false, schema: none },
+    Tool { name: "list_media", description: "Imported media with ID, path, type, duration, resolution and codecs.", write: false, schema: none },
+    Tool { name: "list_fonts", description: "Imported font families of the font library.", write: false, schema: none },
+    Tool { name: "history", description: "Edit history (oldest first) with source (interface, MCP, plugin).", write: false, schema: none },
     Tool {
         name: "import_media",
-        description: "Importiert eine Video-, Audio- oder Bilddatei von einem lokalen Pfad in den Medienpool.",
+        description: "Imports a video, audio or image file from a local path into the media pool.",
         write: true,
-        schema: || obj(json!({ "path": { "type": "string", "description": "Absoluter Dateipfad" } }), &["path"]),
+        schema: || obj(json!({ "path": { "type": "string", "description": "Absolute file path" } }), &["path"]),
     },
     Tool {
         name: "add_media_clip",
-        description: "Legt ein importiertes Medium auf die Zeitleiste. Videos landen auf der Hauptspur (Magnet hängt hinten an).",
+        description: "Puts an imported media file on the timeline. Videos go to the main track (the magnet appends at the end).",
         write: true,
         schema: || obj(json!({
             "media_id": { "type": "string" },
-            "start": { "type": "number", "description": "Startzeit in Sekunden (optional)" },
-            "duration": { "type": "number", "description": "Dauer in Sekunden (optional, Standard: ganzes Medium bzw. 5 s bei Bildern)" }
+            "start": { "type": "number", "description": "Start time in seconds (optional)" },
+            "duration": { "type": "number", "description": "Duration in seconds (optional, default: the whole media file, or 5 s for images)" }
         }), &["media_id"]),
     },
     Tool {
         name: "add_text",
-        description: "Fügt einen Textclip hinzu (eigene Textspur).",
+        description: "Adds a text clip (on its own text track).",
         write: true,
         schema: || obj(json!({
             "text": { "type": "string" },
             "start": { "type": "number" },
             "duration": { "type": "number" },
-            "font_family": { "type": "string", "description": "Familienname einer importierten oder System-Schrift" },
+            "font_family": { "type": "string", "description": "Family name of an imported or system font" },
             "size": { "type": "number" },
             "uppercase": { "type": "boolean" }
         }), &["text", "start", "duration"]),
     },
     Tool {
         name: "split_clip",
-        description: "Teilt einen Clip an einer Zeitleisten-Position (Sekunden). Gibt die ID des rechten Teils zurück.",
+        description: "Splits a clip at a timeline position (seconds). Returns the ID of the right part.",
         write: true,
         schema: || obj(json!({ "clip_id": { "type": "string" }, "at": { "type": "number" } }), &["clip_id", "at"]),
     },
     Tool {
         name: "trim_clip",
-        description: "Verschiebt Anfang (edge=start) oder Ende (edge=end) eines Clips auf eine Zeitleisten-Position in Sekunden.",
+        description: "Moves the start (edge=start) or the end (edge=end) of a clip to a timeline position in seconds.",
         write: true,
         schema: || obj(json!({
             "clip_id": { "type": "string" },
@@ -120,13 +120,13 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "delete_clip",
-        description: "Löscht einen Clip. Auf der Hauptspur rücken die folgenden Clips nach (Magnet).",
+        description: "Deletes a clip. On the main track the following clips close up (magnet).",
         write: true,
         schema: || obj(json!({ "clip_id": { "type": "string" } }), &["clip_id"]),
     },
     Tool {
         name: "set_format",
-        description: "Ändert das Projektformat: Seitenverhältnis (z. B. '9:16', '16:9', '1:1') oder width/height, optional fps.",
+        description: "Changes the project format: aspect ratio (e.g. '9:16', '16:9', '1:1') or width/height, optionally fps.",
         write: true,
         schema: || obj(json!({
             "aspect": { "type": "string" },
@@ -137,12 +137,12 @@ const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "apply_ops",
-        description: "Fortgeschritten: wendet eine Liste roher EditOps (JSON, Feld 'op') nacheinander an. Jede Op ist einzeln rückgängig machbar.",
+        description: "Advanced: applies a list of raw EditOps (JSON, field 'op') one after another. Each op can be undone on its own.",
         write: true,
         schema: || obj(json!({ "ops": { "type": "array", "items": { "type": "object" } } }), &["ops"]),
     },
-    Tool { name: "undo", description: "Macht die letzte Änderung rückgängig.", write: true, schema: none },
-    Tool { name: "redo", description: "Stellt die zuletzt rückgängig gemachte Änderung wieder her.", write: true, schema: none },
+    Tool { name: "undo", description: "Undoes the last change.", write: true, schema: none },
+    Tool { name: "redo", description: "Redoes the change that was undone last.", write: true, schema: none },
 ];
 
 impl McpServer {
@@ -155,7 +155,7 @@ impl McpServer {
             fonts,
             read_only: false,
             closed: Default::default(),
-            client: Arc::new(Mutex::new("unbekannt".into())),
+            client: Arc::new(Mutex::new("unknown".into())),
         }
     }
 
@@ -166,7 +166,7 @@ impl McpServer {
     /// Processes a JSON-RPC message (or a batch). `None` for pure notifications.
     pub fn handle(&self, msg: Value) -> Option<Value> {
         // not a request at all (a number, a text, an empty batch): answer, or the client waits forever
-        let invalid = || json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32600, "message": "Ungültige Anfrage" } });
+        let invalid = || json!({ "jsonrpc": "2.0", "id": null, "error": { "code": -32600, "message": "Invalid request" } });
         if let Value::Array(batch) = msg {
             if batch.is_empty() {
                 return Some(invalid());
@@ -200,7 +200,7 @@ impl McpServer {
                     "protocolVersion": version,
                     "capabilities": { "tools": { "listChanged": false }, "resources": { "listChanged": false } },
                     "serverInfo": { "name": "cutline", "title": "Cutline Videoeditor", "version": env!("CARGO_PKG_VERSION") },
-                    "instructions": "Zeiten sind Sekunden (float). Erst list_timeline/list_media lesen, dann ändern. Jede Änderung ist mit 'undo' umkehrbar."
+                    "instructions": "Times are seconds (float). Read list_timeline/list_media first, then edit. Every change can be reverted with 'undo'."
                 }))
             }
             "ping" => Ok(json!({})),
@@ -225,8 +225,8 @@ impl McpServer {
                 })
             }
             "resources/list" => Ok(json!({ "resources": [
-                { "uri": "project://current", "name": "Aktuelles Projekt", "mimeType": "application/json" },
-                { "uri": "project://timeline", "name": "Zeitleiste", "mimeType": "application/json" }
+                { "uri": "project://current", "name": "Current project", "mimeType": "application/json" },
+                { "uri": "project://timeline", "name": "Timeline", "mimeType": "application/json" }
             ]})),
             "resources/read" => {
                 let uri = params.get("uri").and_then(Value::as_str).unwrap_or("");
@@ -240,11 +240,11 @@ impl McpServer {
                     Some(t) => Ok(
                         json!({ "contents": [{ "uri": uri, "mimeType": "application/json", "text": t }] }),
                     ),
-                    None => Err((-32002, format!("Ressource nicht gefunden: {uri}"))),
+                    None => Err((-32002, format!("Resource not found: {uri}"))),
                 }
             }
-            "" => Err((-32600, "Ungültige Anfrage".into())),
-            m => Err((-32601, format!("Methode nicht gefunden: {m}"))),
+            "" => Err((-32600, "Invalid request".into())),
+            m => Err((-32601, format!("Method not found: {m}"))),
         };
         Some(match result {
             Ok(r) => json!({ "jsonrpc": "2.0", "id": id, "result": r }),
@@ -263,14 +263,14 @@ impl McpServer {
         let tool = TOOLS
             .iter()
             .find(|t| t.name == name)
-            .ok_or_else(|| ToolErr(format!("Unbekanntes Tool: {name}")))?;
+            .ok_or_else(|| ToolErr(format!("Unknown tool: {name}")))?;
         if tool.write && self.read_only {
             return Err(ToolErr(
-                "Der MCP-Zugang ist auf „nur lesen“ gestellt".into(),
+                "MCP access is set to read only".into(),
             ));
         }
         if tool.write && self.closed.load(std::sync::atomic::Ordering::Relaxed) {
-            return Err(ToolErr("Kein Projekt geöffnet".into()));
+            return Err(ToolErr("No project open".into()));
         }
         match name {
             "project_info" => {
@@ -323,10 +323,10 @@ impl McpServer {
                 let path = PathBuf::from(
                     a.get("path")
                         .and_then(Value::as_str)
-                        .ok_or_else(|| ToolErr("'path' fehlt".into()))?,
+                        .ok_or_else(|| ToolErr("'path' is missing".into()))?,
                 );
                 if !path.is_file() {
-                    return Err(ToolErr(format!("Datei nicht gefunden: {}", path.display())));
+                    return Err(ToolErr(format!("File not found: {}", path.display())));
                 }
                 let m = cl_media::probe(&path)?;
                 let out = json!({ "media_id": m.id.to_string(), "kind": format!("{:?}", m.kind), "duration": m.duration.as_secs_f64() });
@@ -342,7 +342,7 @@ impl McpServer {
                     .project()
                     .media(mid)
                     .cloned()
-                    .ok_or_else(|| ToolErr(format!("Medium {mid} nicht gefunden")))?;
+                    .ok_or_else(|| ToolErr(format!("Media {mid} not found")))?;
                 let dur = opt_secs(a, "duration").unwrap_or(if m.kind == MediaKind::Image {
                     Time::from_secs_f64(5.0)
                 } else {
@@ -398,7 +398,7 @@ impl McpServer {
                 let edge = match a.get("edge").and_then(Value::as_str) {
                     Some("start") => Edge::Start,
                     Some("end") => Edge::End,
-                    _ => return Err(ToolErr("'edge' muss 'start' oder 'end' sein".into())),
+                    _ => return Err(ToolErr("'edge' must be 'start' or 'end'".into())),
                 };
                 self.apply(EditOp::TrimClip {
                     clip: id(a, "clip_id")?,
@@ -420,7 +420,7 @@ impl McpServer {
                         .iter()
                         .find(|(n, _)| *n == asp)
                         .map(|(_, p)| *p)
-                        .ok_or_else(|| ToolErr(format!("Unbekanntes Seitenverhältnis '{asp}'")))?;
+                        .ok_or_else(|| ToolErr(format!("Unknown aspect ratio '{asp}'")))?;
                     s.apply_aspect(preset);
                 }
                 if let (Some(w), Some(h)) = (
@@ -429,7 +429,7 @@ impl McpServer {
                 ) {
                     if !(16..=16384).contains(&w) || !(16..=16384).contains(&h) {
                         return Err(ToolErr(
-                            "Auflösung muss zwischen 16 und 16384 liegen".into(),
+                            "Resolution must be between 16 and 16384".into(),
                         ));
                     }
                     s.width = w as u32 & !1;
@@ -439,7 +439,7 @@ impl McpServer {
                 if let Some(f) = a.get("fps").and_then(Value::as_str) {
                     s.fps = Rational::parse(f)
                         .filter(|r| r.as_f64() > 0.0 && r.as_f64() <= 240.0)
-                        .ok_or_else(|| ToolErr(format!("Ungültige Bildrate '{f}'")))?;
+                        .ok_or_else(|| ToolErr(format!("Invalid frame rate '{f}'")))?;
                 }
                 let out = json!({ "width": s.width, "height": s.height, "fps": s.fps.as_f64() });
                 self.apply(EditOp::SetSettings { settings: s })?;
@@ -449,7 +449,7 @@ impl McpServer {
                 let ops = a
                     .get("ops")
                     .and_then(Value::as_array)
-                    .ok_or_else(|| ToolErr("'ops' fehlt".into()))?;
+                    .ok_or_else(|| ToolErr("'ops' is missing".into()))?;
                 let mut results = Vec::new();
                 for (i, raw) in ops.iter().enumerate() {
                     let op: EditOp = serde_json::from_value(raw.clone())
@@ -462,7 +462,7 @@ impl McpServer {
             }
             "undo" => Ok(json!({ "undone": self.doc.lock().unwrap().undo()? })),
             "redo" => Ok(json!({ "redone": self.doc.lock().unwrap().redo()? })),
-            _ => unreachable!("Tool-Liste und match stimmen überein"),
+            _ => unreachable!("tool list and match agree"),
         }
     }
 
@@ -709,7 +709,7 @@ mod tests {
         let s = server();
         let mut input = format!(
             "{}\n",
-            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add_text","arguments":{"text":"Hallo","start":0.0,"duration":2.0}}})
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"add_text","arguments":{"text":"Hello","start":0.0,"duration":2.0}}})
         )
         .into_bytes();
         input.extend(b"\xff\xfe\n"); // invalid UTF-8 ends the loop with an error
@@ -754,7 +754,7 @@ mod tests {
         let r = call(
             &s,
             "add_text",
-            json!({"text":"Hallo","start":0.0,"duration":4.0,"font_family":"Impact","uppercase":true}),
+            json!({"text":"Hello","start":0.0,"duration":4.0,"font_family":"Impact","uppercase":true}),
         );
         assert_eq!(r["isError"], false, "{r}");
         let clip = r["structuredContent"]["clip_id"]
@@ -775,7 +775,7 @@ mod tests {
         assert_eq!(h["structuredContent"][1]["source"]["name"], "test-client");
         assert_eq!(
             call(&s, "undo", json!({}))["structuredContent"]["undone"],
-            "Teilen"
+            "Split"
         );
         let r = call(&s, "set_format", json!({"aspect":"9:16","fps":"60"}));
         assert_eq!(r["structuredContent"]["width"], 1080);
@@ -818,7 +818,7 @@ mod tests {
         let s = server();
         s.closed.store(true, std::sync::atomic::Ordering::Relaxed);
         let r = call(&s, "add_text", json!({"text":"x","start":0,"duration":1}));
-        assert!(r["isError"] == true && r["content"][0]["text"] == "Kein Projekt geöffnet", "{r}");
+        assert!(r["isError"] == true && r["content"][0]["text"] == "No project open", "{r}");
         assert_eq!(call(&s, "project_info", json!({}))["isError"], false);
         s.closed.store(false, std::sync::atomic::Ordering::Relaxed);
         assert_eq!(call(&s, "add_text", json!({"text":"x","start":0,"duration":1}))["isError"], false);
@@ -834,8 +834,8 @@ mod tests {
             http(addr, req.as_bytes())
         };
         let body = r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#;
-        assert!(post("Bearer falsch", body).starts_with("HTTP/1.1 401"));
-        let ok = post("Bearer geheim", body);
+        assert!(post("Bearer wrong", body).starts_with("HTTP/1.1 401"));
+        let ok = post("Bearer secret", body);
         assert!(ok.starts_with("HTTP/1.1 200"), "{ok}");
         assert!(ok.contains(r#""result":{}"#));
         let raw = |req: &[u8]| -> String {
@@ -844,7 +844,7 @@ mod tests {
             read_reply(&mut c)
         };
         let req = |host: &str, origin: &str| {
-            format!("POST /mcp HTTP/1.1\r\nHost: {host}\r\n{origin}Authorization: Bearer geheim\r\nContent-Length: {}\r\n\r\n{body}", body.len())
+            format!("POST /mcp HTTP/1.1\r\nHost: {host}\r\n{origin}Authorization: Bearer secret\r\nContent-Length: {}\r\n\r\n{body}", body.len())
         };
         // DNS rebinding: foreign host
         assert!(raw(req("evil.com", "").as_bytes()).starts_with("HTTP/1.1 403"));
@@ -879,7 +879,7 @@ mod tests {
     impl Http {
         fn start(s: McpServer) -> Self {
             let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let (addr, t) = s.serve_http_until(0, "geheim".into(), stop.clone()).unwrap();
+            let (addr, t) = s.serve_http_until(0, "secret".into(), stop.clone()).unwrap();
             Self { addr, stop, thread: Some(t) }
         }
     }
@@ -924,7 +924,7 @@ mod tests {
         let srv = Http::start(server());
         let addr = srv.addr;
         let body = vec![b' '; 1 << 20];
-        for (host, auth, want) in [("localhost", "Bearer falsch", "HTTP/1.1 401"), ("evil.com", "Bearer geheim", "HTTP/1.1 403")] {
+        for (host, auth, want) in [("localhost", "Bearer wrong", "HTTP/1.1 401"), ("evil.com", "Bearer secret", "HTTP/1.1 403")] {
             let mut c = connect(addr);
             let head = format!("POST /mcp HTTP/1.1\r\nHost: {host}\r\nAuthorization: {auth}\r\nContent-Length: {}\r\n\r\n", body.len());
             c.write_all(head.as_bytes()).unwrap();
@@ -944,20 +944,20 @@ mod tests {
             let a = auth.map(|a| format!("Authorization: {a}\r\n")).unwrap_or_default();
             format!("POST /mcp HTTP/1.1\r\nHost: localhost\r\n{a}Content-Length: {}\r\n\r\n{body}", body.len())
         };
-        for bad in [None, Some(""), Some("Bearer"), Some("Bearer "), Some("Basic geheim"), Some("bearer geheim"), Some("Bearer geheim2"), Some("Bearer geheimx"), Some("Bearer gehei")] {
+        for bad in [None, Some(""), Some("Bearer"), Some("Bearer "), Some("Basic secret"), Some("bearer secret"), Some("Bearer secret2"), Some("Bearer secretx"), Some("Bearer secre")] {
             assert!(http(addr, req(bad).as_bytes()).starts_with("HTTP/1.1 401"), "{bad:?}");
         }
-        assert!(http(addr, req(Some("Bearer geheim")).as_bytes()).starts_with("HTTP/1.1 200"));
+        assert!(http(addr, req(Some("Bearer secret")).as_bytes()).starts_with("HTTP/1.1 200"));
         // wrong method/path
-        let get = "GET /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer geheim\r\n\r\n";
+        let get = "GET /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer secret\r\n\r\n";
         assert!(http(addr, get.as_bytes()).starts_with("HTTP/1.1 405"));
-        let other = format!("POST /mcp/x HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer geheim\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+        let other = format!("POST /mcp/x HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer secret\r\nContent-Length: {}\r\n\r\n{body}", body.len());
         assert!(http(addr, other.as_bytes()).starts_with("HTTP/1.1 404"));
         // an oversized request is rejected without reading the body
-        let huge = "POST /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer geheim\r\nContent-Length: 999999999999\r\n\r\n";
+        let huge = "POST /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer secret\r\nContent-Length: 999999999999\r\n\r\n";
         assert!(http(addr, huge.as_bytes()).starts_with("HTTP/1.1 413"));
         // broken JSON → 400 with parse error
-        let junk = "POST /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer geheim\r\nContent-Length: 5\r\n\r\n{\"a\":";
+        let junk = "POST /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer secret\r\nContent-Length: 5\r\n\r\n{\"a\":";
         let r = http(addr, junk.as_bytes());
         assert!(r.starts_with("HTTP/1.1 400") && r.contains("-32700"), "{r}");
         // garbage instead of HTTP
@@ -966,7 +966,7 @@ mod tests {
         let empty = http(addr, b"");
         assert!(empty.starts_with("HTTP/1.1 431"), "{empty:?}");
         // the server is still alive
-        assert!(http(addr, req(Some("Bearer geheim")).as_bytes()).starts_with("HTTP/1.1 200"));
+        assert!(http(addr, req(Some("Bearer secret")).as_bytes()).starts_with("HTTP/1.1 200"));
     }
 
     #[test]
@@ -978,7 +978,7 @@ mod tests {
             let r = call(&s, t.name, json!({"text":"x","start":0,"duration":1,"path":"x","ops":[{"op":"rename","name":"x"}]}));
             if t.write {
                 assert_eq!(r["isError"], true, "{}", t.name);
-                assert!(r["content"][0]["text"].as_str().unwrap().contains("nur lesen"), "{}", t.name);
+                assert!(r["content"][0]["text"].as_str().unwrap().contains("read only"), "{}", t.name);
             } else {
                 assert_eq!(r["isError"], false, "{}: {r}", t.name);
             }
@@ -1006,10 +1006,10 @@ mod tests {
         for m in [json!(5), json!("x"), json!(null), json!([]), json!({"id":{"a":1},"method":5}), json!({"id":1,"method":"tools/call","params":5}), json!({"id":1,"method":"tools/call","params":{"name":7,"arguments":"x"}})] {
             let _ = s.handle(m);
         }
-        let r = rpc(&s, "tools/call", json!({"name":"gibt_es_nicht"}));
+        let r = rpc(&s, "tools/call", json!({"name":"there_it_not"}));
         assert_eq!(r["result"]["isError"], true);
-        assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("Unbekanntes Tool"));
-        assert_eq!(rpc(&s, "resources/read", json!({"uri":"project://geheim"}))["error"]["code"], -32002);
+        assert!(r["result"]["content"][0]["text"].as_str().unwrap().contains("Unknown tool"));
+        assert_eq!(rpc(&s, "resources/read", json!({"uri":"project://secret"}))["error"]["code"], -32002);
         assert!(rpc(&s, "resources/read", json!({"uri":"project://current"}))["result"]["contents"][0]["text"].as_str().is_some());
         // deep nesting in the batch
         let mut deep = json!({"jsonrpc":"2.0","id":1,"method":"ping"});
@@ -1074,17 +1074,17 @@ mod tests {
         assert_eq!(call(&s, "history", json!({}))["structuredContent"], json!([]));
         assert_eq!(call(&s, "undo", json!({}))["isError"], true);
         assert_eq!(call(&s, "redo", json!({}))["isError"], true);
-        assert_eq!(call(&s, "import_media", json!({"path":"C:/gibt/es/nicht.mp4"}))["isError"], true);
+        assert_eq!(call(&s, "import_media", json!({"path":"C:/does/not/exist.mp4"}))["isError"], true);
         assert_eq!(call(&s, "import_media", json!({}))["isError"], true);
-        assert_eq!(call(&s, "add_media_clip", json!({"media_id":"keine-id"}))["isError"], true);
+        assert_eq!(call(&s, "add_media_clip", json!({"media_id":"none-id"}))["isError"], true);
         assert_eq!(call(&s, "add_media_clip", json!({"media_id":MediaId::new().to_string()}))["isError"], true);
         let id = call(&s, "add_text", json!({"text":"a","start":0,"duration":2}))["structuredContent"]["clip_id"].clone();
-        assert_eq!(call(&s, "trim_clip", json!({"clip_id":id,"edge":"mitte","to":1}))["isError"], true);
+        assert_eq!(call(&s, "trim_clip", json!({"clip_id":id,"edge":"middle","to":1}))["isError"], true);
         assert_eq!(call(&s, "trim_clip", json!({"clip_id":id,"edge":"end","to":1}))["isError"], false);
         assert_eq!(call(&s, "delete_clip", json!({"clip_id":id}))["isError"], false);
         assert_eq!(call(&s, "delete_clip", json!({"clip_id":id}))["isError"], true);
-        assert_eq!(call(&s, "undo", json!({}))["structuredContent"]["undone"], "Clip löschen");
-        assert_eq!(call(&s, "redo", json!({}))["structuredContent"]["redone"], "Clip löschen");
+        assert_eq!(call(&s, "undo", json!({}))["structuredContent"]["undone"], "Delete clip");
+        assert_eq!(call(&s, "redo", json!({}))["structuredContent"]["redone"], "Delete clip");
         if !cl_media::test_tools() {
             return;
         }

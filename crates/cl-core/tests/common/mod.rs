@@ -134,12 +134,12 @@ pub fn check(p: &Project, ctx: &str) {
     let mut track_ids = HashSet::new();
     assert!(p.timeline.tracks.iter().filter(|t| t.main).count() <= 1, "{ctx}: mehrere Hauptspuren");
     for t in &p.timeline.tracks {
-        assert!(track_ids.insert(t.id), "{ctx}: Spur-ID doppelt");
+        assert!(track_ids.insert(t.id), "{ctx}: track ID duplicated");
         if t.main {
             assert_eq!(t.kind, TrackKind::Video, "{ctx}: main track is not a visual track");
         }
         for c in &t.clips {
-            assert!(clip_ids.insert(c.id), "{ctx}: Clip-ID {} doppelt", c.id);
+            assert!(clip_ids.insert(c.id), "{ctx}: Clip ID {} duplicated", c.id);
             assert_eq!(c.kind(), t.kind, "{ctx}: clip kind does not match the track");
             assert!(c.start >= Time::ZERO, "{ctx}: negativer Start {:?}", c.start);
             assert!(c.duration > Time::ZERO, "{ctx}: length {:?}", c.duration);

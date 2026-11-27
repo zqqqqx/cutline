@@ -1,15 +1,15 @@
-//! Every fixed UI text in the code has an English translation.
+//! Every fixed UI text in the code has a German translation.
 //!
 //! Covered are text literals directly in `tr("…")`, `toast("…")`, `toast_err("…")` and the button/
 //! section helpers from `theme`/`widgets` (which all translate themselves; list below). A text
-//! counts as translated if `tr()` returns something different in English
+//! counts as translated if `tr()` returns something different in German
 //! or it is literally in the dictionary (words spelled the same, like „Alt“).
 //! Separate test process, because the language is switched globally.
 
 use std::collections::HashSet;
 
 /// Same in every language (abbreviations, font sample, command line)
-const SAME: &[&str] = &["OK", "HSL", "LUT", "REC", "Cutline 0123 ÄÖÜ äöü ß", "cutline --mcp projekt.cutline"];
+const SAME: &[&str] = &["OK", "HSL", "LUT", "REC", "cutline --mcp project.cutline"];
 
 fn literals(src: &str, call: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -42,10 +42,10 @@ fn literals(src: &str, call: &str) -> Vec<String> {
 }
 
 #[test]
-fn every_fixed_ui_text_has_english() {
+fn every_fixed_ui_text_has_german() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let keys: HashSet<&str> = cl_i18n::ui_entries().into_iter().map(|e| e.0).collect();
-    cl_i18n::set_ui_lang(cl_i18n::Lang::En);
+    cl_i18n::set_ui_lang(cl_i18n::Lang::De);
     let mut missing = Vec::new();
     let mut n = 0;
     let mut files: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.path()).collect();
@@ -69,5 +69,5 @@ fn every_fixed_ui_text_has_english() {
     missing.sort();
     missing.dedup();
     assert!(n > 250, "too few texts found ({n}): check the search patterns");
-    assert!(missing.is_empty(), "{} texts without an English line in ui.en.tsv:\n{}", missing.len(), missing.join("\n"));
+    assert!(missing.is_empty(), "{} texts without a German line in translations/de_DE/ui.tsv:\n{}", missing.len(), missing.join("\n"));
 }

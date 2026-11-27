@@ -78,7 +78,7 @@ pub struct StockState {
 impl StockState {
     /// Test helper: a finished download arrives (the file does not exist – it must never be touched)
     pub fn test_downloaded(&self, title: &str) {
-        let _ = self.tx.send(Msg::Downloaded(FREESOUND, Ok((std::path::PathBuf::from("gibt-es-nicht.wav"), title.into()))));
+        let _ = self.tx.send(Msg::Downloaded(FREESOUND, Ok((std::path::PathBuf::from("does-not-exist.wav"), title.into()))));
     }
 }
 
@@ -108,10 +108,10 @@ fn agent() -> ureq::Agent {
 
 fn http_err(e: ureq::Error) -> String {
     match e {
-        ureq::Error::Status(401 | 403, _) => "Schlüssel ungültig oder ohne Zugriff".into(),
-        ureq::Error::Status(429, _) => "Zu viele Anfragen, bitte kurz warten".into(),
-        ureq::Error::Status(c, _) => format!("Dienst antwortet mit {c}"),
-        ureq::Error::Transport(t) => format!("Keine Verbindung ({t})"),
+        ureq::Error::Status(401 | 403, _) => "Key invalid or without access".into(),
+        ureq::Error::Status(429, _) => "Too many requests, please wait a moment".into(),
+        ureq::Error::Status(c, _) => format!("Service responded with {c}"),
+        ureq::Error::Transport(t) => format!("No connection ({t})"),
     }
 }
 
@@ -182,7 +182,7 @@ pub fn pexels_search(key: &str, q: &str, photos: bool) -> Result<Vec<Hit>, Strin
                     title: p["alt"]
                         .as_str()
                         .filter(|s| !s.is_empty())
-                        .unwrap_or("Foto")
+                        .unwrap_or("Photo")
                         .to_string(),
                     id: p["id"].to_string(),
                     info: format!(
@@ -258,7 +258,7 @@ impl App {
                     self.stock.results[if w == FREESOUND { 0 } else { 1 }] = r
                 }
                 Msg::Results(_, Err(e)) => self.toast_err(e),
-                Msg::Downloaded(_, Ok((_, title))) if stray => self.toast(format!("„{title}“ geladen")),
+                Msg::Downloaded(_, Ok((_, title))) if stray => self.toast(format!("“{title}” downloaded")),
                 Msg::Downloaded(w, Ok((p, title))) => {
                     if w == FREESOUND {
                         self.library.invalidate();
@@ -269,7 +269,7 @@ impl App {
                         }
                         self.add_media_at(m, self.playhead, None);
                     }
-                    self.toast(format!("„{title}“ eingefügt"));
+                    self.toast(format!("“{title}” added"));
                 }
                 Msg::Downloaded(_, Err(e)) => self.toast_err(e),
             }
@@ -289,11 +289,11 @@ impl App {
             theme::empty_state(
                 ui,
                 icon::KEY,
-                "API-Schlüssel fehlt",
-                "Unter Einstellungen → Plugins und Konten eintragen",
+                "API key missing",
+                "Enter it under Settings → Plugins and accounts",
             );
             ui.vertical_centered(|ui| {
-                if ui.add(theme::primary("Einrichten …")).clicked() {
+                if ui.add(theme::primary("Set up …")).clicked() {
                     self.settings_section = crate::settings::Section::Integrations;
                     self.settings_open = true;
                 }
@@ -305,7 +305,7 @@ impl App {
             let w = (ui.available_width() - 40.0).max(60.0);
             let r = ui.add(
                 egui::TextEdit::singleline(&mut self.stock.query[i])
-                    .hint_text(crate::tr(format!("{}  Suchen", icon::MAGNIFYING_GLASS)))
+                    .hint_text(crate::tr(format!("{}  Search", icon::MAGNIFYING_GLASS)))
                     .desired_width(w),
             );
             go = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -313,7 +313,7 @@ impl App {
         widgets::busy_row(ui, egui::Id::new(("stock-busy", i)), self.stock.busy);
         if i == 1 {
             let mut sel = self.stock.photos as usize;
-            if widgets::segmented(ui, &["Videos", "Fotos"], &mut sel) {
+            if widgets::segmented(ui, &["Videos", "Photos"], &mut sel) {
                 self.stock.photos = sel == 1;
                 go = true;
             }
@@ -340,7 +340,7 @@ impl App {
         let hits = self.stock.results[i].clone();
         if hits.is_empty() && !self.stock.busy {
             ui.label(
-                RichText::new(crate::tr("Suchbegriff eingeben und Enter drücken"))
+                RichText::new(crate::tr("Type a search term and press Enter"))
                     .small()
                     .color(theme::TEXT_DIM()),
             );
@@ -357,7 +357,7 @@ impl App {
                             if theme::icon_button(
                                 ui,
                                 icon::PLUS,
-                                "Laden und am Playhead einfügen",
+                                "Download and insert at the playhead",
                                 !self.stock.busy,
                                 false,
                             )
@@ -425,13 +425,13 @@ impl App {
                 theme::section(ui, title);
                 let k = if which == FREESOUND { &mut self.stock.keys.freesound } else { &mut self.stock.keys.pexels };
                 let mut changed = false;
-                theme::row(ui, "API-Schlüssel", |ui| {
+                theme::row(ui, "API key", |ui| {
                     changed = ui.add(egui::TextEdit::singleline(k).password(true).desired_width(ui.available_width() - 12.0)).changed();
                 });
                 if changed {
                     save_keys(&self.stock.keys);
                 }
-                if ui.add(theme::ghost(format!("{}  Schlüssel beantragen", icon::ARROW_SQUARE_OUT))).clicked() {
+                if ui.add(theme::ghost(format!("{}  Request a key", icon::ARROW_SQUARE_OUT))).clicked() {
                     crate::epidemic::open_url(url);
                 }
             }

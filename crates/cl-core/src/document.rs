@@ -765,7 +765,7 @@ mod tests {
         d.apply(EditOp::AddClip { track: Some(t), clip: c }, OpSource::Ui).unwrap();
         d.squash_since(start);
         assert_eq!(d.undo_entries().len(), 1);
-        assert_eq!(d.undo_entries()[0].label, "Clip hinzufügen");
+        assert_eq!(d.undo_entries()[0].label, "Add clip");
         // undo: no empty track is left behind; redo brings back both
         d.undo().unwrap();
         assert!(d.project().timeline.tracks.is_empty());
@@ -781,12 +781,12 @@ mod tests {
     #[test]
     fn batch_label_uses_given_name() {
         let ops = || vec![EditOp::RemoveClip { clip: ClipId::new() }];
-        let named = EditOp::Batch { label: "Pausen entfernen".into(), ops: ops() };
-        assert_eq!(named.label(), "Pausen entfernen");
+        let named = EditOp::Batch { label: "Remove pauses".into(), ops: ops() };
+        assert_eq!(named.label(), "Remove pauses");
         // without name: guessed from the first step as before
         let plain = EditOp::Batch { label: String::new(), ops: ops() };
-        assert_eq!(plain.label(), "Clips löschen");
-        assert_eq!(EditOp::Batch { label: String::new(), ops: vec![] }.label(), "Mehrere Änderungen");
+        assert_eq!(plain.label(), "Delete clips");
+        assert_eq!(EditOp::Batch { label: String::new(), ops: vec![] }.label(), "Multiple changes");
     }
 
 
@@ -840,7 +840,7 @@ mod tests {
             d.history().last().unwrap().1,
             &OpSource::Mcp("test-client".into())
         );
-        assert_eq!(d.undo().unwrap(), "Clip löschen");
+        assert_eq!(d.undo().unwrap(), "Delete clip");
         assert_eq!(d.project(), &before);
         d.redo().unwrap();
         assert!(d.project().find_clip(id).is_none());
@@ -897,9 +897,9 @@ mod tests {
         assert_eq!(d.project(), &snap);
         let json = d.project().to_json();
         assert_eq!(Project::from_json(&json).unwrap(), snap);
-        let op: EditOp = serde_json::from_str(r#"{"op":"rename","name":"Neu"}"#).unwrap();
+        let op: EditOp = serde_json::from_str(r#"{"op":"rename","name":"New"}"#).unwrap();
         d.apply(op, OpSource::Ui).unwrap();
-        assert_eq!(d.project().name, "Neu");
+        assert_eq!(d.project().name, "New");
     }
 
     #[test]

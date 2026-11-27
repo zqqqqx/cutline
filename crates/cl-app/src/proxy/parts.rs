@@ -1,8 +1,8 @@
 //! Proxy in parts: the source is built split into parts of equal length ([`PART_SECS`]); each
 //! finished part is usable at once for single frames and streams. Stored per proxy in a folder
-//! next to the finished file (`<proxy name>.teile/`): `0007.mp4` (finished), `0007.<pid>.part.mp4`
+//! next to the finished file (`<proxy name>.parts/`): `0007.mp4` (finished), `0007.<pid>.part.mp4`
 //! (in progress; write fully first, then rename), `0003-0012.ffconcat` (list for a stream
-//! over parts 3…11) and `quelle.txt` (path of the source, for cleaning up after a change).
+//! over parts 3…11) and `source.txt` (path of the source, for cleaning up after a change).
 //! Once all parts are there, they are joined losslessly into the usual single-file proxy.
 //!
 //! Frame-exact: each part computes on the same frame grid as a build in one go (`-copyts`,
@@ -86,9 +86,27 @@ pub fn tmp_of(out: &Path) -> PathBuf {
     out.with_extension(format!("{}.part.mp4", std::process::id()))
 }
 
-/// Parts folder of a proxy (`…/abc-540-30_1fps.mp4` → `…/abc-540-30_1fps.teile`)
+/// Extension of a parts folder and the file in it that names the source
+pub const PARTS_EXT: &str = "parts";
+pub const SOURCE_FILE: &str = "source.txt";
+
+/// Parts folders written by versions up to 0.19.3 (`<name>.teile` with `quelle.txt`) get the
+/// current names, so their finished parts are used on and not left behind in the cache.
+fn rename_old_parts(dir: &Path) {
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let p = e.path();
+        if p.is_dir() && p.extension().is_some_and(|x| x == cl_core::legacy::old("parts_ext")) {
+            let new = p.with_extension(PARTS_EXT);
+            if !new.exists() && std::fs::rename(&p, &new).is_ok() {
+                let _ = std::fs::rename(new.join(cl_core::legacy::old("source_file")), new.join(SOURCE_FILE));
+            }
+        }
+    }
+}
+
+/// Parts folder of a proxy (`…/abc-540-30_1fps.mp4` → `…/abc-540-30_1fps.parts`)
 pub fn parts_dir(out: &Path) -> PathBuf {
-    out.with_extension("teile")
+    out.with_extension(PARTS_EXT)
 }
 
 /// Finished parts in the folder (per part: file present; empty file = part without a frame)
@@ -102,13 +120,14 @@ pub fn scan_ready(dir: &Path, count: u32) -> Vec<bool> {
 /// (FFmpeg keeps the file open), on Unix that window's rename fails afterwards – the part counts
 /// as failed there, a broken file never comes about.
 pub fn cleanup(dir: &Path) {
+    rename_old_parts(dir);
     let Ok(rd) = std::fs::read_dir(dir) else { return };
     for e in rd.flatten() {
         let p = e.path();
         let name = e.file_name().to_string_lossy().into_owned();
         if name.ends_with(".part.mp4") {
             let _ = std::fs::remove_file(&p);
-        } else if p.is_dir() && name.ends_with(".teile") {
+        } else if p.is_dir() && name.ends_with(".parts") {
             if p.with_extension("mp4").is_file() {
                 let _ = std::fs::remove_dir_all(&p);
                 continue;
@@ -129,10 +148,10 @@ pub fn remove_stale(dir: &Path, src: &Path, keep: &Path) {
     let want = src.to_string_lossy();
     for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
         let p = e.path();
-        if p == keep || !p.is_dir() || !e.file_name().to_string_lossy().ends_with(".teile") {
+        if p == keep || !p.is_dir() || !e.file_name().to_string_lossy().ends_with(".parts") {
             continue;
         }
-        let same_src = std::fs::read_to_string(p.join("quelle.txt")).is_ok_and(|s| s.trim() == want);
+        let same_src = std::fs::read_to_string(p.join(SOURCE_FILE)).is_ok_and(|s| s.trim() == want);
         // same hash part of the name = same file version (only other height/frame rate): stays
         let same_hash = |a: &Path, b: &Path| {
             let h = |p: &Path| p.file_name().map(|n| n.to_string_lossy().chars().take(16).collect::<String>());
@@ -161,7 +180,7 @@ pub fn concat_list(dir: &Path, first: u32, end: u32) -> std::io::Result<PathBuf>
         }
     }
     if !any {
-        return Err(std::io::Error::other("keine Bilder"));
+        return Err(std::io::Error::other("no frames"));
     }
     // write fully first, then rename (a second writer writes the same)
     let tmp = dir.join(format!("{first:04}-{end:04}.{}.tmp", std::process::id()));
@@ -172,7 +191,7 @@ pub fn concat_list(dir: &Path, first: u32, end: u32) -> std::io::Result<PathBuf>
     if path.is_file() {
         Ok(path)
     } else {
-        Err(std::io::Error::other("Liste nicht geschrieben"))
+        Err(std::io::Error::other("list not written"))
     }
 }
 
@@ -479,8 +498,8 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let dir = d.path();
         let touch = |p: PathBuf| std::fs::write(p, b"x").unwrap();
-        let a = dir.join("aaaaaaaaaaaaaaaa-540.teile");
-        let b = dir.join("bbbbbbbbbbbbbbbb-540.teile");
+        let a = dir.join("aaaaaaaaaaaaaaaa-540.parts");
+        let b = dir.join("bbbbbbbbbbbbbbbb-540.parts");
         std::fs::create_dir_all(&a).unwrap();
         std::fs::create_dir_all(&b).unwrap();
         touch(a.join("0000.mp4"));
@@ -519,14 +538,14 @@ mod tests {
         let mk = |name: &str, s: &Path| {
             let p = dir.join(name);
             std::fs::create_dir_all(&p).unwrap();
-            std::fs::write(p.join("quelle.txt"), s.to_string_lossy().as_bytes()).unwrap();
+            std::fs::write(p.join(SOURCE_FILE), s.to_string_lossy().as_bytes()).unwrap();
             p
         };
-        let old = mk("1111111111111111-540.teile", src);
-        let other_h = mk("2222222222222222-720.teile", src);
-        let same_hash = mk("2222222222222222-540-30_1fps.teile", src);
-        let foreign = mk("3333333333333333-540.teile", Path::new("y/anders.mp4"));
-        remove_stale(dir, src, &dir.join("2222222222222222-720.teile"));
+        let old = mk("1111111111111111-540.parts", src);
+        let other_h = mk("2222222222222222-720.parts", src);
+        let same_hash = mk("2222222222222222-540-30_1fps.parts", src);
+        let foreign = mk("3333333333333333-540.parts", Path::new("y/anders.mp4"));
+        remove_stale(dir, src, &dir.join("2222222222222222-720.parts"));
         assert!(!old.exists(), "old hash gone");
         assert!(other_h.exists() && same_hash.exists() && foreign.exists());
     }
@@ -542,5 +561,24 @@ mod tests {
         assert_eq!(concat_list(dir, 0, 2).unwrap(), l);
         assert!(concat_list(dir, 1, 2).is_err(), "only empty parts");
         assert!(concat_list(dir, 2, 3).is_err(), "missing part");
+    }
+    /// Parts of a proxy that version 0.19.3 or older began are used on under the current names
+    #[test]
+    fn parts_folders_of_older_versions_are_renamed() {
+        let d = tempfile::tempdir().unwrap();
+        let old = d.path().join("aaaaaaaaaaaaaaaa-540.teile");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("0000.mp4"), b"x").unwrap();
+        std::fs::write(old.join("quelle.txt"), b"x/y.mp4").unwrap();
+        // a folder under the new name already: the old one stays untouched beside it
+        let both = d.path().join("bbbbbbbbbbbbbbbb-540.teile");
+        std::fs::create_dir_all(&both).unwrap();
+        std::fs::create_dir_all(both.with_extension(PARTS_EXT)).unwrap();
+        cleanup(d.path());
+        let new = parts_dir(&d.path().join("aaaaaaaaaaaaaaaa-540.mp4"));
+        assert!(new.join("0000.mp4").is_file() && !old.exists());
+        assert_eq!(std::fs::read_to_string(new.join(SOURCE_FILE)).unwrap(), "x/y.mp4");
+        assert_eq!(scan_ready(&new, 2), [true, false]);
+        assert!(both.is_dir());
     }
 }

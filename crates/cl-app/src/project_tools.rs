@@ -21,7 +21,7 @@ fn legacy_backup_dir(project: &Path) -> PathBuf {
     let stem = project
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "Projekt".into());
+        .unwrap_or_else(|| "Project".into());
     paths::data_dir().join("Backups").join(stem)
 }
 
@@ -119,7 +119,7 @@ pub fn unique_relinks(missing: &[(cl_core::MediaId, PathBuf)], found: &[(String,
         .collect()
 }
 
-/// Archive a project: `<target>/<name>/` with `Medien/`, `Schriften/` and the adjusted project.
+/// Archive a project: `<target>/<name>/` with `Media/`, `Fonts/` and the adjusted project.
 pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathBuf, String> {
     let safe = paths::safe_name(&p.name);
     let dir = (1..)
@@ -132,7 +132,7 @@ pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathB
         })
         .find(|d| !d.exists())
         .unwrap();
-    let media_dir = dir.join("Medien");
+    let media_dir = dir.join("Media");
     std::fs::create_dir_all(&media_dir).map_err(|e| e.to_string())?;
     let mut out = p.clone();
     let mut used = std::collections::HashSet::new();
@@ -167,7 +167,7 @@ pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathB
         }
     }
     if !fonts.is_empty() {
-        let fd = dir.join("Schriften");
+        let fd = dir.join("Fonts");
         std::fs::create_dir_all(&fd).map_err(|e| e.to_string())?;
         out.project_fonts.clear();
         for f in fonts.iter().filter(|f| f.is_file()) {
@@ -184,7 +184,7 @@ pub fn archive(p: &Project, fonts: &[PathBuf], dest_root: &Path) -> Result<PathB
 impl App {
     /// Every frame: backup due? Draw dialogs.
     pub fn project_tools(&mut self, ctx: &egui::Context) {
-        let _s = crate::app::section("Projekt-Werkzeuge");
+        let _s = crate::app::section("Project-Tools");
         // Automatic backup (only for saved projects with changes since the last one)
         if let Some(path) = self.project_path.clone() {
             let every = Duration::from_secs(self.settings.backup_minutes.max(1) as u64 * 60);
@@ -198,10 +198,10 @@ impl App {
                 self.archive = None;
                 match r {
                     Ok(d) => {
-                        self.toast(format!("Archiv erstellt: {}", d.display()));
+                        self.toast(format!("Archive created: {}", d.display()));
                         crate::home::reveal(&d);
                     }
-                    Err(e) => self.toast_err(format!("Archivieren fehlgeschlagen: {e}")),
+                    Err(e) => self.toast_err(format!("Archiving failed: {e}")),
                 }
             }
         }
@@ -216,7 +216,7 @@ impl App {
 
     pub fn start_archive(&mut self, ctx: &egui::Context) {
         let Some(dest) = crate::dialog()
-            .set_title(crate::tr("Zielordner für das Archiv"))
+            .set_title(crate::tr("Destination folder for the archive"))
             .pick_folder()
         else {
             return;
@@ -231,7 +231,7 @@ impl App {
             c.request_repaint();
         });
         self.archive = Some(rx);
-        self.toast("Projekt wird archiviert …");
+        self.toast("Archiving project …");
     }
 
     fn backups_window(&mut self, ctx: &egui::Context) {
@@ -240,22 +240,22 @@ impl App {
         }
         let mut open = true;
         let mut restore: Option<PathBuf> = None;
-        crate::dialog::window(ctx, crate::tr("Sicherungen"), "backups").default_width(380.0).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0)).show(ctx, |ui| {
-            if crate::dialog::title(ui, "Sicherungen") {
+        crate::dialog::window(ctx, crate::tr("Backups"), "backups").default_width(380.0).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0)).show(ctx, |ui| {
+            if crate::dialog::title(ui, "Backups") {
                 open = false;
             }
             ui.add_space(6.0);
             let Some(path) = self.project_path.clone() else {
-                ui.label(crate::tr("Das Projekt ist noch nicht gespeichert."));
+                ui.label(crate::tr("The project hasn't been saved yet."));
                 return;
             };
-            if ui.add(theme::secondary(format!("{}  Jetzt sichern", icon::FLOPPY_DISK))).clicked() {
+            if ui.add(theme::secondary(format!("{}  Back up now", icon::FLOPPY_DISK))).clicked() {
                 self.backup_now(&path);
             }
             ui.add_space(4.0);
             let list = list_backups(&path);
             if list.is_empty() {
-                theme::empty_state(ui, icon::CLOCK_COUNTER_CLOCKWISE, "Noch keine Sicherungen", "");
+                theme::empty_state(ui, icon::CLOCK_COUNTER_CLOCKWISE, "No backups yet", "");
             }
             egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                 for (p, t) in list {
@@ -264,7 +264,7 @@ impl App {
                         ui.label(RichText::new(local).monospace());
                         ui.label(RichText::new(crate::tr(crate::home::ago(t))).small().color(theme::TEXT_DIM()));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add(theme::ghost("Wiederherstellen")).clicked() {
+                            if ui.add(theme::ghost("Restore")).clicked() {
                                 restore = Some(p.clone());
                             }
                         });
@@ -295,22 +295,22 @@ impl App {
         let mut open = true;
         let mut search = false;
         let mut pick: Option<cl_core::MediaId> = None;
-        crate::dialog::window(ctx, crate::tr("Medien neu verknüpfen"), "relink").default_width(460.0).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0)).show(ctx, |ui| {
-            if crate::dialog::title(ui, "Medien neu verknüpfen") {
+        crate::dialog::window(ctx, crate::tr("Relink media"), "relink").default_width(460.0).anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0)).show(ctx, |ui| {
+            if crate::dialog::title(ui, "Relink media") {
                 open = false;
             }
             if missing.is_empty() {
-                ui.label(RichText::new(crate::tr(format!("{}  Alle Medien sind vorhanden", icon::CHECK_CIRCLE))).color(theme::TEXT_DIM()));
+                ui.label(RichText::new(crate::tr(format!("{}  All media are available", icon::CHECK_CIRCLE))).color(theme::TEXT_DIM()));
                 return;
             }
-            ui.label(crate::tr(theme::count_text(missing.len(), "{} Mediendatei wurde nicht gefunden (verschoben oder umbenannt).", "{} Mediendateien wurden nicht gefunden (verschoben oder umbenannt).")));
+            ui.label(crate::tr(theme::count_text(missing.len(), "{} media file was not found (moved or renamed).", "{} media files were not found (moved or renamed).")));
             ui.add_space(4.0);
             egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                 for (id, p) in &missing {
                     // Button first (right), fixed row height; file name in full, folder shortened in the middle
                     let row = egui::vec2(ui.available_width(), 24.0);
                     ui.allocate_ui_with_layout(row, egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(theme::ghost("Datei wählen …")).clicked() {
+                        if ui.add(theme::ghost("Choose file …")).clicked() {
                             pick = Some(*id);
                         }
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -327,10 +327,10 @@ impl App {
                 }
             });
             crate::dialog::footer(ui, |ui| {
-                if ui.add(theme::primary(format!("{}  Ordner durchsuchen …", icon::MAGNIFYING_GLASS))).on_hover_text(crate::tr("Sucht alle fehlenden Dateien nach Namen in einem Ordner und seinen Unterordnern")).clicked() {
+                if ui.add(theme::primary(format!("{}  Search folder …", icon::MAGNIFYING_GLASS))).on_hover_text(crate::tr("Looks for all missing files by name in a folder and its subfolders")).clicked() {
                     search = true;
                 }
-                if ui.add(theme::secondary("Abbrechen")).clicked() {
+                if ui.add(theme::secondary("Cancel")).clicked() {
                     open = false;
                 }
             });
@@ -360,7 +360,7 @@ impl App {
                     self.apply_batch(ops);
                     self.invalidate_preview();
                 }
-                self.toast(format!("{n} von {} Dateien gefunden", missing.len()));
+                self.toast(format!("Found {n} of {} files", missing.len()));
             }
         }
     }
@@ -499,7 +499,7 @@ mod tests {
         assert!(back
             .media
             .iter()
-            .all(|m| m.path.starts_with(out.join("Medien")) && m.path.is_file()));
+            .all(|m| m.path.starts_with(out.join("Media")) && m.path.is_file()));
         assert_ne!(
             back.media[0].path, back.media[1].path,
             "same names stay separate"
@@ -526,7 +526,7 @@ mod tests {
             "width": 2, "height": 2, "fps": null, "has_audio": false, "video_codec": null, "audio_codec": null
         }))
         .unwrap();
-        let mut p = Project::new("Maske");
+        let mut p = Project::new("Mask");
         let mut t = cl_core::Track::new(cl_core::TrackKind::Video);
         for i in 0..2 {
             // a split clip: both halves share one mask
@@ -542,17 +542,17 @@ mod tests {
         p.media.push(m);
         p.timeline.tracks.push(t);
         let out = archive(&p, &[], &home.path().join("out")).unwrap();
-        let back = Project::from_json(&std::fs::read_to_string(out.join("Maske.cutline")).unwrap()).unwrap();
+        let back = Project::from_json(&std::fs::read_to_string(out.join("Mask.cutline")).unwrap()).unwrap();
         let clips = &back.timeline.tracks[0].clips;
         for c in clips {
             for f in [&c.fx.cutout, &c.fx.lut] {
                 let f = PathBuf::from(f.as_deref().unwrap());
-                assert!(f.starts_with(out.join("Medien")) && f.is_file(), "points into the archive: {}", f.display());
+                assert!(f.starts_with(out.join("Media")) && f.is_file(), "points into the archive: {}", f.display());
             }
         }
         assert_eq!(std::fs::read(clips[0].fx.cutout.as_deref().unwrap()).unwrap(), b"mask");
         assert_eq!(clips[0].fx.cutout, clips[1].fx.cutout, "a shared mask is copied once");
-        assert_eq!(std::fs::read_dir(out.join("Medien")).unwrap().count(), 3, "clip, mask, LUT");
+        assert_eq!(std::fs::read_dir(out.join("Media")).unwrap().count(), 3, "clip, mask, LUT");
     }
 
     #[test]
@@ -560,22 +560,22 @@ mod tests {
         let id = |_| cl_core::MediaId::new();
         let (a, b, c, d) = (id(0), id(1), id(2), id(3));
         let missing = vec![
-            (a, PathBuf::from("/alt/1/GX010001.MP4")),
-            (b, PathBuf::from("/alt/1/solo.mp4")),
-            (c, PathBuf::from("/alt/1/twin.mp4")),
-            (d, PathBuf::from("/alt/2/twin.mp4")),
+            (a, PathBuf::from("/old/1/GX010001.MP4")),
+            (b, PathBuf::from("/old/1/solo.mp4")),
+            (c, PathBuf::from("/old/1/twin.mp4")),
+            (d, PathBuf::from("/old/2/twin.mp4")),
         ];
         let found: Vec<(String, PathBuf)> = vec![
-            ("GX010001.MP4".into(), "/neu/a/GX010001.MP4".into()),
-            ("GX010001.MP4".into(), "/neu/b/GX010001.MP4".into()),
-            ("solo.mp4".into(), "/neu/SOLO.mp4".into()),
-            ("twin.mp4".into(), "/neu/twin.mp4".into()),
+            ("GX010001.MP4".into(), "/new/a/GX010001.MP4".into()),
+            ("GX010001.MP4".into(), "/new/b/GX010001.MP4".into()),
+            ("solo.mp4".into(), "/new/SOLO.mp4".into()),
+            ("twin.mp4".into(), "/new/twin.mp4".into()),
         ];
         // two files with one name in the folder, or two missing media with one name: stays missing
-        assert_eq!(unique_relinks(&missing, &found), vec![(b, PathBuf::from("/neu/SOLO.mp4"))]);
+        assert_eq!(unique_relinks(&missing, &found), vec![(b, PathBuf::from("/new/SOLO.mp4"))]);
         // the same path used by two media is one file
-        let same = vec![(a, PathBuf::from("/alt/x.mp4")), (b, PathBuf::from("/alt/x.mp4"))];
-        let hit = vec![("x.mp4".to_string(), PathBuf::from("/neu/x.mp4"))];
+        let same = vec![(a, PathBuf::from("/old/x.mp4")), (b, PathBuf::from("/old/x.mp4"))];
+        let hit = vec![("x.mp4".to_string(), PathBuf::from("/new/x.mp4"))];
         assert_eq!(unique_relinks(&same, &hit).len(), 2);
     }
 }

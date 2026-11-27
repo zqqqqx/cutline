@@ -87,12 +87,12 @@ pub fn transcribe(
                 ))
             }
             Err(e) if opt.force.is_some() || models.whisper().is_none() => return Err(e),
-            Err(e) => eprintln!("Parakeet fehlgeschlagen, nehme Whisper: {e}"),
+            Err(e) => eprintln!("Parakeet failed, using Whisper: {e}"),
         }
     }
     let model = models
         .whisper()
-        .ok_or("Kein Spracherkennungsmodell installiert (Einstellungen → Modelle)")?;
+        .ok_or("No speech recognition model installed (Settings → Models)")?;
     whisper(&model, path, start, dur, &opt.language, progress).map(|s| (Engine::Whisper, s))
 }
 
@@ -113,7 +113,7 @@ struct Parakeet {
 
 impl Parakeet {
     fn load(models: &Models) -> Result<Self, String> {
-        let d = models.parakeet().ok_or("Parakeet-Modell fehlt")?;
+        let d = models.parakeet().ok_or("Parakeet model missing")?;
         let vocab_txt = std::fs::read_to_string(d.join("vocab.txt")).map_err(|e| e.to_string())?;
         let mut vocab: Vec<(usize, String)> = vocab_txt
             .lines()
@@ -304,7 +304,7 @@ pub fn parakeet(
     let mut words = Vec::new();
     for (i, (a, b)) in chunks.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
-            return Err("Abgebrochen".into());
+            return Err("Canceled".into());
         }
         let (frames, dim) = m.encode(&wave[*a..*b])?;
         let toks = m.decode(&frames, dim)?;
@@ -579,9 +579,9 @@ mod tests {
     fn whisper_error_leaves_no_temp_dir() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("w");
-        let r = whisper_in(&dir, Path::new("fehlt.bin"), Path::new("fehlt.wav"), 0.0, 1.0, "de", &|_| {});
+        let r = whisper_in(&dir, Path::new("missing.bin"), Path::new("missing.wav"), 0.0, 1.0, "de", &|_| {});
         assert!(r.is_err());
-        assert!(!dir.exists(), "Arbeitsordner blieb liegen");
+        assert!(!dir.exists(), "work folder was left behind");
     }
 
     #[test]
@@ -592,22 +592,22 @@ mod tests {
             text: t.into(),
         };
         let words = vec![
-            w(0.0, "Hallo"),
-            w(0.4, "Welt."),
-            w(1.0, "Das"),
-            w(1.4, "ist"),
-            w(1.8, "ein"),
-            w(2.2, "ziemlich"),
-            w(2.6, "langer"),
-            w(3.0, "Satz"),
-            w(3.4, "der"),
-            w(3.8, "umbrechen"),
-            w(4.2, "muss"),
+            w(0.0, "Hello"),
+            w(0.4, "World."),
+            w(1.0, "This"),
+            w(1.4, "is"),
+            w(1.8, "a"),
+            w(2.2, "rather"),
+            w(2.6, "long"),
+            w(3.0, "Sentence"),
+            w(3.4, "that"),
+            w(3.8, "wrap"),
+            w(4.2, "must"),
             w(6.0, "Pause"),
         ];
         let s = group_words(&words, 24, 5.0);
-        assert_eq!(s[0].text, "Hallo Welt.");
-        assert_eq!(s[0].words, [0.0, 0.4], "Wortzeiten bleiben je Zeile erhalten");
+        assert_eq!(s[0].text, "Hello World.");
+        assert_eq!(s[0].words, [0.0, 0.4], "word times are kept per line");
         assert!(s.iter().all(|x| x.text.chars().count() <= 24 + 14), "{s:?}");
         assert_eq!(s.last().unwrap().text, "Pause");
         assert!(s.windows(2).all(|p| p[0].end <= p[1].start));
@@ -616,23 +616,23 @@ mod tests {
     #[test]
     fn resegment_splits_word_by_word_and_keeps_order() {
         let segs = vec![
-            Segment { start: 0.0, end: 3.0, text: "Das ist ein Test".into(), ..Default::default() },
-            Segment { start: 3.0, end: 4.0, text: "Ende".into(), ..Default::default() },
+            Segment { start: 0.0, end: 3.0, text: "This is a Test".into(), ..Default::default() },
+            Segment { start: 3.0, end: 4.0, text: "End".into(), ..Default::default() },
         ];
         let w = resegment(&segs, 1, 1.0);
-        assert_eq!(w.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), ["Das", "ist", "ein", "Test", "Ende"]);
+        assert_eq!(w.iter().map(|s| s.text.as_str()).collect::<Vec<_>>(), ["This", "is", "a", "Test", "End"]);
         assert!(w.windows(2).all(|p| p[0].end <= p[1].start + 1e-9 && p[0].start < p[1].start));
         assert!((w[0].start - 0.0).abs() < 1e-9 && w.last().unwrap().end >= 3.9);
         // long lines stay together if they fit
         let l = resegment(&segs, 42, 5.0);
-        assert_eq!(l[0].text, "Das ist ein Test Ende");
+        assert_eq!(l[0].text, "This is a Test End");
     }
 
     #[test]
     fn srt_parsing() {
-        let s = parse_srt("1\n00:00:01,000 --> 00:00:02,500\nHallo\n\n2\n00:00:03,000 --> 00:00:04,000\nzwei\nZeilen\n");
+        let s = parse_srt("1\n00:00:01,000 --> 00:00:02,500\nHello\n\n2\n00:00:03,000 --> 00:00:04,000\ntwo\nlines\n");
         assert_eq!(s.len(), 2);
-        assert_eq!(s[1].text, "zwei Zeilen");
+        assert_eq!(s[1].text, "two lines");
         assert!((s[0].end - 2.5).abs() < 1e-9);
     }
 
@@ -718,10 +718,10 @@ mod tests {
     #[test]
     fn grouping_keeps_words_of_a_line_without_room() {
         let w = |s: f64, e: f64, t: &str| Word { start: s, end: e, text: t.into() };
-        let g = group_words(&[w(1.0, 1.08, "Ja."), w(1.0, 1.4, "Genau"), w(1.4, 1.6, "so.")], 30, 5.0);
+        let g = group_words(&[w(1.0, 1.08, "Yes."), w(1.0, 1.4, "Exactly"), w(1.4, 1.6, "so.")], 30, 5.0);
         assert!(g.iter().all(|s| s.end > s.start), "no line without duration: {g:?}");
         let text: Vec<&str> = g.iter().map(|s| s.text.as_str()).collect();
-        assert_eq!(text.join(" "), "Ja. Genau so.", "no word lost");
+        assert_eq!(text.join(" "), "Yes. Exactly so.", "no word lost");
         assert_eq!(g.iter().map(|s| s.words.len()).sum::<usize>(), 3);
     }
 
@@ -730,7 +730,7 @@ mod tests {
         assert!(group_words(&[], 30, 5.0).is_empty());
         let w = |s: f64, e: f64, t: &str| Word { start: s, end: e, text: t.into() };
         // a single short word gets the minimum duration, the following line is not covered
-        let g = group_words(&[w(0.0, 0.1, "Ja."), w(0.5, 0.6, "Nein.")], 30, 5.0);
+        let g = group_words(&[w(0.0, 0.1, "Yes."), w(0.5, 0.6, "No.")], 30, 5.0);
         assert_eq!(g.len(), 2);
         assert!(g[0].end <= g[1].start && g[1].end >= g[1].start + 0.8 - 1e-9, "{g:?}");
         // a word longer than the line stays whole, max_chars 0 creates no empty lines

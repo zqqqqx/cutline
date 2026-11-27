@@ -1,6 +1,6 @@
 //! Uniform management of all asset areas (stickers, sound effects, music, effects, filters,
 //! transitions, text templates, text effects, fonts):
-//! - search, „Alle“, „Favoriten“ and categories or folders as chips
+//! - search, „All“, „Favorites“ and categories or folders as chips
 //! - categories/folders: move, rename, hide, remove own ones
 //! - own collection folders in every area, add/remove entries
 //! - entries: favorite, put in a folder, hide (built in) or remove (own file)
@@ -32,42 +32,42 @@ pub fn cat_icon(name: &str) -> Option<&'static str> {
     Some(match name {
         "Video" => icon::FILM_STRIP,
         "Audio" => icon::MUSIC_NOTES,
-        "Bilder" => icon::IMAGE,
+        "Images" => icon::IMAGE,
         "Gaming" => icon::GAME_CONTROLLER,
-        "Comedy" | "Reaktionen" => icon::SMILEY,
-        "Übergang" => icon::ARROWS_LEFT_RIGHT,
-        "Oberfläche" => icon::CURSOR_CLICK,
-        "Spannung" => icon::HEARTBEAT,
-        "Natur" => icon::TREE,
-        "Formen" => icon::SHAPES,
-        "Pfeile" => icon::ARROW_RIGHT,
-        "Sprechblasen" => icon::CHAT_CIRCLE,
-        "Deko" => icon::SPARKLE,
+        "Comedy" | "Reactions" => icon::SMILEY,
+        "Transition" => icon::ARROWS_LEFT_RIGHT,
+        "Interface" => icon::CURSOR_CLICK,
+        "Tension" => icon::HEARTBEAT,
+        "Nature" => icon::TREE,
+        "Shapes" => icon::SHAPES,
+        "Arrows" => icon::ARROW_RIGHT,
+        "Speech bubbles" => icon::CHAT_CIRCLE,
+        "Decor" => icon::SPARKLE,
         "Creator" => icon::VIDEO_CAMERA,
-        "Titel" => icon::TEXT_H,
-        "Untertitel" => icon::SUBTITLES,
+        "Title" => icon::TEXT_H,
+        "Captions" => icon::SUBTITLES,
         "Social" => icon::SHARE_NETWORK,
-        "Hinweis" => icon::INFO,
-        "Basis" => icon::SQUARES_FOUR,
+        "Note" => icon::INFO,
+        "Basic" => icon::SQUARES_FOUR,
         "Retro" => icon::FILM_REEL,
-        "Bewegung" => icon::LIGHTNING,
-        "Licht" => icon::SUN,
-        "Stil" => icon::PAINT_BRUSH,
-        "Porträt" => icon::PERSON,
-        "Landschaft" => icon::MOUNTAINS,
+        "Motion" => icon::LIGHTNING,
+        "Light" => icon::SUN,
+        "Style" => icon::PAINT_BRUSH,
+        "Portrait" => icon::PERSON,
+        "Landscape" => icon::MOUNTAINS,
         "Film" => icon::FILM_SLATE,
-        "Schwarzweiß" => icon::CIRCLE_HALF,
-        "Stimmung" => icon::PALETTE,
-        "Wischen" => icon::HAND_SWIPE_RIGHT,
-        "Form" => icon::SHAPES,
-        "Effekt" => icon::SPARKLE,
-        "Aufrufe" => icon::BELL_RINGING,
-        "Zeigen" => icon::HAND_POINTING,
-        "Zeit" => icon::TIMER,
-        "Partikel" => icon::CONFETTI,
-        "Rahmen" => icon::FRAME_CORNERS,
-        "Symbole" => icon::STAR_FOUR,
-        "Tiere & Essen" => icon::PAW_PRINT,
+        "Black & white" => icon::CIRCLE_HALF,
+        "Mood" => icon::PALETTE,
+        "Wipe" => icon::HAND_SWIPE_RIGHT,
+        "Shape" => icon::SHAPES,
+        "Effect" => icon::SPARKLE,
+        "Calls to action" => icon::BELL_RINGING,
+        "Pointers" => icon::HAND_POINTING,
+        "Timing" => icon::TIMER,
+        "Particles" => icon::CONFETTI,
+        "Frame" => icon::FRAME_CORNERS,
+        "Symbols" => icon::STAR_FOUR,
+        "Animals & food" => icon::PAW_PRINT,
         _ => return None,
     })
 }
@@ -103,13 +103,13 @@ pub enum LibDialog {
     },
 }
 
-/// Submenu „Als Element/Sound speichern ▸ own folders · Neuer Ordner …“ (only for matching files).
+/// Submenu "Save as element/sound ▸ own folders · New folder …" (only for matching files).
 /// Chosen: `Some(Some(folder))`, new folder: `Some(None)`.
 pub fn save_as_menu(ui: &mut egui::Ui, kind: Option<Kind>, folders: &[String], pick: &mut Option<Option<String>>) {
     let Some(k) = kind else { return };
     let (g, label) = match k {
-        Kind::Sound => (icon::SPEAKER_HIGH, "Als Sound speichern"),
-        _ => (icon::STICKER, "Als Element speichern"),
+        Kind::Sound => (icon::SPEAKER_HIGH, "Save as sound"),
+        _ => (icon::STICKER, "Save as element"),
     };
     theme::submenu(ui, g, label, |ui| {
         ui.set_min_width(160.0);
@@ -121,7 +121,7 @@ pub fn save_as_menu(ui: &mut egui::Ui, kind: Option<Kind>, folders: &[String], p
                 ui.close_menu();
             }
         }
-        if menu_item(ui, icon::FOLDER_PLUS, "Neuer Ordner …", "") {
+        if menu_item(ui, icon::FOLDER_PLUS, "New folder …", "") {
             *pick = Some(None);
         }
     });
@@ -379,9 +379,9 @@ impl App {
             return;
         };
         if self.library.import(kind, &f, std::slice::from_ref(&file)) == 0 {
-            self.toast_err("Datei nicht gefunden");
+            self.toast_err("File not found");
         } else {
-            self.toast(if kind == Kind::Sound { "Als Sound gespeichert" } else { "Als Element gespeichert" });
+            self.toast(if kind == Kind::Sound { "Saved as sound" } else { "Saved as element" });
         }
     }
 
@@ -459,7 +459,7 @@ impl App {
     }
 
     /// Header of an asset area: search, (import), new folder, chips with menus.
-    /// Returns (category key, search text); the category is „Alle“, „Favoriten“ or `b:/p:/v:…`.
+    /// Returns (category key, search text); the category is „All“, „Favorites“ or `b:/p:/v:…`.
     pub fn asset_bar(
         &mut self,
         ui: &mut egui::Ui,
@@ -471,7 +471,7 @@ impl App {
         let ckey: &'static str = intern(format!("{area}-cat"));
         let mut q = self.asset_cat.get(qkey).cloned().unwrap_or_default();
         // Edit order: always with an own order, otherwise only with pinned entries; never when searching
-        let sel = self.asset_cat.get(ckey).cloned().unwrap_or_else(|| "Alle".into());
+        let sel = self.asset_cat.get(ckey).cloned().unwrap_or_else(|| "All".into());
         let can_edit = q.trim().is_empty()
             && match crate::library::order_kind(&sel) {
                 crate::library::Order::Own => true,
@@ -491,20 +491,20 @@ impl App {
                 .max(60.0);
             ui.add(
                 egui::TextEdit::singleline(&mut q)
-                    .hint_text(crate::tr(format!("{}  Suchen", icon::MAGNIFYING_GLASS)))
+                    .hint_text(crate::tr(format!("{}  Search", icon::MAGNIFYING_GLASS)))
                     .desired_width(w),
             );
             if let Some(k) = phys {
                 let tip = match k {
-                    Kind::Sticker => "Eigene Sticker oder Bilder hinzufügen (auch per Ablegen)",
-                    Kind::Sound => "Eigene Sounds hinzufügen (auch per Ablegen)",
-                    Kind::Media => "Dateien zur Bibliothek hinzufügen (auch per Ablegen)",
+                    Kind::Sticker => "Add your own stickers or images (or drop them here)",
+                    Kind::Sound => "Add your own sounds (or drop them here)",
+                    Kind::Media => "Add files to the library (or drop them here)",
                 };
                 if theme::icon_button(ui, icon::UPLOAD_SIMPLE, tip, true, false).clicked() {
                     self.lib_pick(k);
                 }
             }
-            if theme::icon_button(ui, icon::FOLDER_PLUS, "Neuer Ordner", true, false).clicked() {
+            if theme::icon_button(ui, icon::FOLDER_PLUS, "New folder", true, false).clicked() {
                 self.lib_dialog = Some(LibDialog::NewFolder {
                     area,
                     name: String::new(),
@@ -512,7 +512,7 @@ impl App {
                 });
             }
             if can_edit {
-                let (g, tip) = if edit { (icon::CHECK, "Fertig") } else { (icon::PENCIL_SIMPLE, "Reihenfolge bearbeiten") };
+                let (g, tip) = if edit { (icon::CHECK, "Done") } else { (icon::PENCIL_SIMPLE, "Edit order") };
                 if theme::icon_button(ui, g, tip, true, edit).clicked() {
                     edit = !edit;
                 }
@@ -530,10 +530,10 @@ impl App {
             .asset_cat
             .get(ckey)
             .cloned()
-            .unwrap_or_else(|| "Alle".into());
-        // Category gone (hidden/deleted/renamed)? Back to „Alle“
-        if cur != "Alle" && cur != "Favoriten" && cur != "Zuletzt" && !cats.iter().any(|c| c.key == cur) {
-            cur = "Alle".into();
+            .unwrap_or_else(|| "All".into());
+        // Category gone (hidden/deleted/renamed)? Back to „All“
+        if cur != "All" && cur != "Favorites" && cur != "Recent" && !cats.iter().any(|c| c.key == cur) {
+            cur = "All".into();
             self.asset_cat.insert(ckey, cur.clone());
         }
         let mut act: Option<(u8, String)> = None;
@@ -554,9 +554,9 @@ impl App {
                 }
             }
             for (key, label, tip) in [
-                ("Alle", "Alle", ""),
-                ("Favoriten", icon::STAR, "Favoriten"),
-                ("Zuletzt", icon::CLOCK_COUNTER_CLOCKWISE, "Zuletzt verwendet"),
+                ("All", "All", ""),
+                ("Favorites", icon::STAR, "Favorites"),
+                ("Recent", icon::CLOCK_COUNTER_CLOCKWISE, "Recently used"),
             ] {
                 if cur == key {
                     active = Some(chips.len());
@@ -589,16 +589,16 @@ impl App {
                 }
                 r.context_menu(|ui| {
                     ui.set_min_width(170.0);
-                    if menu_item(ui, icon::PENCIL_SIMPLE, "Umbenennen", "") {
+                    if menu_item(ui, icon::PENCIL_SIMPLE, "Rename", "") {
                         act = Some((0, c.key.clone()));
                     }
-                    if i > 0 && menu_item(ui, icon::ARROW_LEFT, "Nach vorne", "") {
+                    if i > 0 && menu_item(ui, icon::ARROW_LEFT, "Move forward", "") {
                         act = Some((1, c.key.clone()));
                     }
-                    if i + 1 < n && menu_item(ui, icon::ARROW_RIGHT, "Nach hinten", "") {
+                    if i + 1 < n && menu_item(ui, icon::ARROW_RIGHT, "Move back", "") {
                         act = Some((2, c.key.clone()));
                     }
-                    if menu_item(ui, icon::EYE_SLASH, "Verbergen", "") {
+                    if menu_item(ui, icon::EYE_SLASH, "Hide", "") {
                         act = Some((3, c.key.clone()));
                     }
                     if !c.builtin {
@@ -606,7 +606,7 @@ impl App {
                         if ui
                             .button(
                                 RichText::new(crate::tr(format!(
-                                    "{}  Ordner entfernen",
+                                    "{}  Remove folder",
                                     icon::TRASH
                                 )))
                                 .color(theme::WARN_TEXT()),
@@ -657,7 +657,7 @@ impl App {
         if hidden_cats + hidden_items > 0
             && ui
                 .add(theme::ghost(format!(
-                    "{}  {} verborgen · wieder anzeigen",
+                    "{}  {} hidden · show again",
                     icon::EYE,
                     hidden_cats + hidden_items
                 )))
@@ -671,7 +671,7 @@ impl App {
             .asset_cat
             .get(ckey)
             .cloned()
-            .unwrap_or_else(|| "Alle".into());
+            .unwrap_or_else(|| "All".into());
         (cat, q)
     }
 
@@ -715,16 +715,16 @@ impl App {
                 ui,
                 icon::STAR,
                 if fav {
-                    "Aus Favoriten entfernen"
+                    "Remove from favorites"
                 } else {
-                    "Zu Favoriten"
+                    "Add to favorites"
                 },
                 "",
             ) {
                 act = Some(0);
             }
             if let Some(p) = pin {
-                let (g, t) = if p { (icon::PUSH_PIN_SLASH, "Nicht mehr anpinnen") } else { (icon::PUSH_PIN, "Oben anpinnen") };
+                let (g, t) = if p { (icon::PUSH_PIN_SLASH, "Unpin") } else { (icon::PUSH_PIN, "Pin to top") };
                 if menu_item(ui, g, t, "") {
                     act = Some(5);
                 }
@@ -732,7 +732,7 @@ impl App {
             theme::submenu(
                 ui,
                 icon::FOLDER_SIMPLE_PLUS,
-                "Zu Ordner hinzufügen",
+                "Add to folder",
                 |ui| {
                     ui.set_min_width(160.0);
                     for f in &virt {
@@ -742,13 +742,13 @@ impl App {
                             ui.close_menu();
                         }
                     }
-                    if menu_item(ui, icon::FOLDER_PLUS, "Neuer Ordner …", "") {
+                    if menu_item(ui, icon::FOLDER_PLUS, "New folder …", "") {
                         act = Some(3);
                     }
                 },
             );
             if let Some(name) = cat.strip_prefix("v:") {
-                if menu_item(ui, icon::FOLDER_MINUS, &format!("Aus „{name}“ entfernen"), "") {
+                if menu_item(ui, icon::FOLDER_MINUS, &format!("Remove from “{name}”"), "") {
                     act = Some(4);
                 }
             }
@@ -756,7 +756,7 @@ impl App {
                 theme::submenu(
                     ui,
                     icon::FOLDER_SIMPLE,
-                    "Verschieben nach",
+                    "Move to",
                     |ui| {
                         ui.set_min_width(150.0);
                         for f in phys_folders.iter().filter(|f| **f != item.folder) {
@@ -767,10 +767,10 @@ impl App {
                         }
                     },
                 );
-                if menu_item(ui, icon::PENCIL_SIMPLE, "Umbenennen", "") {
+                if menu_item(ui, icon::PENCIL_SIMPLE, "Rename", "") {
                     act = Some(1);
                 }
-                if menu_item(ui, icon::FOLDER_OPEN, "Im Explorer zeigen", "") {
+                if menu_item(ui, icon::FOLDER_OPEN, "Show in Explorer", "") {
                     if let Some(p) = &item.path {
                         crate::home::reveal(p);
                     }
@@ -778,9 +778,9 @@ impl App {
             }
             ui.separator();
             let label = if own.is_some() {
-                "Entfernen"
+                "Remove"
             } else {
-                "Verbergen"
+                "Hide"
             };
             if ui
                 .button(
@@ -811,12 +811,12 @@ impl App {
                         .is_some_and(|p| self.project.media.iter().any(|m| &m.path == p)) =>
                 {
                     self.toast_err(format!(
-                        "„{}“ wird im offenen Projekt verwendet und bleibt deshalb erhalten",
+                        "“{}” is used in the open project and is kept",
                         item.name
                     ));
                 }
                 Some(item) => match self.library.remove(item) {
-                    Ok(()) => self.toast(format!("„{}“ in den Papierkorb verschoben", item.name)),
+                    Ok(()) => self.toast(format!("“{}” moved to trash", item.name)),
                     Err(e) => self.toast_err(e),
                 },
                 None => self.library.hide(key),
@@ -838,7 +838,7 @@ impl App {
         }
         if let Some(f) = add_to {
             self.library.add_to_virtual(area, &f, key);
-            self.toast(format!("Zu „{f}“ hinzugefügt"));
+            self.toast(format!("Added to “{f}”"));
         }
         if let (Some(f), Some(item)) = (move_to, own) {
             if let Some(k) = area_kind(area) {
@@ -850,12 +850,12 @@ impl App {
         }
     }
 
-    /// File picker for own stickers/sounds; the target is the chosen folder (otherwise „Eigene“).
+    /// File picker for own stickers/sounds; the target is the chosen folder (otherwise „Mine“).
     pub fn lib_pick(&mut self, kind: Kind) {
         let label = match kind {
-            Kind::Sticker => "Bilder",
+            Kind::Sticker => "Images",
             Kind::Sound => "Audio",
-            Kind::Media => "Medien",
+            Kind::Media => "Media",
         };
         if let Some(files) = crate::dialog()
             .add_filter(crate::tr(label), kind.exts())
@@ -878,10 +878,10 @@ impl App {
             .unwrap_or_else(|| Kind::DEFAULT_FOLDER.to_string());
         let n = self.library.import(kind, &folder, &files);
         if n == 0 {
-            self.toast_err("Keine passenden Dateien");
+            self.toast_err("No matching files");
         } else {
             self.asset_cat.insert(ckey, format!("p:{folder}"));
-            self.toast(format!("{n} in „{folder}“ hinzugefügt"));
+            self.toast(format!("{n} added to “{folder}”"));
         }
     }
 
@@ -902,9 +902,9 @@ impl App {
         let err = self.dialog_error.clone();
         let mut edited = false;
         let title = match d {
-            LibDialog::NewFolder { .. } | LibDialog::SaveAs { .. } => "Neuer Ordner",
-            LibDialog::Rename { .. } | LibDialog::RenameCat { .. } => "Umbenennen",
-            LibDialog::DeleteCat { .. } => "Ordner entfernen?",
+            LibDialog::NewFolder { .. } | LibDialog::SaveAs { .. } => "New folder",
+            LibDialog::Rename { .. } | LibDialog::RenameCat { .. } => "Rename",
+            LibDialog::DeleteCat { .. } => "Remove folder?",
         };
         let modal = crate::dialog::modal(ctx, "lib-dialog").show(ctx, |ui| {
             ui.set_width(320.0);
@@ -926,15 +926,15 @@ impl App {
                 }
                 LibDialog::DeleteCat { area, key, label } => {
                     let text = if key.starts_with("p:") && area_kind(area).is_some() {
-                        format!("„{label}“ und sein Inhalt werden in den Cutline-Papierkorb verschoben.")
+                        format!("“{label}” and its contents will be moved to the Cutline trash.")
                     } else {
-                        format!("Der Ordner „{label}“ wird entfernt. Die Einträge darin bleiben erhalten.")
+                        format!("The folder “{label}” will be removed. The items in it are kept.")
                     };
                     ui.label(crate::tr(text));
                     theme::field_error(ui, err.as_deref());
                 }
             }
-            let main = if matches!(d, LibDialog::DeleteCat { .. }) { theme::danger("Entfernen") } else { theme::primary("OK") };
+            let main = if matches!(d, LibDialog::DeleteCat { .. }) { theme::danger("Remove") } else { theme::primary("OK") };
             let (m, c) = crate::dialog::buttons(ui, main, true);
             ok |= m;
             close |= c;
@@ -1091,7 +1091,7 @@ impl App {
     }
 }
 
-/// Does „wieder anzeigen“ in area `area` bring back this hidden entry?
+/// Does "show again" in area `area` bring back this hidden entry?
 /// `packs`: IDs of the pack entries of this area (key `pack:<id>`).
 fn restorable(area: &str, key: &str, packs: &[String]) -> bool {
     key.strip_prefix(area).is_some_and(|r| r.starts_with(':'))
@@ -1136,12 +1136,12 @@ mod tests {
     #[test]
     fn hidden_pack_entries_restore_only_in_their_area() {
         use super::restorable;
-        let sounds = vec!["cutline.basis/treffer".to_string()];
-        let elems = vec!["cutline.elemente/abo".to_string()];
-        assert!(restorable("sfx", "pack:cutline.basis/treffer", &sounds));
-        assert!(restorable("sticker", "pack:cutline.elemente/abo", &elems));
-        assert!(!restorable("sticker", "pack:cutline.basis/treffer", &elems));
-        assert!(!restorable("sfx", "pack:cutline.basis/treffer2", &sounds));
+        let sounds = vec!["cutline.sounds/hit".to_string()];
+        let elems = vec!["cutline.elements/subscribe".to_string()];
+        assert!(restorable("sfx", "pack:cutline.sounds/hit", &sounds));
+        assert!(restorable("sticker", "pack:cutline.elements/subscribe", &elems));
+        assert!(!restorable("sticker", "pack:cutline.sounds/hit", &elems));
+        assert!(!restorable("sfx", "pack:cutline.sounds/hit2", &sounds));
         assert!(restorable("sfx", "builtin:sfx:pop", &sounds) && restorable("sfx", "sfx:x", &[]));
         assert!(!restorable("sfx", "sfxx:x", &[]) && !restorable("sticker", "builtin:sfx:pop", &[]));
     }

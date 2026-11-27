@@ -52,11 +52,11 @@ pub struct Adjust {
 }
 
 pub const HSL_COLORS: [(&str, &str, [u8; 3]); 6] = [
-    ("r", "Rot", [230, 70, 70]),
-    ("y", "Gelb", [230, 200, 60]),
-    ("g", "Grün", [80, 200, 90]),
+    ("r", "Red", [230, 70, 70]),
+    ("y", "Yellow", [230, 200, 60]),
+    ("g", "Green", [80, 200, 90]),
     ("c", "Cyan", [70, 200, 210]),
-    ("b", "Blau", [70, 110, 230]),
+    ("b", "Blue", [70, 110, 230]),
     ("m", "Magenta", [210, 80, 200]),
 ];
 
@@ -326,7 +326,7 @@ pub struct RotoPoint {
     pub remove: bool,
 }
 
-/// Person effects based on the mask from „Hintergrund entfernen“.
+/// Person effects based on the mask from „Remove background“.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PersonFx {
@@ -345,7 +345,7 @@ pub enum PersonFx {
 }
 
 impl PersonFx {
-    pub const KINDS: [&'static str; 3] = ["Hintergrund weich", "Hintergrundfarbe", "Umriss"];
+    pub const KINDS: [&'static str; 3] = ["Blur background", "Background color", "Outline~cutout"];
     pub fn index(&self) -> usize {
         match self {
             PersonFx::BlurBackground { .. } => 0,
@@ -459,11 +459,11 @@ pub enum Channels {
 
 impl Channels {
     pub const ALL: [(Channels, &'static str); 5] = [
-        (Channels::Auto, "Automatisch"),
+        (Channels::Auto, "Automatic"),
         (Channels::Stereo, "Stereo"),
         (Channels::Mono, "Mono"),
-        (Channels::Left, "Nur links"),
-        (Channels::Right, "Nur rechts"),
+        (Channels::Left, "Left only"),
+        (Channels::Right, "Right only"),
     ];
     pub fn name(self) -> &'static str {
         Self::ALL.iter().find(|c| c.0 == self).map(|c| c.1).unwrap_or("")
@@ -615,7 +615,7 @@ impl Ease {
             }
         }
     }
-    /// Control points of the curve (for the curve editor); `None` for „Halten“
+    /// Control points of the curve (for the curve editor); `None` for „Hold“
     pub fn bezier(self) -> Option<(f32, f32, f32, f32)> {
         match self {
             Ease::Linear => Some((0.0, 0.0, 1.0, 1.0)),
@@ -636,7 +636,7 @@ fn bezier_ease_hits_ends_and_can_overshoot() {
     }
     let back = Ease::Bezier(0.34, 1.56, 0.64, 1.0);
     assert!(back.apply(0.0).abs() < 1e-3 && (back.apply(1.0) - 1.0).abs() < 1e-3);
-    assert!((0..=20).any(|i| back.apply(i as f32 / 20.0) > 1.02), "schwingt über");
+    assert!((0..=20).any(|i| back.apply(i as f32 / 20.0) > 1.02), "overshoots");
     // read old projects without curve and new ones with curve
     assert_eq!(serde_json::from_str::<Ease>("\"EaseIn\"").unwrap(), Ease::EaseIn);
     let s = serde_json::to_string(&back).unwrap();
@@ -794,51 +794,51 @@ impl AnimDelta {
 
 /// Built-in in/out animations (id, name).
 pub const ANIMATIONS: &[(&str, &str)] = &[
-    ("fade", "Einblenden"),
-    ("slide-left", "Von links"),
-    ("slide-right", "Von rechts"),
-    ("slide-up", "Von unten"),
-    ("slide-down", "Von oben"),
-    ("zoom-in", "Heranzoomen"),
-    ("zoom-out", "Herauszoomen"),
-    ("pop", "Aufploppen"),
-    ("spin", "Drehen"),
-    ("rise", "Aufsteigen"),
-    ("drop", "Fallen"),
-    ("swing", "Schwingen"),
-    ("bounce-in", "Hüpfen"),
-    ("elastic", "Elastisch"),
-    ("stamp", "Stempel"),
-    ("punch", "Schlag"),
-    ("snap-left", "Schnell von links"),
-    ("snap-right", "Schnell von rechts"),
-    ("snap-down", "Schnell von oben"),
-    ("snap-up", "Schnell von unten"),
-    ("unfold", "Aufklappen"),
-    ("roll-in", "Hereinrollen"),
-    ("whirl", "Wirbel"),
-    ("tilt-in", "Einkippen"),
-    ("wipe-fade", "Wischen"),
-    ("flicker", "Neon-Start"),
+    ("fade", "Fade in"),
+    ("slide-left", "From left"),
+    ("slide-right", "From right"),
+    ("slide-up", "From bottom"),
+    ("slide-down", "From top"),
+    ("zoom-in", "Zoom in"),
+    ("zoom-out", "Zoom out"),
+    ("pop", "Pop up"),
+    ("spin", "Rotate"),
+    ("rise", "Rise"),
+    ("drop", "Drop"),
+    ("swing", "Swing"),
+    ("bounce-in", "Bounce"),
+    ("elastic", "Elastic"),
+    ("stamp", "Stamp"),
+    ("punch", "Punch"),
+    ("snap-left", "Snap from left"),
+    ("snap-right", "Snap from right"),
+    ("snap-down", "Snap from top"),
+    ("snap-up", "Snap from bottom"),
+    ("unfold", "Unfold"),
+    ("roll-in", "Roll in"),
+    ("whirl", "Whirl"),
+    ("tilt-in", "Tilt in"),
+    ("wipe-fade", "Wipe"),
+    ("flicker", "Neon flicker"),
     ("glitch-in", "Glitch"),
-    ("shake-in", "Rütteln"),
+    ("shake-in", "Rattle"),
 ];
 
 /// Combo animations over the whole duration (id, name).
 pub const COMBO_ANIMATIONS: &[(&str, &str)] = &[
-    ("pulse", "Pulsieren"),
-    ("wobble", "Wackeln"),
-    ("float", "Schweben"),
-    ("spin-loop", "Rotieren"),
-    ("shake", "Zittern"),
-    ("pendulum", "Pendeln"),
-    ("heartbeat", "Herzschlag"),
-    ("breathe", "Atmen"),
-    ("bob", "Wippen"),
-    ("blink", "Blinken"),
-    ("rock", "Schaukeln"),
-    ("ken-burns", "Langsamer Zoom"),
-    ("glitch", "Glitch-Schleife"),
+    ("pulse", "Pulse"),
+    ("wobble", "Shake"),
+    ("float", "Float"),
+    ("spin-loop", "Spin"),
+    ("shake", "Tremble"),
+    ("pendulum", "Pendulum"),
+    ("heartbeat", "Heartbeat"),
+    ("breathe", "Breathe"),
+    ("bob", "Bob"),
+    ("blink", "Blink"),
+    ("rock", "Rock"),
+    ("ken-burns", "Slow zoom"),
+    ("glitch", "Glitch loop"),
 ];
 
 /// Anticipation and overshoot (ends exactly on 1 at p = 1), `s` = strength
@@ -1054,7 +1054,7 @@ pub const SPEED_CURVES: &[(&str, &str, &[(f32, f32)])] = &[
     ),
     (
         "hero",
-        "Held",
+        "Hero",
         &[
             (0.0, 2.5),
             (0.35, 2.5),
@@ -1065,26 +1065,26 @@ pub const SPEED_CURVES: &[(&str, &str, &[(f32, f32)])] = &[
     ),
     (
         "bullet",
-        "Kugel",
+        "Sphere",
         &[(0.0, 3.0), (0.4, 0.2), (0.6, 0.2), (1.0, 3.0)],
     ),
     (
         "jump-cut",
-        "Sprung",
+        "Jump",
         &[(0.0, 1.0), (0.45, 1.0), (0.5, 6.0), (0.55, 1.0), (1.0, 1.0)],
     ),
     (
         "flash-in",
-        "Blitz rein",
+        "Flash in",
         &[(0.0, 5.0), (0.4, 1.0), (1.0, 1.0)],
     ),
     (
         "flash-out",
-        "Blitz raus",
+        "Flash out",
         &[(0.0, 1.0), (0.6, 1.0), (1.0, 5.0)],
     ),
-    ("ease-in", "Langsam rein", &[(0.0, 0.3), (1.0, 2.0)]),
-    ("ease-out", "Langsam raus", &[(0.0, 2.0), (1.0, 0.3)]),
+    ("ease-in", "Ease in", &[(0.0, 0.3), (1.0, 2.0)]),
+    ("ease-out", "Ease out", &[(0.0, 2.0), (1.0, 0.3)]),
 ];
 
 fn curve_points(id: &str) -> Option<&'static [(f32, f32)]> {
@@ -1168,7 +1168,7 @@ mod tests {
     #[test]
     fn outline_without_transparent_is_saved_as_before() {
         use crate::model::*;
-        let mut p = Project::new("Umriss");
+        let mut p = Project::new("Outline~cutout");
         let mut t = Track::new(TrackKind::Video);
         let mut c = Clip::new(ClipContent::Text(Default::default()), Time::ZERO, Time::from_secs_f64(1.0));
         c.fx.person = Some(PersonFx::Outline { color: [255, 255, 255], width: 8.0, transparent: false });
@@ -1185,7 +1185,7 @@ mod tests {
 
     fn one_clip_project(fx: ClipFx) -> crate::model::Project {
         use crate::model::*;
-        let mut p = Project::new("Kante");
+        let mut p = Project::new("Edge");
         let mut t = Track::new(TrackKind::Video);
         let mut c = Clip::new(ClipContent::Text(Default::default()), Time::ZERO, Time::from_secs_f64(1.0));
         c.fx = fx;
@@ -1323,7 +1323,7 @@ mod tests {
         for (id, _) in ANIMATIONS {
             assert!(rest_dist(anim_delta(id, 0.3)) > 1e-3, "{id} tut nichts");
             assert!(rest_dist(anim_delta(id, 1.0)) < 1e-4, "{id} does not end at rest");
-            assert!(rest_dist(anim_delta(id, 0.995)) < 0.05, "{id} springt am Ende");
+            assert!(rest_dist(anim_delta(id, 0.995)) < 0.05, "{id} jumps at the end");
             for i in 0..=200 {
                 let d = anim_delta(id, i as f32 / 200.0);
                 assert!(sane(d), "{id} at {i}: {d:?}");
@@ -1333,7 +1333,7 @@ mod tests {
         assert!((anim_delta("pop", 0.35).scale_mul - 0.575).abs() < 1e-4);
         assert!((anim_delta("slide-left", 0.5).dx + 0.25).abs() < 1e-6);
         assert!((anim_delta("spin", 0.0).rot_add + 180.0).abs() < 1e-4);
-        assert_eq!(anim_delta("gibt-es-nicht", 0.3), AnimDelta::NONE);
+        assert_eq!(anim_delta("does-not-exist", 0.3), AnimDelta::NONE);
     }
 
     #[test]

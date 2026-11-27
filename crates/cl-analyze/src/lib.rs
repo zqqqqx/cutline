@@ -40,14 +40,14 @@ pub static CATALOG: &[ModelInfo] = &[
     ModelInfo {
         id: "onnxruntime",
         name: "ONNX Runtime 1.31",
-        about: "Laufzeit für Parakeet und Freistellen (Microsoft, MIT-Lizenz)",
+        about: "Runtime for Parakeet and cutouts (Microsoft, MIT license)",
         size_mb: 17,
         files: &[("onnxruntime.zip", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/onnxruntime-win-x64-1.31.1.zip#sha256=5869e26bb25314375f2d5ef1877e3ea06b1543d6c710e6e4a1ec2f7177ab4b2c")],
     },
     ModelInfo {
         id: "parakeet",
         name: "Parakeet TDT 0.6B v3",
-        about: "Beste Spracherkennung für Deutsch und 24 weitere europäische Sprachen, Wort-genaue Zeiten (NVIDIA, CC-BY-4.0)",
+        about: "Best speech recognition for 25 European languages, word-level timing (NVIDIA, CC-BY-4.0)",
         size_mb: 670,
         files: &[
             ("parakeet-tdt-0.6b-v3/config.json", "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/config.json#sha256=666903c76b9798caf2c210afd4f6cd60b08a8dbf9800ec8d7a3bc0d2148ac466"),
@@ -60,14 +60,14 @@ pub static CATALOG: &[ModelInfo] = &[
     ModelInfo {
         id: "whisper",
         name: "Whisper Base",
-        about: "Rückfall-Spracherkennung, 99 Sprachen (OpenAI, MIT-Lizenz)",
+        about: "Fallback speech recognition, 99 languages (OpenAI, MIT license)",
         size_mb: 148,
         files: &[("ggml-base.bin", "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.bin#sha256=60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe")],
     },
     ModelInfo {
         id: "rvm",
         name: "RobustVideoMatting",
-        about: "Personen freistellen ohne Greenscreen (GPL-3.0)",
+        about: "Cut out people without a green screen (GPL-3.0)",
         size_mb: 15,
         files: &[("rvm_mobilenetv3_fp32.onnx", "https://github.com/PeterL1n/RobustVideoMatting/releases/download/v1.0.0/rvm_mobilenetv3_fp32.onnx#sha256=88d4531297118f595bf2fd60f6f566aec2e559393802d1f436c380f0cbbd2828")],
     },
@@ -75,7 +75,7 @@ pub static CATALOG: &[ModelInfo] = &[
     ModelInfo {
         id: "sam2",
         name: "SAM 2.1 Tiny",
-        about: "Objekte per Klick freistellen und verfolgen (Meta, Apache-2.0)",
+        about: "Cut out and track objects with a click (Meta, Apache-2.0)",
         size_mb: 80,
         files: &[
             ("sam2.1-tiny-512/onnx/vision_encoder.onnx", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/sam2.1-tiny-512-fp16-vision_encoder.onnx#sha256=24e9ccf5994be5c8dd93ebe771a4cc4f8bb122d0524555ac3ba4e7141710b133"),
@@ -91,8 +91,8 @@ pub static CATALOG: &[ModelInfo] = &[
     // ONNX Runtime at 1.24.4; DirectML itself is proprietary (redistribution with an application allowed)
     ModelInfo {
         id: "directml",
-        name: "Grafikkarten-Beschleunigung",
-        about: "Objekt freistellen auf der Grafikkarte (Microsoft DirectML 1.15.4, proprietäre Lizenz; ONNX Runtime 1.24.4, MIT-Lizenz)",
+        name: "Graphics card acceleration",
+        about: "Object cut-out on the graphics card (Microsoft DirectML 1.15.4, proprietary license; ONNX Runtime 1.24.4, MIT license)",
         size_mb: 35,
         files: &[
             ("directml/onnxruntime.dll", "https://github.com/zqqqqx/cutline/releases/download/ci-tools/onnxruntime-directml-1.24.4-win-x64.dll#sha256=e7eedec6a6f26dc39dc948276a75ef6d2bee3fff944d874ceed0bbd3b97bff40"),
@@ -247,7 +247,7 @@ pub fn ort_env(models: &Models) -> Result<&'static ort::environment::Environment
         #[cfg(windows)]
         if let Some(d) = GPU_DIR.get() {
             if !preload(&d.join("DirectML.dll")) {
-                note_runtime("DirectML.dll nicht ladbar".into());
+                note_runtime("DirectML.dll cannot be loaded".into());
             } else {
                 match ort::init_from(d.join("onnxruntime.dll")) {
                     Ok(b) => {
@@ -260,7 +260,7 @@ pub fn ort_env(models: &Models) -> Result<&'static ort::environment::Environment
         }
         let dll = models
             .ort_dll()
-            .ok_or("ONNX Runtime fehlt (Einstellungen → Modelle)")?;
+            .ok_or("ONNX Runtime missing (Settings → Models)")?;
         ort::init_from(&dll)
             .map_err(|e| e.to_string())?
             .with_name("cutline")
@@ -318,7 +318,7 @@ pub fn decode_audio(
         return Err(String::from_utf8_lossy(&out.stderr)
             .lines()
             .last()
-            .unwrap_or("Ton nicht lesbar")
+            .unwrap_or("Audio can't be read")
             .to_string());
     }
     Ok(out
@@ -386,7 +386,7 @@ fn every_model_url_carries_a_sha256() {
     for m in CATALOG {
         for (name, url) in m.files {
             let sum = url.rsplit_once("#sha256=").map(|(_, h)| h).unwrap_or("");
-            assert!(sum.len() == 64 && sum.bytes().all(|b| b.is_ascii_hexdigit()), "{}: {name} ohne Prüfsumme", m.id);
+            assert!(sum.len() == 64 && sum.bytes().all(|b| b.is_ascii_hexdigit()), "{}: {name} without checksum", m.id);
         }
     }
 }

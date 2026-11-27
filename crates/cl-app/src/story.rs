@@ -1,6 +1,6 @@
-//! Plugin „Story-Werkzeuge“ (built in, off by default): characters with name, color and
+//! Plugin „Story tools“ (built in, off by default): characters with name, color and
 //! portrait; insert a dialog box and name tag for a character at the playhead.
-//! Settings under Settings → Plugins and accounts, tools in the „Schnellaktionen“ menu.
+//! Settings under Settings → Plugins and accounts, tools in the „Quick Actions“ menu.
 
 use std::path::PathBuf;
 
@@ -58,7 +58,7 @@ impl App {
         if chars.is_empty() {
             if ui
                 .add(crate::theme::menu_row(crate::tr(format!(
-                    "{}   Figuren anlegen …",
+                    "{}   Create characters …",
                     icon::USER_PLUS
                 ))))
                 .clicked()
@@ -75,7 +75,7 @@ impl App {
             if ui
                 .add(
                     crate::theme::menu_row(crate::tr(format!(
-                        "{}   Dialogbox: {}",
+                        "{}   Dialogue box: {}",
                         icon::CHAT_TEXT,
                         c.name
                     )))
@@ -91,7 +91,7 @@ impl App {
             if ui
                 .add(
                     crate::theme::menu_row(crate::tr(format!(
-                        "{}   Namensschild: {}",
+                        "{}   Name tag: {}",
                         icon::IDENTIFICATION_BADGE,
                         c.name
                     )))
@@ -193,7 +193,7 @@ impl App {
         self.clip_tab = crate::app::ClipTab::Text;
         self.focus_text = true;
         self.toast(format!(
-            "Dialogbox für {} eingefügt – Text im Inspektor eingeben",
+            "Dialogue box for {} inserted – enter the text in the inspector",
             ch.name
         ));
     }
@@ -224,7 +224,7 @@ impl App {
                 self.apply(EditOp::ReplaceClip { clip: c });
             }
         }
-        self.toast(format!("Namensschild für {} eingefügt", ch.name));
+        self.toast(format!("Name tag for {} inserted", ch.name));
     }
 
     /// Section in Settings → Plugins and accounts
@@ -232,7 +232,7 @@ impl App {
         if !enabled(self) {
             return;
         }
-        theme::section(ui, "Story-Werkzeuge");
+        theme::section(ui, "Story tools");
         let mut changed = false;
         let mut remove = None;
         for (i, c) in self.characters.iter_mut().enumerate() {
@@ -250,20 +250,20 @@ impl App {
                     .as_ref()
                     .and_then(|p| p.file_name())
                     .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| crate::tr("Porträt …"));
+                    .unwrap_or_else(|| crate::tr("Portrait …"));
                 if ui
                     .add(theme::ghost(format!("{}  {label}", icon::IMAGE)))
                     .clicked()
                 {
                     if let Some(f) = crate::dialog()
-                        .add_filter(crate::tr("Bilder"), crate::library::STICKER_EXT)
+                        .add_filter(crate::tr("Images"), crate::library::STICKER_EXT)
                         .pick_file()
                     {
                         c.portrait = Some(f);
                         changed = true;
                     }
                 }
-                if theme::icon_button(ui, icon::TRASH, "Figur entfernen", true, false).clicked() {
+                if theme::icon_button(ui, icon::TRASH, "Remove character", true, false).clicked() {
                     remove = Some(i);
                 }
             });
@@ -274,7 +274,7 @@ impl App {
         }
         if ui
             .add(theme::secondary(format!(
-                "{}  Figur hinzufügen",
+                "{}  Add character",
                 icon::USER_PLUS
             )))
             .clicked()
@@ -288,7 +288,7 @@ impl App {
             ];
             let n = self.characters.len();
             self.characters.push(Character {
-                name: format!("{} {}", crate::tr("Figur"), n + 1),
+                name: format!("{} {}", crate::tr("Character"), n + 1),
                 color: palette[n % palette.len()],
                 portrait: None,
             });

@@ -20,12 +20,12 @@ fn base(text: &str) -> TextStyle {
     }
 }
 
-pub const TEMPLATE_CATEGORIES: [&str; 5] = ["Gaming", "Titel", "Untertitel", "Social", "Hinweis"];
+pub const TEMPLATE_CATEGORIES: [&str; 5] = ["Gaming", "Title", "Captions", "Social", "Note"];
 
 pub static TEMPLATES: &[TextTemplate] = &[
     TextTemplate {
         id: "victory",
-        name: "Sieg",
+        name: "Victory",
         category: "Gaming",
         text: "VICTORY!",
         intro: Some("pop"),
@@ -91,7 +91,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
         id: "thumbnail",
         name: "Thumbnail",
         category: "Gaming",
-        text: "KRASS?!",
+        text: "NO WAY?!",
         intro: Some("zoom-in"),
         style: || TextStyle {
             size: 1e+02,
@@ -100,7 +100,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
             outline: Some((1e+01, [0, 0, 0, 255])),
             shadow: true,
             uppercase: true,
-            ..base("KRASS?!")
+            ..base("NO WAY?!")
         },
     },
     TextTemplate {
@@ -136,7 +136,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
     },
     TextTemplate {
         id: "esports",
-        name: "E-Sport",
+        name: "Esports",
         category: "Gaming",
         text: "TEAM CUTLINE",
         intro: Some("slide-left"),
@@ -168,7 +168,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
     },
     TextTemplate {
         id: "level-up",
-        name: "Level Up",
+        name: "Level up",
         category: "Gaming",
         text: "LEVEL UP",
         intro: Some("rise"),
@@ -184,9 +184,9 @@ pub static TEMPLATES: &[TextTemplate] = &[
     },
     TextTemplate {
         id: "subscribe-box",
-        name: "Abo-Hinweis",
+        name: "Subscribe callout",
         category: "Gaming",
-        text: "ABONNIEREN",
+        text: "SUBSCRIBE",
         intro: Some("pop"),
         style: || TextStyle {
             size: 6e+01,
@@ -195,27 +195,27 @@ pub static TEMPLATES: &[TextTemplate] = &[
             background: Some([230, 30, 40, 255]),
             shadow: false,
             uppercase: false,
-            ..base("ABONNIEREN")
+            ..base("SUBSCRIBE")
         },
     },
     TextTemplate {
         id: "headline",
-        name: "Schlagzeile",
-        category: "Titel",
-        text: "SCHLAGZEILE",
+        name: "Headline",
+        category: "Title",
+        text: "HEADLINE",
         intro: Some("pop"),
         style: || TextStyle {
             size: 110.0,
             bold: true,
             uppercase: true,
             outline: Some((6.0, [0, 0, 0, 255])),
-            ..base("Schlagzeile")
+            ..base("Headline")
         },
     },
     TextTemplate {
         id: "cinema-title",
-        name: "Kinotitel",
-        category: "Titel",
+        name: "Movie title",
+        category: "Title",
         text: "D E R  F I L M",
         intro: Some("fade"),
         style: || TextStyle {
@@ -230,7 +230,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
     TextTemplate {
         id: "impact",
         name: "Impact",
-        category: "Titel",
+        category: "Title",
         text: "WOW!",
         intro: Some("zoom-in"),
         style: || TextStyle {
@@ -244,7 +244,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
     TextTemplate {
         id: "minimal",
         name: "Minimal",
-        category: "Titel",
+        category: "Title",
         text: "minimal",
         intro: Some("rise"),
         style: || TextStyle {
@@ -257,7 +257,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
     TextTemplate {
         id: "neon",
         name: "Neon",
-        category: "Titel",
+        category: "Title",
         text: "NEON",
         intro: Some("fade"),
         style: || TextStyle {
@@ -270,77 +270,77 @@ pub static TEMPLATES: &[TextTemplate] = &[
     },
     TextTemplate {
         id: "chapter",
-        name: "Kapitel",
-        category: "Titel",
-        text: "Kapitel 1",
+        name: "Chapter",
+        category: "Title",
+        text: "Chapter 1",
         intro: Some("slide-left"),
         style: || TextStyle {
             size: 80.0,
             italic: true,
             font_family: Some("Georgia".into()),
             background: Some([0, 0, 0, 160]),
-            ..base("Kapitel 1")
+            ..base("Chapter 1")
         },
     },
     TextTemplate {
         id: "subtitle-clean",
-        name: "Klar",
-        category: "Untertitel",
-        text: "So sehen Untertitel aus",
+        name: "Clear",
+        category: "Captions",
+        text: "This is how captions look",
         intro: None,
         style: || TextStyle {
             size: 54.0,
             outline: Some((3.0, [0, 0, 0, 255])),
             shadow: false,
-            ..base("So sehen Untertitel aus")
+            ..base("This is how captions look")
         },
     },
     TextTemplate {
         id: "subtitle-box",
-        name: "Mit Fläche",
-        category: "Untertitel",
-        text: "Untertitel mit Fläche",
+        name: "With box",
+        category: "Captions",
+        text: "Captions with a box",
         intro: None,
         style: || TextStyle {
             size: 50.0,
             background: Some([0, 0, 0, 170]),
             shadow: false,
-            ..base("Untertitel mit Fläche")
+            ..base("Captions with a box")
         },
     },
     TextTemplate {
         id: "subtitle-yellow",
-        name: "Gelb",
-        category: "Untertitel",
-        text: "Gelbe Untertitel",
+        name: "Yellow",
+        category: "Captions",
+        text: "Yellow captions",
         intro: None,
         style: || TextStyle {
             size: 54.0,
             bold: true,
             color: [255, 221, 0, 255],
             outline: Some((3.0, [0, 0, 0, 255])),
-            ..base("Gelbe Untertitel")
+            ..base("Yellow captions")
         },
     },
     TextTemplate {
         id: "karaoke",
         name: "Karaoke",
-        category: "Untertitel",
-        text: "Sing mit",
+        category: "Captions",
+        text: "Sing along",
         intro: Some("pop"),
         style: || TextStyle {
             size: 64.0,
             bold: true,
             color: [80, 220, 255, 255],
             outline: Some((4.0, [255, 255, 255, 255])),
-            ..base("Sing mit")
+            ..base("Sing along")
         },
     },
     TextTemplate {
         id: "follow",
-        name: "Folgen",
+        name: "Follow",
         category: "Social",
-        text: "Folgen für mehr",
+        text: "Follow for more",
         intro: Some("slide-up"),
         style: || TextStyle {
             size: 58.0,
@@ -348,38 +348,38 @@ pub static TEMPLATES: &[TextTemplate] = &[
             color: [20, 20, 20, 255],
             background: Some([255, 255, 255, 235]),
             shadow: false,
-            ..base("Folgen für mehr")
+            ..base("Follow for more")
         },
     },
     TextTemplate {
         id: "comment",
-        name: "Kommentar",
+        name: "Comment",
         category: "Social",
-        text: "Was meint ihr?",
+        text: "What do you think?",
         intro: Some("pop"),
         style: || TextStyle {
             size: 56.0,
             color: [255, 255, 255, 255],
             background: Some([255, 59, 92, 230]),
             shadow: false,
-            ..base("Was meint ihr?")
+            ..base("What do you think?")
         },
     },
     TextTemplate {
         id: "pov",
         name: "POV",
         category: "Social",
-        text: "POV: du schneidest mit Cutline",
+        text: "POV: you edit with Cutline",
         intro: Some("fade"),
         style: || TextStyle {
             size: 52.0,
             outline: Some((2.0, [0, 0, 0, 200])),
-            ..base("POV: du schneidest mit Cutline")
+            ..base("POV: you edit with Cutline")
         },
     },
     TextTemplate {
         id: "price",
-        name: "Preis",
+        name: "Price",
         category: "Social",
         text: "−30 %",
         intro: Some("zoom-in"),
@@ -394,23 +394,23 @@ pub static TEMPLATES: &[TextTemplate] = &[
     },
     TextTemplate {
         id: "note",
-        name: "Hinweis",
-        category: "Hinweis",
-        text: "Hinweis",
+        name: "Note",
+        category: "Note",
+        text: "Note",
         intro: Some("slide-right"),
         style: || TextStyle {
             size: 46.0,
             color: [20, 20, 20, 255],
             background: Some([255, 214, 0, 240]),
             shadow: false,
-            ..base("Hinweis")
+            ..base("Note")
         },
     },
     TextTemplate {
         id: "lower-third",
-        name: "Bauchbinde",
-        category: "Hinweis",
-        text: "Name Nachname\nFunktion",
+        name: "Lower third",
+        category: "Note",
+        text: "First Last\nRole",
         intro: Some("slide-left"),
         style: || TextStyle {
             size: 44.0,
@@ -418,13 +418,13 @@ pub static TEMPLATES: &[TextTemplate] = &[
             background: Some([15, 15, 18, 210]),
             shadow: false,
             line_spacing: 1.2,
-            ..base("Name Nachname\nFunktion")
+            ..base("First Last\nRole")
         },
     },
     TextTemplate {
         id: "location",
-        name: "Ort",
-        category: "Hinweis",
+        name: "Location~place",
+        category: "Note",
         text: "Berlin, 2026",
         intro: Some("rise"),
         style: || TextStyle {
@@ -436,9 +436,9 @@ pub static TEMPLATES: &[TextTemplate] = &[
     },
     TextTemplate {
         id: "warning",
-        name: "Achtung",
-        category: "Hinweis",
-        text: "ACHTUNG",
+        name: "Attention",
+        category: "Note",
+        text: "ATTENTION",
         intro: Some("swing"),
         style: || TextStyle {
             size: 90.0,
@@ -446,28 +446,28 @@ pub static TEMPLATES: &[TextTemplate] = &[
             uppercase: true,
             color: [255, 214, 0, 255],
             outline: Some((5.0, [0, 0, 0, 255])),
-            ..base("ACHTUNG")
+            ..base("ATTENTION")
         },
     },
     TextTemplate {
         id: "chapter-title",
-        name: "Kapitel-Titel",
-        category: "Titel",
-        text: "KAPITEL 2",
+        name: "Chapter title",
+        category: "Title",
+        text: "CHAPTER 2",
         intro: Some("wipe-fade"),
         style: || TextStyle {
             size: 96.0,
             font_family: Some("Fjalla One".into()),
             color: [255, 255, 255, 255],
             shadow: true,
-            ..base("KAPITEL 2")
+            ..base("CHAPTER 2")
         },
     },
     TextTemplate {
         id: "part-two",
-        name: "Teil 2",
-        category: "Titel",
-        text: "TEIL 2",
+        name: "Part 2",
+        category: "Title",
+        text: "PART 2",
         intro: Some("stamp"),
         style: || TextStyle {
             size: 120.0,
@@ -475,14 +475,14 @@ pub static TEMPLATES: &[TextTemplate] = &[
             color: [255, 214, 0, 255],
             outline: Some((8.0, [0, 0, 0, 255])),
             shadow: true,
-            ..base("TEIL 2")
+            ..base("PART 2")
         },
     },
     TextTemplate {
         id: "quote",
-        name: "Zitat",
-        category: "Titel",
-        text: "„Gute Ideen brauchen Zeit.“",
+        name: "Quote",
+        category: "Title",
+        text: "“Good ideas take time.”",
         intro: Some("fade"),
         style: || TextStyle {
             size: 72.0,
@@ -490,28 +490,28 @@ pub static TEMPLATES: &[TextTemplate] = &[
             color: [250, 245, 235, 255],
             shadow: true,
             line_spacing: 1.2,
-            ..base("„Gute Ideen brauchen Zeit.“")
+            ..base("“Good ideas take time.”")
         },
     },
     TextTemplate {
         id: "handwritten",
-        name: "Handschrift",
-        category: "Titel",
-        text: "Mein Tag",
+        name: "Handwriting",
+        category: "Title",
+        text: "My day",
         intro: Some("tilt-in"),
         style: || TextStyle {
             size: 90.0,
             font_family: Some("Permanent Marker".into()),
             color: [255, 255, 255, 255],
             shadow: true,
-            ..base("Mein Tag")
+            ..base("My day")
         },
     },
     TextTemplate {
         id: "script",
-        name: "Schreibschrift",
-        category: "Titel",
-        text: "Sommer",
+        name: "Script",
+        category: "Title",
+        text: "Summer",
         intro: Some("unfold"),
         style: || TextStyle {
             size: 100.0,
@@ -519,14 +519,14 @@ pub static TEMPLATES: &[TextTemplate] = &[
             color: [255, 110, 170, 255],
             outline: Some((4.0, [255, 255, 255, 255])),
             shadow: true,
-            ..base("Sommer")
+            ..base("Summer")
         },
     },
     TextTemplate {
         id: "neon-sign",
-        name: "Neonschild",
-        category: "Titel",
-        text: "NACHTS",
+        name: "Neon sign",
+        category: "Title",
+        text: "AT NIGHT",
         intro: Some("flicker"),
         style: || TextStyle {
             size: 110.0,
@@ -534,21 +534,21 @@ pub static TEMPLATES: &[TextTemplate] = &[
             color: [90, 255, 240, 255],
             outline: Some((4.0, [0, 40, 70, 255])),
             shadow: true,
-            ..base("NACHTS")
+            ..base("AT NIGHT")
         },
     },
     TextTemplate {
         id: "credits-line",
-        name: "Abspann",
-        category: "Titel",
-        text: "Schnitt: Alex Muster",
+        name: "Credits",
+        category: "Title",
+        text: "Edited by Alex Sample",
         intro: Some("fade"),
         style: || TextStyle {
             size: 54.0,
             font_family: Some("DM Serif Display".into()),
             color: [235, 235, 235, 255],
             shadow: false,
-            ..base("Schnitt: Alex Muster")
+            ..base("Edited by Alex Sample")
         },
     },
     TextTemplate {
@@ -568,7 +568,7 @@ pub static TEMPLATES: &[TextTemplate] = &[
     },
     TextTemplate {
         id: "boss-fight",
-        name: "Bossfight",
+        name: "Boss fight",
         category: "Gaming",
         text: "BOSSFIGHT",
         intro: Some("punch"),
@@ -583,9 +583,9 @@ pub static TEMPLATES: &[TextTemplate] = &[
     },
     TextTemplate {
         id: "new-video",
-        name: "Neues Video",
+        name: "New video",
         category: "Social",
-        text: "NEUES VIDEO",
+        text: "NEW VIDEO",
         intro: Some("snap-left"),
         style: || TextStyle {
             size: 80.0,
@@ -593,14 +593,14 @@ pub static TEMPLATES: &[TextTemplate] = &[
             color: [255, 255, 255, 255],
             background: Some([230, 30, 40, 255]),
             shadow: false,
-            ..base("NEUES VIDEO")
+            ..base("NEW VIDEO")
         },
     },
     TextTemplate {
         id: "did-you-know",
-        name: "Wusstest du?",
+        name: "Did you know?",
         category: "Social",
-        text: "Wusstest du?",
+        text: "Did you know?",
         intro: Some("bounce-in"),
         style: || TextStyle {
             size: 64.0,
@@ -608,14 +608,14 @@ pub static TEMPLATES: &[TextTemplate] = &[
             color: [20, 20, 24, 255],
             background: Some([255, 214, 0, 245]),
             shadow: false,
-            ..base("Wusstest du?")
+            ..base("Did you know?")
         },
     },
     TextTemplate {
         id: "follow-more",
-        name: "Folge für mehr",
+        name: "Follow for more!",
         category: "Social",
-        text: "Folge für mehr",
+        text: "Follow for more!",
         intro: Some("snap-up"),
         style: || TextStyle {
             size: 64.0,
@@ -623,12 +623,12 @@ pub static TEMPLATES: &[TextTemplate] = &[
             color: [255, 255, 255, 255],
             outline: Some((5.0, [90, 0, 160, 255])),
             shadow: true,
-            ..base("Folge für mehr")
+            ..base("Follow for more!")
         },
     },
     TextTemplate {
         id: "big-number",
-        name: "Große Zahl",
+        name: "Big number",
         category: "Social",
         text: "1.000.000",
         intro: Some("elastic"),
@@ -643,9 +643,9 @@ pub static TEMPLATES: &[TextTemplate] = &[
     },
     TextTemplate {
         id: "price-tag",
-        name: "Preisschild",
+        name: "Price tag",
         category: "Social",
-        text: "NUR 9,99 €",
+        text: "ONLY $9.99",
         intro: Some("stamp"),
         style: || TextStyle {
             size: 90.0,
@@ -653,13 +653,13 @@ pub static TEMPLATES: &[TextTemplate] = &[
             color: [20, 20, 20, 255],
             background: Some([255, 214, 0, 255]),
             shadow: false,
-            ..base("NUR 9,99 €")
+            ..base("ONLY $9.99")
         },
     },
     TextTemplate {
         id: "name-tag",
-        name: "Namensschild",
-        category: "Hinweis",
+        name: "Name tag",
+        category: "Note",
         text: "Alex Muster\nCreator",
         intro: Some("snap-left"),
         style: || TextStyle {
@@ -675,9 +675,9 @@ pub static TEMPLATES: &[TextTemplate] = &[
     },
     TextTemplate {
         id: "caution",
-        name: "Vorsicht",
-        category: "Hinweis",
-        text: "VORSICHT!",
+        name: "Caution",
+        category: "Note",
+        text: "CAUTION!",
         intro: Some("shake-in"),
         style: || TextStyle {
             size: 80.0,
@@ -685,13 +685,13 @@ pub static TEMPLATES: &[TextTemplate] = &[
             color: [20, 20, 20, 255],
             background: Some([255, 200, 0, 255]),
             shadow: false,
-            ..base("VORSICHT!")
+            ..base("CAUTION!")
         },
     },
     TextTemplate {
         id: "place-time",
-        name: "Ort & Zeit",
-        category: "Hinweis",
+        name: "Place & time",
+        category: "Note",
         text: "Hamburg · 07:30",
         intro: Some("wipe-fade"),
         style: || TextStyle {
@@ -723,7 +723,7 @@ pub struct TextEffect {
 pub static TEXT_EFFECTS: &[TextEffect] = &[
     TextEffect {
         id: "plain",
-        name: "Schlicht",
+        name: "Plain",
         apply: |s| {
             s.outline = None;
             s.background = None;
@@ -733,7 +733,7 @@ pub static TEXT_EFFECTS: &[TextEffect] = &[
     },
     TextEffect {
         id: "shadow",
-        name: "Schatten",
+        name: "Shadow",
         apply: |s| {
             s.outline = None;
             s.background = None;
@@ -742,7 +742,7 @@ pub static TEXT_EFFECTS: &[TextEffect] = &[
     },
     TextEffect {
         id: "outline-black",
-        name: "Kontur",
+        name: "Outline",
         apply: |s| {
             s.outline = Some((4.0, [0, 0, 0, 255]));
             s.background = None;
@@ -752,7 +752,7 @@ pub static TEXT_EFFECTS: &[TextEffect] = &[
     },
     TextEffect {
         id: "outline-white",
-        name: "Kontur hell",
+        name: "Light outline",
         apply: |s| {
             s.outline = Some((4.0, [255, 255, 255, 255]));
             s.background = None;
@@ -762,7 +762,7 @@ pub static TEXT_EFFECTS: &[TextEffect] = &[
     },
     TextEffect {
         id: "yellow",
-        name: "Gelb",
+        name: "Yellow",
         apply: |s| {
             s.color = [255, 221, 0, 255];
             s.outline = Some((3.0, [0, 0, 0, 255]));
@@ -771,7 +771,7 @@ pub static TEXT_EFFECTS: &[TextEffect] = &[
     },
     TextEffect {
         id: "neon-pink",
-        name: "Neon Pink",
+        name: "Neon pink",
         apply: |s| {
             s.color = [255, 80, 220, 255];
             s.outline = Some((2.0, [255, 210, 250, 255]));
@@ -781,7 +781,7 @@ pub static TEXT_EFFECTS: &[TextEffect] = &[
     },
     TextEffect {
         id: "neon-blue",
-        name: "Neon Blau",
+        name: "Neon blue",
         apply: |s| {
             s.color = [70, 200, 255, 255];
             s.outline = Some((2.0, [210, 245, 255, 255]));
@@ -791,7 +791,7 @@ pub static TEXT_EFFECTS: &[TextEffect] = &[
     },
     TextEffect {
         id: "box-dark",
-        name: "Fläche dunkel",
+        name: "Dark box",
         apply: |s| {
             s.background = Some([0, 0, 0, 180]);
             s.outline = None;
@@ -801,7 +801,7 @@ pub static TEXT_EFFECTS: &[TextEffect] = &[
     },
     TextEffect {
         id: "box-light",
-        name: "Fläche hell",
+        name: "Light box",
         apply: |s| {
             s.background = Some([255, 255, 255, 235]);
             s.outline = None;
@@ -811,7 +811,7 @@ pub static TEXT_EFFECTS: &[TextEffect] = &[
     },
     TextEffect {
         id: "box-red",
-        name: "Fläche rot",
+        name: "Red box",
         apply: |s| {
             s.background = Some([230, 40, 40, 255]);
             s.outline = None;
@@ -821,7 +821,7 @@ pub static TEXT_EFFECTS: &[TextEffect] = &[
     },
     TextEffect {
         id: "box-yellow",
-        name: "Marker",
+        name: "Markers",
         apply: |s| {
             s.background = Some([255, 214, 0, 240]);
             s.outline = None;
@@ -861,7 +861,7 @@ mod tests {
         for e in TEXT_EFFECTS {
             let mut s = TextStyle::default();
             (e.apply)(&mut s);
-            assert_eq!(s.text, "Standardtext");
+            assert_eq!(s.text, "Default text");
             if let Some((other, _)) = looks.iter().find(|(id, l)| *l == s || *id == e.id) {
                 panic!("{} repeats {other}", e.id);
             }

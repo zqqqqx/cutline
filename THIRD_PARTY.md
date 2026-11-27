@@ -11,13 +11,13 @@
 - License: CC0-1.0
 - Author: Cutline project
 
-## Effects and filters (cutline.effekte)
+## Effects and filters (cutline.effects)
 
 - License: CC0-1.0
 - Author: Cutline project
 - Source: https://github.com/zqqqqx/cutline
 
-## Animated elements (cutline.elemente)
+## Animated elements (cutline.elements)
 
 - License: CC0-1.0
 - Author: Cutline project
@@ -39,7 +39,7 @@ Different details:
 - Author: Cutline project
 - Source: https://github.com/zqqqqx/cutline
 
-## Transitions (cutline.uebergaenge)
+## Transitions (cutline.transitions)
 
 - License: CC0-1.0
 - Author: Cutline project

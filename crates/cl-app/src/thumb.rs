@@ -34,7 +34,7 @@ pub enum Bg {
 }
 
 const BG_NAMES: [(Bg, &str); 4] =
-    [(Bg::Original, "Original"), (Bg::Blur, "Weichgezeichnet"), (Bg::Dark, "Abgedunkelt"), (Bg::Color, "Farbe")];
+    [(Bg::Original, "Original"), (Bg::Blur, "Blurred"), (Bg::Dark, "Darkened"), (Bg::Color, "Color")];
 
 /// Settings without text and position; kept as last used values.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -98,7 +98,7 @@ fn contain(w: u32, h: u32) -> (u32, u32) {
 
 /// Settings → helper project 1280×720, two frames long. Layers from the bottom: fill (other
 /// aspect ratio) or color area, image, person, text. `frame`: still as video, `matte`:
-/// its mask (without one no person), `color`: color area for the „Farbe“ background,
+/// its mask (without one no person), `color`: color area for the „Color“ background,
 /// `measure`: width and height of a text in pixels.
 pub fn project(
     o: &Opts,
@@ -226,7 +226,7 @@ pub fn first_png(video: &Path, out: &Path) -> std::result::Result<(), String> {
         .arg(out)
         .status()
         .is_ok_and(|s| s.success());
-    ok.then_some(()).ok_or_else(|| "Thumbnail konnte nicht gespeichert werden".into())
+    ok.then_some(()).ok_or_else(|| "Thumbnail could not be saved".into())
 }
 
 /// Thumbnail for `w` from `src` to `out` (PNG). Still and mask per position of the current
@@ -312,7 +312,7 @@ impl App {
 
     pub fn thumb_open(&mut self) {
         let Ok(dir) = tempfile::Builder::new().prefix("cutline-thumb").tempdir() else {
-            self.toast_err("Thumbnail konnte nicht gespeichert werden");
+            self.toast_err("Thumbnail could not be saved");
             return;
         };
         self.thumb = Some(ThumbWin {
@@ -337,10 +337,10 @@ impl App {
     pub fn thumb_save(&mut self, ctx: &egui::Context, out: PathBuf) {
         let (Some(want), Some(w)) = (self.thumb_want(), self.thumb.as_ref()) else { return };
         let (src, fonts, models, dir) = (self.project.clone(), self.font_files(), self.thumb_models(), w.dir.clone());
-        self.tasks.spawn(ctx, "thumb:save", "Thumbnail wird erstellt …", move |_, cancel| {
+        self.tasks.spawn(ctx, "thumb:save", "Creating thumbnail …", move |_, cancel| {
             match render(&src, &want, &fonts, models.as_ref(), dir.path(), &out, cancel) {
                 Ok(()) => TaskDone::Run(Box::new(move |app: &mut App| {
-                    app.toast(format!("Thumbnail gespeichert: {}", out.display()));
+                    app.toast(format!("Thumbnail saved: {}", out.display()));
                     crate::home::reveal(&out);
                 })),
                 Err(e) => TaskDone::Failed(e),
@@ -368,7 +368,7 @@ impl App {
         w.asked = Some(want.clone());
         let dir = w.dir.clone();
         let (src, fonts, models, ctx2) = (self.project.clone(), self.font_files(), self.thumb_models(), ctx.clone());
-        self.tasks.spawn(ctx, "thumb", "Thumbnail-Vorschau …", move |_, cancel| {
+        self.tasks.spawn(ctx, "thumb", "Thumbnail preview …", move |_, cancel| {
             let t0 = std::time::Instant::now();
             let png = dir.path().join("preview.png");
             let img = render(&src, &want, &fonts, models.as_ref(), dir.path(), &png, cancel)
@@ -380,7 +380,7 @@ impl App {
                     let ci = egui::ColorImage::from_rgba_unmultiplied([img.width() as usize, img.height() as usize], &img);
                     TaskDone::Run(Box::new(move |app: &mut App| {
                         if let Some(w) = app.thumb.as_mut() {
-                            log::info!(target: "thumbnail", "Vorschau in {ms} ms");
+                            log::info!(target: "thumbnail", "preview in {ms} ms");
                             w.tex = Some(ctx2.load_texture("thumb", ci, egui::TextureOptions::LINEAR));
                         }
                     }))
@@ -427,21 +427,21 @@ impl App {
                     ui.vertical(|ui| {
                         ui.set_width(300.0);
                         egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                            ui.label(egui::RichText::new(crate::tr("Bild")).strong());
-                            theme::row(ui, "Stelle", |ui| Slider::new(&mut w.at, 0.0..=dur).suffix(" s").decimals(1).show(ui));
-                            theme::section(ui, "Person freistellen");
+                            ui.label(egui::RichText::new(crate::tr("Image")).strong());
+                            theme::row(ui, "Frame~place", |ui| Slider::new(&mut w.at, 0.0..=dur).suffix(" s").decimals(1).show(ui));
+                            theme::section(ui, "Cut out person");
                             ui.add_enabled_ui(models, |ui| {
                                 let mut on = o.person && models;
-                                widgets::toggle_row(ui, "Person freistellen", &mut on);
+                                widgets::toggle_row(ui, "Cut out person", &mut on);
                                 o.person = on;
                             })
                             .response
                             .on_disabled_hover_text(crate::tr(format!(
-                                "Benötigt: {} (Einstellungen → Modelle)",
+                                "Requires: {} (Settings → Models)",
                                 cl_analyze::CATALOG.iter().find(|c| c.id == "rvm").map_or("", |c| c.name)
                             )));
                             if o.person && models {
-                                theme::row(ui, "Hintergrund", |ui| {
+                                theme::row(ui, "Background", |ui| {
                                     let name = BG_NAMES.iter().find(|b| b.0 == o.bg).map_or("", |b| b.1);
                                     egui::ComboBox::from_id_salt("thumb-bg")
                                         .selected_text(crate::tr(name))
@@ -453,17 +453,17 @@ impl App {
                                         });
                                 });
                                 if o.bg == Bg::Color {
-                                    color_row(ui, "Farbe", &mut o.bg_color);
+                                    color_row(ui, "Color", &mut o.bg_color);
                                 }
-                                widgets::toggle_row(ui, "Kontur", &mut o.outline);
+                                widgets::toggle_row(ui, "Outline", &mut o.outline);
                                 if o.outline {
-                                    color_row(ui, "Farbe", &mut o.outline_color);
-                                    theme::row(ui, "Stärke", |ui| Slider::new(&mut o.outline_width, 0.0..=1.0).percent().default(0.4).show(ui));
+                                    color_row(ui, "Color", &mut o.outline_color);
+                                    theme::row(ui, "Strength", |ui| Slider::new(&mut o.outline_width, 0.0..=1.0).percent().default(0.4).show(ui));
                                 }
                             }
                             theme::section(ui, "Text");
                             ui.add(egui::TextEdit::multiline(&mut w.text).desired_rows(2).desired_width(f32::INFINITY));
-                            theme::row(ui, "Vorlage", |ui| {
+                            theme::row(ui, "Preset", |ui| {
                                 egui::ComboBox::from_id_salt("thumb-tpl")
                                     .selected_text(crate::tr(template(&o.template).name))
                                     .width((ui.available_width() - 12.0).max(60.0))
@@ -475,12 +475,12 @@ impl App {
                                         }
                                     });
                             });
-                            theme::row(ui, "Größe", |ui| Slider::new(&mut o.size, 40.0..=240.0).default(120.0).decimals(0).show(ui));
-                            theme::row(ui, "Lage", |ui| grid(ui, &mut o.pos));
+                            theme::row(ui, "Size", |ui| Slider::new(&mut o.size, 40.0..=240.0).default(120.0).decimals(0).show(ui));
+                            theme::row(ui, "Placement", |ui| grid(ui, &mut o.pos));
                         });
                     });
                 });
-                let (main, cancel) = crate::dialog::buttons(ui, theme::primary("PNG speichern"), !saving);
+                let (main, cancel) = crate::dialog::buttons(ui, theme::primary("Save PNG"), !saving);
                 save = main || (enter && !saving);
                 if cancel {
                     open = false;
@@ -540,7 +540,7 @@ mod tests {
     fn media(w: u32, h: u32, kind: MediaKind) -> MediaRef {
         MediaRef {
             id: MediaId::new(),
-            path: PathBuf::from("bild.mp4"),
+            path: PathBuf::from("frame.mp4"),
             kind,
             duration: Time::from_secs_f64(0.07),
             width: w,
@@ -569,10 +569,10 @@ mod tests {
                 let c = &t.clips[0];
                 match &c.content {
                     ClipContent::Text(_) => "text",
-                    ClipContent::Media { kind: MediaKind::Image, .. } => "farbe",
+                    ClipContent::Media { kind: MediaKind::Image, .. } => "color",
                     _ if c.fx.cutout.is_some() => "person",
                     _ if c.transform.scale > 1.01 => "fuellung",
-                    _ => "bild",
+                    _ => "frame",
                 }
             })
             .collect()
@@ -583,31 +583,31 @@ mod tests {
         let wide = media(1280, 720, MediaKind::Video);
         let tall = media(406, 720, MediaKind::Video);
         let color = media(16, 16, MediaKind::Image);
-        let matte = Path::new("maske.mkv");
+        let matte = Path::new("mask.mkv");
         let o = Opts::default();
         let p = project(&o, "", &wide, None, None, &rough);
         assert_eq!((p.settings.width, p.settings.height), (W, H));
-        assert_eq!(kinds(&p), ["bild"], "text empty, person off → only the image");
-        assert_eq!(kinds(&project(&o, "  \n", &wide, Some(matte), None, &rough)), ["bild"], "person off despite the mask");
+        assert_eq!(kinds(&p), ["frame"], "text empty, person off → only the image");
+        assert_eq!(kinds(&project(&o, "  \n", &wide, Some(matte), None, &rough)), ["frame"], "person off despite the mask");
         // other aspect ratio: blurred fill under the fitted image
-        let p = project(&o, "Hallo", &tall, None, None, &rough);
-        assert_eq!(kinds(&p), ["fuellung", "bild", "text"]);
+        let p = project(&o, "Hello", &tall, None, None, &rough);
+        assert_eq!(kinds(&p), ["fuellung", "frame", "text"]);
         assert!(p.timeline.tracks[0].clips[0].fx.effects.iter().any(|e| e.id == "blur"));
         assert!(p.media.iter().any(|m| m.id == tall.id));
         // Person with outline above the blurred image
         let on = Opts { person: true, ..o.clone() };
-        let p = project(&on, "Hallo", &wide, Some(matte), Some(&color), &rough);
-        assert_eq!(kinds(&p), ["bild", "person", "text"]);
+        let p = project(&on, "Hello", &wide, Some(matte), Some(&color), &rough);
+        assert_eq!(kinds(&p), ["frame", "person", "text"]);
         assert!(p.timeline.tracks[0].clips[0].fx.effects.iter().any(|e| e.id == "blur"));
         assert!(matches!(p.timeline.tracks[1].clips[0].fx.person, Some(PersonFx::Outline { transparent: true, .. })));
         // without outline: person without the person effect (transparent)
         let p = project(&Opts { outline: false, ..on.clone() }, "", &wide, Some(matte), None, &rough);
         assert!(p.timeline.tracks[1].clips[0].fx.person.is_none());
         // model missing (no mask): no cutout layer
-        assert_eq!(kinds(&project(&on, "", &wide, None, None, &rough)), ["bild"]);
-        // „Farbe“ background: color area instead of the image, also with another aspect ratio
+        assert_eq!(kinds(&project(&on, "", &wide, None, None, &rough)), ["frame"]);
+        // „Color“ background: color area instead of the image, also with another aspect ratio
         let c = Opts { bg: Bg::Color, ..on.clone() };
-        assert_eq!(kinds(&project(&c, "", &tall, Some(matte), Some(&color), &rough)), ["farbe", "person"]);
+        assert_eq!(kinds(&project(&c, "", &tall, Some(matte), Some(&color), &rough)), ["color", "person"]);
         // darkened: image darker, the person above unchanged
         let p = project(&Opts { bg: Bg::Dark, ..on }, "", &wide, Some(matte), None, &rough);
         assert!(p.timeline.tracks[0].clips[0].fx.adjust.brightness < 0.0);
@@ -617,7 +617,7 @@ mod tests {
     #[test]
     fn text_stays_inside_the_frame_for_every_grid_cell() {
         let wide = media(1280, 720, MediaKind::Video);
-        for text in ["KRASS?!", "Zwei\nZeilen", "Ein sehr langer Titel, der nicht in eine Zeile passt"] {
+        for text in ["NO WAY?!", "Two\nlines", "A very long title that does not fit on one line"] {
             for pos in 0..9u8 {
                 let o = Opts { pos, size: 200.0, ..Default::default() };
                 let p = project(&o, text, &wide, None, None, &rough);
@@ -653,7 +653,7 @@ mod tests {
 
     fn source(dir: &Path, w: u32, h: u32) -> Project {
         let m = testsrc(dir, &format!("q{w}x{h}.mp4"), w, h);
-        let mut p = Project::new("Quelle");
+        let mut p = Project::new("Source");
         (p.settings.width, p.settings.height) = (w, h);
         let mut t = Track::new(TrackKind::Video);
         t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(2.0)));
@@ -676,14 +676,14 @@ mod tests {
         let (fonts, stop) = (Fonts::new(), AtomicBool::new(false));
         let src = source(dir.path(), 1920, 1080);
         let mut w = Want { rev: 0, at: Time::from_secs_f64(1.0), opts: Opts { pos: 4, ..Default::default() }, text: String::new() };
-        let (plain, with) = (dir.path().join("ohne.png"), dir.path().join("mit.png"));
+        let (plain, with) = (dir.path().join("without.png"), dir.path().join("mit.png"));
         let t0 = std::time::Instant::now();
         render(&src, &w, &fonts, None, dir.path(), &plain, &stop).unwrap();
         eprintln!("Thumbnail 16:9 mit Standbild: {} ms", t0.elapsed().as_millis());
         w.text = "TEST".into();
         let t0 = std::time::Instant::now();
         render(&src, &w, &fonts, None, dir.path(), &with, &stop).unwrap();
-        eprintln!("Thumbnail 16:9, Standbild schon da: {} ms", t0.elapsed().as_millis());
+        eprintln!("Thumbnail 16:9, still already there: {} ms", t0.elapsed().as_millis());
         let (a, b) = (rgba(&plain), rgba(&with));
         assert_eq!(b.dimensions(), (W, H));
         // Center (text position 4): clearly different from without text; corner unchanged
@@ -701,7 +701,7 @@ mod tests {
         assert!(diff(20, 20) < 4.0, "corner changed: {:.1}", diff(20, 20));
         // 9:16: blurred fill up to the borders
         let tall = source(dir.path(), 1080, 1920);
-        let out = dir.path().join("hoch.png");
+        let out = dir.path().join("high.png");
         let t0 = std::time::Instant::now();
         render(&tall, &w, &fonts, None, dir.path(), &out, &stop).unwrap();
         eprintln!("Thumbnail 9:16 mit Standbild: {} ms", t0.elapsed().as_millis());
@@ -723,7 +723,7 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let work = dir.path().join("arbeit");
+        let work = dir.path().join("work");
         std::fs::create_dir(&work).unwrap();
         let (fonts, stop) = (Fonts::new(), AtomicBool::new(false));
         let mut src = source(dir.path(), 640, 360);
@@ -756,7 +756,7 @@ mod tests {
         assert!(app.thumb.is_some(), "window open");
         app.thumb_opts.pos = 0;
         app.thumb_opts.outline = false;
-        app.thumb.as_mut().unwrap().text = "Hallo".into();
+        app.thumb.as_mut().unwrap().text = "Hello".into();
         for _ in 0..3 {
             let _ = ctx.run(Default::default(), |ctx| app.thumb_window(ctx));
         }

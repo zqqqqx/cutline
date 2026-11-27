@@ -124,14 +124,14 @@ fn every_op_applies_undoes_and_redoes_exactly() {
             let c = clip(p, a1);
             EditOp::SetClipTiming { clip: a1, start: c.start + s(0.5), duration: c.duration - s(1.0), source_in: s(0.25) }
         }),
-        Box::new(move |_| EditOp::RelinkMedia { media: video.id, path: PathBuf::from("neu/ört.mov") }),
+        Box::new(move |_| EditOp::RelinkMedia { media: video.id, path: PathBuf::from("new/ört.mov") }),
         Box::new(|_| EditOp::SetMarkers {
-            markers: vec![Marker { id: 9, at: s(3.0), duration: s(1.0), name: "Kapitel".into(), note: "Notiz".into(), color: 2 }],
+            markers: vec![Marker { id: 9, at: s(3.0), duration: s(1.0), name: "Chapter".into(), note: "Note~memo".into(), color: 2 }],
         }),
-        Box::new(move |p| EditOp::RenameTrack { track: track_of(p, a1), name: Some("  Sprache  ".into()) }),
+        Box::new(move |p| EditOp::RenameTrack { track: track_of(p, a1), name: Some("  Language  ".into()) }),
         Box::new(move |p| EditOp::RippleRange { track: track_of(p, v2), from: s(1.0), to: s(2.0), all_tracks: true }),
         Box::new(move |_| EditOp::Batch {
-            label: "Zwei".into(),
+            label: "Five".into(),
             ops: vec![EditOp::SetOpacity { clip: v2, opacity: 0.2 }, EditOp::Rename { name: "B".into() }],
         }),
     ];
@@ -146,7 +146,7 @@ fn every_op_applies_undoes_and_redoes_exactly() {
         let after = d.project().clone();
         assert_ne!(after, before, "{name} changed nothing");
         check(&after, name);
-        assert_eq!(roundtrip(&after), after, "{name}: Speichern+Laden");
+        assert_eq!(roundtrip(&after), after, "{name}: save+load");
         // the op itself is serializable (MCP/plugins send JSON)
         let back: EditOp = serde_json::from_str(&serde_json::to_string(&op).unwrap()).unwrap();
         assert_eq!(back, op, "{name}: Op-JSON");
@@ -156,7 +156,7 @@ fn every_op_applies_undoes_and_redoes_exactly() {
         d.redo().unwrap();
         assert_eq!(d.project(), &after, "{name}: Wiederholen");
     }
-    assert_eq!(seen.len(), VARIANTS, "jede Variante einmal: {seen:?}");
+    assert_eq!(seen.len(), VARIANTS, "each variant once: {seen:?}");
     // all the way back gives the initial project, all the way forward the final state again
     let end = d.project().clone();
     let n = d.undo_entries().len();
@@ -212,7 +212,7 @@ fn same_op_twice_deleted_clips_and_missing_tracks_fail_cleanly() {
 
 #[test]
 fn undo_and_redo_on_empty_history() {
-    let mut d = Document::new(Project::new("Leer"));
+    let mut d = Document::new(Project::new("Empty"));
     assert_eq!(d.undo(), Err(CoreError::NothingToUndo));
     assert_eq!(d.redo(), Err(CoreError::NothingToRedo));
     assert_eq!(d.step(-5), 0);
@@ -234,7 +234,7 @@ fn undo_and_redo_on_empty_history() {
 /// Every step is a full project copy: large projects keep fewer steps.
 #[test]
 fn history_shrinks_for_big_projects() {
-    let mut p = Project::new("Groß");
+    let mut p = Project::new("Large");
     let mut t = Track::new(TrackKind::Video);
     t.clips = (0..5000).map(|i| Clip::new(ClipContent::Text(TextStyle::default()), s(i as f64), s(1.0))).collect();
     p.timeline.tracks.push(t);
@@ -244,7 +244,7 @@ fn history_shrinks_for_big_projects() {
     }
     assert_eq!(d.undo_entries().len(), 20);
     // small projects: 100 steps as before
-    let mut d = Document::new(Project::new("Klein"));
+    let mut d = Document::new(Project::new("Small"));
     for i in 0..120 {
         apply(&mut d, EditOp::Rename { name: format!("{i}") });
     }
@@ -546,7 +546,7 @@ fn names_empty_long_emoji_and_rtl_survive_save() {
 
 #[test]
 fn ten_thousand_clips_stay_consistent() {
-    let mut p = Project::new("Groß");
+    let mut p = Project::new("Large");
     let m = media(MediaKind::Video, 3600.0);
     p.media.push(m.clone());
     let mut main = Track::new(TrackKind::Video);
@@ -575,7 +575,7 @@ fn ten_thousand_clips_stay_consistent() {
 #[test]
 fn zero_length_clip_is_dropped_on_load_and_missing_media_edits_safely() {
     // such things only come from broken/foreign files
-    let mut p = Project::new("Kaputt");
+    let mut p = Project::new("Broken");
     let mut main = Track::new(TrackKind::Video);
     main.main = true;
     let ghost = media(MediaKind::Video, 5.0); // not in the project
@@ -592,7 +592,7 @@ fn zero_length_clip_is_dropped_on_load_and_missing_media_edits_safely() {
     let mut d = Document::new(p);
     assert!(d.apply(EditOp::SetSpeed { clip: z, speed: 2.0 }, OpSource::Ui).is_err(), "dropped clip is gone");
     let c = d.project().find_clip(n).unwrap().1.clone();
-    assert_eq!(c.label(d.project()), "Medium fehlt");
+    assert_eq!(c.label(d.project()), "Media missing");
     // computations on a clip whose media is missing must not panic
     let _ = c.source_time(s(1.0));
     let _ = c.eval_at(Time::ZERO, 1920.0, 1080.0);

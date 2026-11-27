@@ -2,7 +2,7 @@
 //!
 //! Two sign-in paths, both with the user's credentials:
 //! - **Connect** (OAuth 2.0 with PKCE in the system browser, callback on 127.0.0.1): own
-//!   Epidemic account, full library per subscription, „Gefällt mir“ list.
+//!   Epidemic account, full library per subscription, „Liked“ list.
 //! - **API key** from the Developer Portal (`epidemic_live_…`), e.g. for partners.
 //!
 //! Only what the terms of use require is reported: an export with Epidemic music
@@ -48,10 +48,10 @@ pub enum Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::LoginExpired => f.write_str("Anmeldung abgelaufen – bitte neu verbinden"),
-            Error::RateLimited(Some(n)) => write!(f, "Limit erreicht, in {n} s wieder möglich"),
-            Error::RateLimited(None) => f.write_str("Limit erreicht, bitte später erneut versuchen"),
-            Error::TooFast => f.write_str("Zu schnell hintereinander geladen, bitte kurz warten"),
+            Error::LoginExpired => f.write_str("Sign-in expired – please reconnect"),
+            Error::RateLimited(Some(n)) => write!(f, "Limit reached, available again in {n} s"),
+            Error::RateLimited(None) => f.write_str("Limit reached, please try again later"),
+            Error::TooFast => f.write_str("Downloads too fast in a row, please wait a moment"),
             Error::Other(s) => f.write_str(s),
         }
     }
@@ -276,12 +276,12 @@ fn agent() -> ureq::Agent {
 fn err(e: ureq::Error, mode: AuthMode) -> Error {
     match e {
         ureq::Error::Status(401, _) if mode == AuthMode::Connect => Error::LoginExpired,
-        ureq::Error::Status(401, _) => "Schlüssel ungültig".into(),
-        ureq::Error::Status(403, _) => "Kein Zugriff: Der Titel ist in deinem Plan oder Abo nicht enthalten".into(),
+        ureq::Error::Status(401, _) => "Key invalid".into(),
+        ureq::Error::Status(403, _) => "No access: this track is not included in your plan or subscription".into(),
         ureq::Error::Status(406, _) => Error::TooFast,
         ureq::Error::Status(429, r) => Error::RateLimited(retry_after(r.header("Retry-After"))),
         ureq::Error::Status(c, r) => format!(
-            "Epidemic Sound antwortet mit {c}: {}",
+            "Epidemic Sound responds with {c}: {}",
             r.into_string()
                 .unwrap_or_default()
                 .chars()
@@ -289,7 +289,7 @@ fn err(e: ureq::Error, mode: AuthMode) -> Error {
                 .collect::<String>()
         )
         .into(),
-        ureq::Error::Transport(t) => format!("Keine Verbindung zu Epidemic Sound ({t})").into(),
+        ureq::Error::Transport(t) => format!("Can't reach Epidemic Sound ({t})").into(),
     }
 }
 
@@ -300,13 +300,13 @@ impl Client {
         let bearer = match cfg.mode {
             AuthMode::ApiKey => {
                 if cfg.api_key.trim().is_empty() {
-                    return Err("Kein API-Schlüssel eingetragen".into());
+                    return Err("No API key entered".into());
                 }
                 cfg.api_key.trim().to_string()
             }
             AuthMode::Connect => {
                 let Some(t) = cfg.tokens.clone() else {
-                    return Err("Nicht mit Epidemic Sound verbunden".into());
+                    return Err("Not connected to Epidemic Sound".into());
                 };
                 if t.expires_at <= now() + 20 {
                     let fresh = refresh(&cfg.client_id, &t.refresh_token)?;
@@ -390,7 +390,7 @@ impl Client {
         v.get("url")
             .and_then(|u| u.as_str())
             .map(String::from)
-            .ok_or_else(|| "Keine Vorhör-Adresse".into())
+            .ok_or_else(|| "No preview address".into())
     }
 
     /// Signed MP3 address (320 kbit/s with `high`).
@@ -405,7 +405,7 @@ impl Client {
         v.get("url")
             .and_then(|u| u.as_str())
             .map(String::from)
-            .ok_or_else(|| "Keine Download-Adresse".into())
+            .ok_or_else(|| "No download address".into())
     }
 
     /// Downloads the track as MP3 to `dest`.
@@ -437,7 +437,7 @@ impl Client {
             .unwrap_or_default()
     }
 
-    /// „Gefällt mir“ tracks of the connected account (Connect only).
+    /// „Liked“ tracks of the connected account (Connect only).
     pub fn liked(&self, offset: u32) -> Result<Page> {
         serde_json::from_value(self.get(
             "/v0/users/me/liked/tracks",
@@ -482,7 +482,7 @@ fn now() -> u64 {
 
 fn random_token(bytes: usize) -> String {
     let mut b = vec![0u8; bytes];
-    getrandom::getrandom(&mut b).expect("Zufallsquelle");
+    getrandom::getrandom(&mut b).expect("random source");
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(b)
 }
 
@@ -505,10 +505,10 @@ pub struct Login {
 
 pub fn start_login(client_id: &str) -> Result<Login> {
     if client_id.trim().is_empty() {
-        return Err("Client-ID fehlt".into());
+        return Err("Client ID missing".into());
     }
     let listener = TcpListener::bind(("127.0.0.1", REDIRECT_PORT))
-        .map_err(|e| format!("Port {REDIRECT_PORT} ist belegt ({e})"))?;
+        .map_err(|e| format!("Port {REDIRECT_PORT} is in use ({e})"))?;
     let (verifier, challenge) = pkce();
     let state = random_token(12);
     let enc = |s: &str| {
@@ -555,7 +555,7 @@ fn wait_for_callback(listener: &TcpListener, state: &str, until: std::time::Inst
             Ok((s, _)) => s,
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 if std::time::Instant::now() > until {
-                    return Err("Anmeldung abgebrochen (Zeit abgelaufen)".into());
+                    return Err("Sign-in canceled (timed out)".into());
                 }
                 std::thread::sleep(Duration::from_millis(100));
                 continue;
@@ -576,16 +576,16 @@ fn wait_for_callback(listener: &TcpListener, state: &str, until: std::time::Inst
         }
         let code = get("code");
         let html = if code.is_some() {
-            "Cutline ist mit Epidemic Sound verbunden. Du kannst dieses Fenster schließen."
+            "Cutline is connected to Epidemic Sound. You can close this window."
         } else {
-            "Anmeldung fehlgeschlagen. Bitte in Cutline erneut versuchen."
+            "Sign-in failed. Please try again in Cutline."
         };
         let body = format!("<!doctype html><meta charset=utf-8><title>Cutline</title><body style=\"font-family:sans-serif;background:#111;color:#eee;display:grid;place-items:center;height:90vh\"><p>{html}</p>");
         let _ = write!(&stream, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
         return code.ok_or_else(|| {
             get("error_description")
                 .or_else(|| get("error"))
-                .unwrap_or_else(|| "Ungültiger Rückruf".into())
+                .unwrap_or_else(|| "Invalid callback".into())
                 .into()
         });
     }
@@ -696,7 +696,7 @@ mod tests {
     #[test]
     fn a_broken_download_leaves_no_part_file() {
         let t = tempfile::tempdir().unwrap();
-        let dest = t.path().join("Vorrat/t1.mp3");
+        let dest = t.path().join("Tracks/t1.mp3");
         let broken = std::io::Read::chain(&b"ID3abc"[..], BrokenReader);
         assert!(save_whole(broken, &dest).is_err());
         assert!(!dest.exists() && !dest.with_extension("part").exists());
@@ -746,7 +746,7 @@ mod tests {
     fn statuses_become_typed_errors() {
         // Connect: 401 means sign in again, with API key "invalid"
         assert_eq!(err(status(401), AuthMode::Connect), Error::LoginExpired);
-        assert_eq!(err(status(401), AuthMode::ApiKey), Error::Other("Schlüssel ungültig".into()));
+        assert_eq!(err(status(401), AuthMode::ApiKey), Error::Other("Key invalid".into()));
         assert_eq!(err(status(406), AuthMode::Connect), Error::TooFast);
         assert_eq!(err(status(429), AuthMode::Connect), Error::RateLimited(None));
         let r: ureq::Response = "HTTP/1.1 429 Too Many Requests
@@ -773,8 +773,8 @@ Retry-After: 17
         assert_eq!(limit_wait(Some(0)), Duration::from_secs(1));
         assert_eq!(limit_wait(Some(12)), Duration::from_secs(12));
         assert_eq!(limit_wait(Some(999_999)), Duration::from_secs(3600));
-        assert_eq!(Error::RateLimited(Some(12)).to_string(), "Limit erreicht, in 12 s wieder möglich");
-        assert_eq!(Error::RateLimited(None).to_string(), "Limit erreicht, bitte später erneut versuchen");
+        assert_eq!(Error::RateLimited(Some(12)).to_string(), "Limit reached, available again in 12 s");
+        assert_eq!(Error::RateLimited(None).to_string(), "Limit reached, please try again later");
     }
 
     #[test]
@@ -963,9 +963,9 @@ Retry-After: 17
         // configuration: empty, unknown fields, user id stable
         let c: Config = serde_json::from_str("{}").unwrap();
         assert_eq!(c, Config::default());
-        let c: Config = serde_json::from_str(r#"{"api_key":"  ","mode":"ApiKey","neu":1}"#).unwrap();
+        let c: Config = serde_json::from_str(r#"{"api_key":"  ","mode":"ApiKey","new":1}"#).unwrap();
         assert!(!c.ready(), "spaces only are not a key");
-        assert!(serde_json::from_str::<Config>(r#"{"mode":"Zauber"}"#).is_err());
+        assert!(serde_json::from_str::<Config>(r#"{"mode":"Magic"}"#).is_err());
         let mut c = Config::default();
         c.ensure_user_id();
         let id = c.user_id.clone();
@@ -982,10 +982,10 @@ Retry-After: 17
     fn names_come_as_text_or_object_and_one_bad_track_does_not_spoil_the_page() {
         let p: Page = serde_json::from_str(
             r#"{"tracks":[
-                {"id":"a","title":"Eins","mainArtists":["Jon Björk","Ava"],"moods":[{"id":"m","name":"Epic"}],"genres":["Pop"]},
-                {"id":"b","title":"Zwei","mainArtists":[{"id":"x","name":"Mia"}]},
-                {"id":"c","title":{"kaputt":true}},
-                {"id":"d","title":"Vier"}
+                {"id":"a","title":"One","mainArtists":["Jon Björk","Ava"],"moods":[{"id":"m","name":"Epic"}],"genres":["Pop"]},
+                {"id":"b","title":"Two","mainArtists":[{"id":"x","name":"Mia"}]},
+                {"id":"c","title":{"broken":true}},
+                {"id":"d","title":"Four"}
             ]}"#,
         )
         .unwrap();

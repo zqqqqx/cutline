@@ -14,7 +14,7 @@ use crate::theme::{self, icon};
 
 pub const MAX_COLORS: usize = 8;
 /// Font roles in the order of `BrandKit::fonts`
-pub const ROLES: [&str; 3] = ["Titel", "Text", "Untertitel"];
+pub const ROLES: [&str; 3] = ["Title", "Text", "Captions"];
 pub const TEXT: usize = 1;
 pub const CAPTION: usize = 2;
 
@@ -80,7 +80,7 @@ impl BrandKit {
 pub fn copy_logo(src: &Path) -> std::result::Result<PathBuf, String> {
     let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
     if !crate::library::STICKER_EXT.contains(&ext.as_str()) {
-        return Err(crate::tr("Dateityp wird nicht unterstützt"));
+        return Err(crate::tr("File type not supported"));
     }
     let dir = crate::paths::data_dir().join("Brand");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -113,13 +113,13 @@ impl App {
     /// „Brand Kit“ section in the settings window
     pub fn brand_settings(&mut self, ui: &mut egui::Ui) {
         let mut kit = self.brand.clone();
-        theme::section(ui, "Farben");
+        theme::section(ui, "Colors");
         let mut remove = None;
         for (i, c) in kit.colors.iter_mut().enumerate() {
             ui.horizontal(|ui| {
                 ui.color_edit_button_srgb(&mut c.rgb);
                 ui.add(egui::TextEdit::singleline(&mut c.name).hint_text(crate::tr("Name")).desired_width(220.0));
-                if theme::icon_button(ui, icon::X, "Entfernen", true, false).clicked() {
+                if theme::icon_button(ui, icon::X, "Remove", true, false).clicked() {
                     remove = Some(i);
                 }
             });
@@ -127,13 +127,13 @@ impl App {
         if let Some(i) = remove {
             kit.colors.remove(i);
         }
-        if kit.colors.len() < MAX_COLORS && ui.add(theme::secondary(format!("{}  Farbe hinzufügen", icon::PLUS))).clicked() {
+        if kit.colors.len() < MAX_COLORS && ui.add(theme::secondary(format!("{}  Add color", icon::PLUS))).clicked() {
             kit.colors.push(BrandColor { name: String::new(), rgb: [255, 255, 255] });
         }
-        theme::section(ui, "Schriften");
+        theme::section(ui, "Fonts");
         for (i, role) in ROLES.iter().enumerate() {
             theme::row(ui, role, |ui| {
-                if let Some(f) = self.font_picker(ui, ("brand-font", i), kit.fonts[i].as_deref(), &crate::tr("Keine"), &[], 260.0) {
+                if let Some(f) = self.font_picker(ui, ("brand-font", i), kit.fonts[i].as_deref(), &crate::tr("None"), &[], 260.0) {
                     kit.fonts[i] = f;
                 }
             });
@@ -143,15 +143,15 @@ impl App {
             if let Some(p) = &kit.logo {
                 ui.label(RichText::new(p.file_name().unwrap_or_default().to_string_lossy()).small());
             }
-            if ui.add(theme::secondary(format!("{}  Logo wählen …", icon::IMAGE))).clicked() {
-                if let Some(f) = crate::dialog().add_filter(crate::tr("Bilder"), crate::library::STICKER_EXT).pick_file() {
+            if ui.add(theme::secondary(format!("{}  Choose logo …", icon::IMAGE))).clicked() {
+                if let Some(f) = crate::dialog().add_filter(crate::tr("Images"), crate::library::STICKER_EXT).pick_file() {
                     match copy_logo(&f) {
                         Ok(p) => kit.logo = Some(p),
                         Err(e) => self.toast_err(e),
                     }
                 }
             }
-            if kit.logo.is_some() && theme::icon_button(ui, icon::X, "Logo entfernen", true, false).clicked() {
+            if kit.logo.is_some() && theme::icon_button(ui, icon::X, "Remove logo", true, false).clicked() {
                 kit.logo = None;
             }
         });
@@ -230,7 +230,7 @@ mod tests {
         app.brand_edited(&ctx, kit.clone(), true);
         assert_eq!(BrandKit::load(), kit);
         // still in the field, then settings closed or program quit
-        kit.colors[0].name = "Rot".into();
+        kit.colors[0].name = "Red".into();
         app.brand_edited(&ctx, kit.clone(), false);
         assert_ne!(BrandKit::load(), kit);
         app.brand_flush();
@@ -243,7 +243,7 @@ mod tests {
         let logo = dir.path().join("logo.png");
         std::fs::write(&logo, b"x").unwrap();
         let kit = BrandKit {
-            colors: vec![BrandColor { name: "Rot".into(), rgb: [200, 0, 0] }, BrandColor { name: String::new(), rgb: [1, 2, 3] }],
+            colors: vec![BrandColor { name: "Red".into(), rgb: [200, 0, 0] }, BrandColor { name: String::new(), rgb: [1, 2, 3] }],
             fonts: vec![None, Some("Poppins".into()), Some("Anton".into())],
             logo: Some(logo.clone()),
         };
@@ -329,7 +329,7 @@ mod tests {
         image::save_buffer(path, &vec![200u8; (w * h * 4) as usize], w, h, image::ExtendedColorType::Rgba8).unwrap();
     }
 
-    /// „Logo einfügen“: new track above the video, whole project length, top right; one
+    /// „Insert logo“: new track above the video, whole project length, top right; one
     /// undo step, the rest of the project stays untouched. Without a logo nothing happens.
     #[test]
     fn insert_logo_is_one_undo_step_and_touches_nothing_else() {
@@ -385,17 +385,17 @@ mod tests {
         assert_eq!(app.project.media, before.media);
     }
 
-    /// Default text and „Klassisch“ captions get the brand font; templates and other
+    /// Default text and „Classic“ captions get the brand font; templates and other
     /// caption styles keep their own, without a kit everything stays as before.
     #[test]
     fn new_text_and_classic_captions_use_brand_fonts() {
         let mut app = crate::saving::tests::test_app();
-        app.set_doc(Project::new("Schrift"));
+        app.set_doc(Project::new("Font"));
         let font = |app: &App, id: ClipId| match &app.project.find_clip(id).unwrap().1.content {
             ClipContent::Text(s) => s.font_family.clone(),
             _ => panic!("no text"),
         };
-        let cap = |app: &App| match app.caption_clip("Hallo", Time::ZERO, Time::from_secs_f64(1.0), Vec::new()).content {
+        let cap = |app: &App| match app.caption_clip("Hello", Time::ZERO, Time::from_secs_f64(1.0), Vec::new()).content {
             ClipContent::Text(s) => s.font_family,
             _ => panic!("no text"),
         };

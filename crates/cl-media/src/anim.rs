@@ -231,7 +231,7 @@ mod tests {
             assert_eq!(crate::probe(Path::new(&p(f))).unwrap().kind, cl_core::MediaKind::Image, "{f}");
         }
         assert!(animation(Path::new(&p("still.png"))).is_none());
-        assert!(animation(Path::new(&p("fehlt.gif"))).is_none());
+        assert!(animation(Path::new(&p("missing.gif"))).is_none());
     }
 
     /// All frames at once (preview in memory) = the same frames as one by one with `-ss`.
@@ -256,12 +256,12 @@ mod tests {
                 let seek = a.seek_time(*s);
                 assert_eq!(frame_index(&a, seek), i);
                 let one = crate::decode_frame(&f, seek, 24, 16).unwrap();
-                assert!(one.data == frames[i].data, "{n}: Bild {i} weicht ab");
+                assert!(one.data == frames[i].data, "{n}: frame {i} deviates");
             }
             // too large: not in memory
             assert!(decode_all(&f, 24, 16, 100).is_none());
         }
-        assert!(decode_all(&dir.path().join("fehlt.gif"), 24, 16, 1 << 20).is_none());
+        assert!(decode_all(&dir.path().join("missing.gif"), 24, 16, 1 << 20).is_none());
     }
 
     /// The preview decodes with `-ss seek_time` exactly the frame the export shows.
@@ -290,7 +290,7 @@ mod tests {
                 (0..64).find(|x| fr.data[((32 * 64 + x) * 4 + 3) as usize] > 128)
             };
             for k in [0, 1, 5, 9] {
-                assert_eq!(left(k as f64 * 0.1 + 0.05), Some((k as f64 * 4.8).ceil() as u32), "{name}.{ext} Bild {k}");
+                assert_eq!(left(k as f64 * 0.1 + 0.05), Some((k as f64 * 4.8).ceil() as u32), "{name}.{ext} frame {k}");
             }
             let want = if name == "loop" { 24 } else { 44 };
             assert_eq!(left(3.55), Some(want), "{name}.{ext} at 3.55 s");

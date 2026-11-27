@@ -21,14 +21,14 @@ const RAIL_TOP_H: f32 = 56.0;
 const RAIL_ITEM_W: f32 = 52.0;
 
 const TABS: [(LeftTab, &str, &str); 8] = [
-    (LeftTab::Media, icon::FILM_STRIP, "Medien"),
+    (LeftTab::Media, icon::FILM_STRIP, "Media"),
     (LeftTab::Audio, icon::MUSIC_NOTES, "Audio"),
     (LeftTab::Text, icon::TEXT_T, "Text"),
-    (LeftTab::Stickers, icon::STICKER, "Elemente"),
-    (LeftTab::Effects, icon::SPARKLE, "Effekte"),
-    (LeftTab::Transitions, icon::INTERSECT, "Übergänge"),
-    (LeftTab::Filters, icon::CIRCLE_HALF, "Filter"),
-    (LeftTab::Captions, icon::SUBTITLES, "Untertitel"),
+    (LeftTab::Stickers, icon::STICKER, "Elements"),
+    (LeftTab::Effects, icon::SPARKLE, "Effects"),
+    (LeftTab::Transitions, icon::INTERSECT, "Transitions"),
+    (LeftTab::Filters, icon::CIRCLE_HALF, "Filters"),
+    (LeftTab::Captions, icon::SUBTITLES, "Captions"),
 ];
 
 const THUMB: (u32, u32) = (192, 108);
@@ -196,7 +196,7 @@ pub fn play_fraction(pos: Time, len: Time) -> f32 {
     (pos.as_secs_f64() / len.as_secs_f64().max(0.01)).clamp(0.0, 1.0) as f32
 }
 
-/// Length of a sound: „2,4 s“ or „1:05“
+/// Length of a sound: "2.4 s" or "1:05"
 fn sound_len(d: Time) -> String {
     let s = d.as_secs_f64();
     if s >= 60.0 {
@@ -235,7 +235,7 @@ fn music_files() -> Option<&'static [PathBuf]> {
                 .or_else(|| std::env::var_os("HOME"))
                 .map(PathBuf::from)
             {
-                for d in ["Music", "Musik"] {
+                for d in ["Music", "Music"] {
                     walk(&b.join(d), &mut out, 0);
                 }
             }
@@ -384,12 +384,12 @@ impl App {
     // ------------------------------------------------------------------ media
 
     fn media_tab(&mut self, ui: &mut egui::Ui) {
-        let _s = crate::app::section("Medien-Tab");
-        Self::tab_title(ui, "Medien", |_| {});
+        let _s = crate::app::section("media tab");
+        Self::tab_title(ui, "Media", |_| {});
         ui.horizontal(|ui| {
             if ui
-                .add(theme::secondary(format!("{}  Importieren", icon::PLUS)))
-                .on_hover_text(crate::tr("Strg+I"))
+                .add(theme::secondary(format!("{}  Import~verb", icon::PLUS)))
+                .on_hover_text(crate::tr("Ctrl+I"))
                 .clicked()
             {
                 self.pick_media();
@@ -404,7 +404,7 @@ impl App {
         });
         ui.add_space(6.0);
         // Project · library (across all projects) · Pexels (plugin)
-        let mut srcs = vec![("", "Projekt"), ("lib", "Bibliothek")];
+        let mut srcs = vec![("", "Project"), ("lib", "Library")];
         if self.stock_enabled(crate::stock::PEXELS) {
             srcs.push(("pexels", "Pexels"));
         }
@@ -428,7 +428,7 @@ impl App {
         }
         // Folders and favorites apply per project
         let area = crate::library_ui::intern(format!("media/{}", self.project.name));
-        let (cat, q) = self.asset_bar(ui, area, &["Video", "Audio", "Bilder"]);
+        let (cat, q) = self.asset_bar(ui, area, &["Video", "Audio", "Images"]);
         if self.project.media.is_empty() {
             theme::empty_state(
                 ui,
@@ -441,7 +441,7 @@ impl App {
         let kind_cat = |k: MediaKind| match k {
             MediaKind::Video => "Video",
             MediaKind::Audio => "Audio",
-            MediaKind::Image => "Bilder",
+            MediaKind::Image => "Images",
         };
         let (stickers, sfx) = (crate::paths::data_dir().join("Stickers"), crate::paths::data_dir().join("Sfx"));
         let mut media: Vec<MediaRef> = self
@@ -638,22 +638,22 @@ impl App {
             let folders = save_kind.map(|k| self.library.folders(k)).unwrap_or_default();
             let mut save = None;
             self.asset_menu_with(&resp, area, &key, None, &cat, &mut |ui| {
-                if menu_item(ui, icon::INFO, "Eigenschaften", "") {
+                if menu_item(ui, icon::INFO, "Properties", "") {
                     props = true;
                 }
                 if ui
-                    .add(theme::menu_row(crate::tr(format!("{}   Zur Bibliothek hinzufügen", icon::BOOKMARKS))).min_width(210.0))
-                    .on_hover_text(crate::tr("In allen Projekten unter Medien → Bibliothek"))
+                    .add(theme::menu_row(crate::tr(format!("{}   Add to library", icon::BOOKMARKS))).min_width(210.0))
+                    .on_hover_text(crate::tr("In every project under Media → Library"))
                     .clicked()
                 {
                     to_lib = true;
                     ui.close_menu();
                 }
                 crate::library_ui::save_as_menu(ui, save_kind, &folders, &mut save);
-                if menu_item(ui, icon::PLUS, "Am Playhead einfügen", "") {
+                if menu_item(ui, icon::PLUS, "Insert at playhead", "") {
                     ins = true;
                 }
-                if menu_item(ui, icon::FOLDER_OPEN, "Im Explorer zeigen", "") {
+                if menu_item(ui, icon::FOLDER_OPEN, "Show in Explorer", "") {
                     crate::home::reveal(&m.path);
                 }
                 ui.separator();
@@ -670,9 +670,9 @@ impl App {
             if to_lib {
                 let n = self.library.import(crate::library::Kind::Media, crate::library::Kind::DEFAULT_FOLDER, std::slice::from_ref(&m.path));
                 if n > 0 {
-                    self.toast(format!("{} {}", icon::BOOKMARKS, crate::tr("Zur Bibliothek hinzugefügt")));
+                    self.toast(format!("{} {}", icon::BOOKMARKS, crate::tr("Added to library")));
                 } else {
-                    self.toast_err("Datei nicht gefunden");
+                    self.toast_err("File not found");
                 }
             }
         }
@@ -698,7 +698,7 @@ impl App {
                     theme::empty_state(
                         ui,
                         icon::BOOKMARKS,
-                        "Bibliothek ist leer",
+                        "Library is empty",
                         "",
                     );
                 }
@@ -774,21 +774,21 @@ impl App {
     fn audio_tab(&mut self, ui: &mut egui::Ui) {
         Self::tab_title(ui, "Audio", |ui| {
             if ui
-                .add(theme::secondary(format!("{}  Importieren", icon::PLUS)))
+                .add(theme::secondary(format!("{}  Import~verb", icon::PLUS)))
                 .clicked()
             {
                 self.pick_media();
             }
         });
         // Epidemic Sound only appears when the plugin is switched on
-        let mut modes: Vec<(&str, &str)> = vec![("sfx", "Sounds"), ("music", "Musik")];
+        let mut modes: Vec<(&str, &str)> = vec![("sfx", "Sounds"), ("music", "Music")];
         if self.epidemic_enabled() {
             modes.push(("es", "Epidemic"));
         }
         if self.stock_enabled(crate::stock::FREESOUND) {
             modes.push(("fs", "Freesound"));
         }
-        modes.push(("rec", "Aufnahmen"));
+        modes.push(("rec", "Recordings"));
         let cur = self
             .asset_cat
             .get("audio-mode")
@@ -835,7 +835,7 @@ impl App {
                             theme::empty_state(
                                 ui,
                                 icon::SPEAKER_HIGH,
-                                "Keine Sounds gefunden",
+                                "No sounds found",
                                 "",
                             );
                         }
@@ -891,13 +891,13 @@ impl App {
                     Some(l) if l.is_empty() => theme::empty_state(
                         ui,
                         icon::MUSIC_NOTES,
-                        "Keine Musik gefunden",
+                        "No music found",
                         "",
                     ),
                     Some(l) => {
                         ui.label(
                             RichText::new(crate::tr(format!(
-                                "{} Titel aus deinem Musik-Ordner",
+                                "{} tracks from your Music folder",
                                 l.len()
                             )))
                             .small()
@@ -1019,7 +1019,7 @@ impl App {
                     theme::empty_state(
                         ui,
                         icon::MICROPHONE,
-                        "Noch keine Aufnahmen in diesem Projekt",
+                        "No recordings in this project yet",
                         "",
                     );
                 }
@@ -1168,7 +1168,7 @@ impl App {
         (
             play,
             add,
-            Some(resp.on_hover_text(crate::tr("Klick spielt ab · Doppelklick, + oder Ziehen fügt ein"))),
+            Some(resp.on_hover_text(crate::tr("Click to play · double-click, + or drag to add"))),
         )
     }
 
@@ -1330,7 +1330,7 @@ impl App {
         Self::tab_title(ui, "Text", |ui| {
             if ui
                 .add(theme::secondary(format!(
-                    "{}  Schrift importieren",
+                    "{}  Import font",
                     icon::UPLOAD_SIMPLE
                 )))
                 .clicked()
@@ -1344,7 +1344,7 @@ impl App {
             Some("fonts") => 2,
             _ => 0,
         };
-        if widgets::segmented(ui, &["Vorlagen", "Texteffekte", "Schriften"], &mut mode) {
+        if widgets::segmented(ui, &["Templates", "Text effects", "Fonts"], &mut mode) {
             self.asset_cat
                 .insert("text-mode", ["tpl", "effects", "fonts"][mode].into());
         }
@@ -1362,7 +1362,7 @@ impl App {
                         let mut items: Vec<Option<&'static cl_fx::text::TextTemplate>> = Vec::new();
                         if self
                             .library
-                            .visible("text", &cat, &q, "tt:default", "Standardtext", "")
+                            .visible("text", &cat, &q, "tt:default", "Default text", "")
                         {
                             items.push(None);
                         }
@@ -1387,7 +1387,7 @@ impl App {
                         widgets::grid(ui, &items, 120.0, 16.0 / 10.0, 16.0, |ui, r, t| {
                             let (id, name) = match t {
                                 Some(t) => (t.id, t.name),
-                                None => ("default", "Standardtext"),
+                                None => ("default", "Default text"),
                             };
                             let style = t.map(|t| t.make()).unwrap_or_else(|| TextStyle {
                                 text: "Text".into(),
@@ -1514,6 +1514,8 @@ impl App {
     fn text_preview(&self, p: &egui::Painter, st: &TextStyle, a: Rect) {
         let mut s = st.clone();
         s.auto_wrap = false;
+        // the sample text of a template in the language of the interface (as it is inserted)
+        s.text = crate::tr(&s.text);
         let probe = p.layout_no_wrap(
             if s.uppercase {
                 s.text.to_uppercase()
@@ -1542,11 +1544,11 @@ impl App {
         });
         let fam_count = self.fonts.lock().unwrap().families().len() as i64;
         let sys = (*self.system_font_count.lock().unwrap())
-            .map(|n| format!(" · {n} Systemschriften"))
+            .map(|n| format!(" · {n} system fonts"))
             .unwrap_or_default();
         ui.label(
             RichText::new(crate::tr(format!(
-                "{}{sys} · TTF, OTF, TTC, WOFF hierher ziehen",
+                "{}{sys} · Drop TTF, OTF, TTC, WOFF here",
                 self.i18n.t_num("fonts-count", "count", fam_count)
             )))
             .small()
@@ -1576,7 +1578,7 @@ impl App {
             theme::empty_state(
                 ui,
                 icon::TEXT_AA,
-                "Noch keine eigenen Schriften",
+                "No custom fonts yet",
                 "",
             );
         }
@@ -1628,7 +1630,7 @@ impl App {
                                         if theme::icon_button(
                                             ui,
                                             icon::TEXT_T,
-                                            "Für ausgewählten Text verwenden",
+                                            "Use for selected text",
                                             true,
                                             false,
                                         )
@@ -1640,9 +1642,9 @@ impl App {
                                             ui,
                                             icon::STAR,
                                             if fav {
-                                                "Aus Favoriten entfernen"
+                                                "Remove from favorites"
                                             } else {
-                                                "Zu Favoriten"
+                                                "Add to favorites"
                                             },
                                             true,
                                             fav,
@@ -1655,7 +1657,7 @@ impl App {
                                 );
                             });
                             ui.label(
-                                RichText::new(crate::tr("Cutline 0123 ÄÖÜ äöü ß"))
+                                RichText::new(include_str!("../../../translations/font-sample.txt").trim())
                                     .font(egui::FontId::new(20.0, self.font_family(Some(&fam)))),
                             );
                             if faces
@@ -1704,7 +1706,7 @@ impl App {
 
     fn sticker_tab(&mut self, ui: &mut egui::Ui) {
         use crate::library::{Item, Kind};
-        Self::tab_title(ui, "Elemente", |_| {});
+        Self::tab_title(ui, "Elements", |_| {});
         let entries = cl_fx::catalog::list(cl_fx::catalog::Kind::Sticker);
         // do not show built-in folders without content (e.g. without the emoji pack)
         let filled: Vec<&str> = cl_fx::stickers::STICKER_CATEGORIES
@@ -1721,7 +1723,7 @@ impl App {
         let mut items = self.lib_items("sticker", Kind::Sticker, builtin, &cat, &q);
         let ed = self.reorder(ui, "sticker", &cat, &items, |i| i.key.clone());
         // Logo from the Brand Kit as the first tile (not sortable or draggable)
-        if let Some(p) = self.brand.logo.clone().filter(|_| cat == "Alle" && q.is_empty()) {
+        if let Some(p) = self.brand.logo.clone().filter(|_| cat == "All" && q.is_empty()) {
             let name = crate::tr(crate::keymap::name("brand_logo"));
             items.insert(0, Item { key: format!("brand:{}", p.display()), name, folder: String::new(), builtin: None, path: Some(p), linked: false, tags: Vec::new() });
         }
@@ -1737,7 +1739,7 @@ impl App {
                     theme::empty_state(
                         ui,
                         icon::STICKER,
-                        "Keine Elemente gefunden",
+                        "No elements found",
                         "",
                     );
                 }
@@ -1914,11 +1916,11 @@ impl App {
                 )
             })
         });
-        Self::tab_title(ui, if filters { "Filter" } else { "Effekte" }, |ui| {
+        Self::tab_title(ui, if filters { "Filters" } else { "Effects" }, |ui| {
             if filters
                 && ui
                     .add(theme::secondary(format!("{}  LUT", icon::UPLOAD_SIMPLE)))
-                    .on_hover_text(crate::tr("LUT (.cube) auf den ausgewählten Clip anwenden"))
+                    .on_hover_text(crate::tr("Apply a LUT (.cube) to the selected clip"))
                     .clicked()
             {
                 match target {
@@ -1929,7 +1931,7 @@ impl App {
                             let _ = c;
                         }
                     }
-                    None => self.toast_err("Wähle zuerst einen Video- oder Bildclip"),
+                    None => self.toast_err("Select a video or image clip first"),
                 }
             }
         });
@@ -1973,19 +1975,19 @@ impl App {
             .id_salt(if filters { "flt" } else { "eff" })
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                if filters && cat == "Alle" && q.is_empty() {
-                    // „Kein Filter“
+                if filters && cat == "All" && q.is_empty() {
+                    // "No filter"
                     let none_sel = target.is_some() && current.is_empty();
-                    let mut list = vec![("".to_string(), "Ohne".to_string())];
+                    let mut list = vec![("".to_string(), "None~without".to_string())];
                     list.extend(items.clone());
                     items = list;
                     let _ = none_sel;
                 }
                 if items.is_empty() {
                     let (glyph, t) = if filters {
-                        (icon::CIRCLE_HALF, "Keine Filter gefunden")
+                        (icon::CIRCLE_HALF, "No filters found")
                     } else {
-                        (icon::SPARKLE, "Keine Effekte gefunden")
+                        (icon::SPARKLE, "No effects found")
                     };
                     theme::empty_state(ui, glyph, t, "");
                 }
@@ -2068,9 +2070,9 @@ impl App {
                     let at = self.playhead;
                     if self.add_fx_clip(&id, filters, at, None).is_some() {
                         self.toast(if filters {
-                            "Filter als Clip eingefügt – wirkt auf alle Spuren darunter"
+                            "Filter added as a clip – affects all tracks below"
                         } else {
-                            "Effekt als Clip eingefügt – wirkt auf alle Spuren darunter"
+                            "Effect added as a clip – affects all tracks below"
                         });
                     }
                 }
@@ -2080,7 +2082,7 @@ impl App {
     }
 
     fn transitions_tab(&mut self, ui: &mut egui::Ui) {
-        Self::tab_title(ui, "Übergänge", |_| {});
+        Self::tab_title(ui, "Transitions", |_| {});
         ui.add_space(6.0);
         // built-in ones and transitions from packs (new folders behind)
         let entries = cl_fx::catalog::list(cl_fx::catalog::Kind::Transition);
@@ -2104,7 +2106,7 @@ impl App {
         let mut chosen = None;
         let list = egui::ScrollArea::vertical().id_salt("trans").auto_shrink([false, false]).show(ui, |ui| {
             if items.is_empty() {
-                theme::empty_state(ui, icon::INTERSECT, "Keine Übergänge gefunden", "");
+                theme::empty_state(ui, icon::INTERSECT, "No transitions found", "");
             }
             widgets::grid(ui, &items, 84.0, 16.0 / 9.0, 16.0, |ui, r, (id, name)| {
                 let tex = self.fx_strip_tile(&format!("trs:{id}"), STRIP, || transition_tile(id));
@@ -2153,7 +2155,7 @@ impl App {
     // ------------------------------------------------------------------ captions
 
     fn captions_tab(&mut self, ui: &mut egui::Ui) {
-        Self::tab_title(ui, "Untertitel", |_| {});
+        Self::tab_title(ui, "Captions", |_| {});
         egui::ScrollArea::vertical()
             .id_salt("captions-tab")
             .auto_shrink([false, false])
@@ -2162,7 +2164,7 @@ impl App {
 
     pub(crate) fn import_srt(&mut self, path: &std::path::Path) {
         let Ok(bytes) = std::fs::read(path) else {
-            self.toast_err("Datei nicht lesbar");
+            self.toast_err("File can't be read");
             return;
         };
         let style = cl_fx::text::TEMPLATES
@@ -2189,7 +2191,7 @@ impl App {
             clips.push(c);
         }
         if clips.is_empty() {
-            self.toast_err("Keine Untertitel gefunden");
+            self.toast_err("No captions found");
             return;
         }
         let n = clips.len();
@@ -2203,7 +2205,7 @@ impl App {
                 })
                 .collect();
             self.apply_batch(ops);
-            self.toast(format!("{n} Untertitel importiert"));
+            self.toast(format!("{n} captions imported"));
         }
     }
 
@@ -2277,6 +2279,7 @@ mod tests {
         cl_i18n::set_ui_lang(cl_i18n::Lang::De);
         assert_eq!(sound_len(Time::from_secs_f64(0.8)), "0,8 s");
         assert_eq!(sound_len(Time::from_secs_f64(65.0)), "1:05");
+        cl_i18n::set_ui_lang(cl_i18n::Lang::En);
     }
 
     #[test]
@@ -2288,7 +2291,7 @@ mod tests {
         assert!(play_fraction(s(0.5), Time::ZERO) <= 1.0);
     }
 
-    /// Built-in elements have unique English names: no edit action („Teilen“ → „Split“) and
+    /// Built-in elements have unique English names: no edit action („Split“ → „Split“) and
     /// no name that a bundled pack element already has.
     #[test]
     fn builtin_sticker_names_translate_distinctly() {
@@ -2296,7 +2299,7 @@ mod tests {
         let en: Vec<&str> = cl_fx::stickers::STICKERS.iter().map(|s| dict.get(s.name).copied().unwrap_or(s.name)).collect();
         let packs = [
             include_str!("../../../plugins/cutline-emoji/plugin.toml"),
-            include_str!("../../../plugins/cutline-elemente/plugin.toml"),
+            include_str!("../../../plugins/cutline-elements/plugin.toml"),
         ];
         for (i, n) in en.iter().enumerate() {
             assert!(!en[..i].contains(n), "duplicate: {n}");
@@ -2325,8 +2328,8 @@ mod tests {
             x.categories = vec![c.into()];
             x
         };
-        let cats = tab_cats(&["Basis", "Licht"], &[e("Licht"), e("Neu"), e("Alt"), e("Neu")]);
-        assert_eq!(cats, ["Basis", "Licht", "Neu", "Alt"]);
+        let cats = tab_cats(&["Basic", "Light"], &[e("Light"), e("New"), e("Alt"), e("New")]);
+        assert_eq!(cats, ["Basic", "Light", "New", "Alt"]);
     }
 
     /// SRT/VTT import: own exports come back unchanged, broken entries are dropped,
@@ -2336,17 +2339,17 @@ mod tests {
         let s = |x: f64| Time::from_secs_f64(x);
         let mut p = Project::new("U");
         let mut t = Track::new(TrackKind::Text);
-        for (i, txt) in ["Erste Zeile\nzweite", "a --> b & <i>", "Ümläut 🎬"].iter().enumerate() {
+        for (i, txt) in ["First line\nsecond", "a --> b & <i>", "Ümläut 🎬"].iter().enumerate() {
             t.clips.push(Clip::new(ClipContent::Text(TextStyle { text: txt.to_string(), ..Default::default() }), s(i as f64 * 2.0), s(1.5)));
         }
         p.timeline.tracks.push(t);
         let srt = parse_subtitles(cl_export::to_srt(&p).as_bytes());
         assert_eq!(srt.len(), 3);
-        assert_eq!(srt[0], (s(0.0), s(1.5), "Erste Zeile\nzweite".to_string()));
+        assert_eq!(srt[0], (s(0.0), s(1.5), "First line\nsecond".to_string()));
         assert_eq!(srt[2], (s(4.0), s(5.5), "Ümläut 🎬".to_string()));
         assert_eq!(parse_subtitles(cl_export::to_vtt(&p).as_bytes()).len(), 3, "own VTT");
-        let vtt = "WEBVTT\n\n01:02.500 --> 01:04.000 align:start position:10%\nKurz\n";
-        assert_eq!(parse_subtitles(vtt.as_bytes()), vec![(s(62.5), s(64.0), "Kurz".to_string())]);
+        let vtt = "WEBVTT\n\n01:02.500 --> 01:04.000 align:start position:10%\nShort\n";
+        assert_eq!(parse_subtitles(vtt.as_bytes()), vec![(s(62.5), s(64.0), "Short".to_string())]);
         // BOM, CRLF, Latin-1
         let mut latin = b"\xef\xbb\xbf1\r\n00:00:01,000 --> 00:00:02,000\r\nok\r\n\r\n".to_vec();
         assert_eq!(parse_subtitles(&latin).len(), 1);
@@ -2354,7 +2357,7 @@ mod tests {
         assert_eq!(parse_subtitles(&latin)[0].2, "Grüße");
         // Broken input: none of it may get through or crash
         for bad in [
-            "", "\n\n\n", "-->", "1\n-->\nx", "00:00:02,000 --> 00:00:01,000\nrückwärts", "-1:00:00,000 --> 00:00:01,000\nneg",
+            "", "\n\n\n", "-->", "1\n-->\nx", "00:00:02,000 --> 00:00:01,000\nbackwards", "-1:00:00,000 --> 00:00:01,000\nneg",
             "NaN:00:00 --> 00:00:01\nnan", "inf:00:00 --> inf:00:01\ninf", "99999999999999:00:00 --> 99999999999999:00:01\nriesig",
             "00:00:01 --> \nleer", "a:b:c --> d:e:f\nx", "1:2:3:4 --> 1:2:3:5\nzu viele",
         ] {

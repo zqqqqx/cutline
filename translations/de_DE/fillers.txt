@@ -1,0 +1,7 @@
+# Filler words of spoken German, lowercase without punctuation (one per line)
+äh
+ähm
+öh
+öhm
+äähm
+ehm

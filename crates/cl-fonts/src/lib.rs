@@ -17,13 +17,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error)]
 pub enum FontError {
-    #[error("Keine Schriftdatei (unbekanntes Format)")]
+    #[error("Not a font file (unknown format)")]
     UnknownFormat,
-    #[error("WOFF2 wird noch nicht unterstützt. Bitte als TTF/OTF importieren.")]
+    #[error("WOFF2 is not supported yet. Please import as TTF/OTF.")]
     Woff2Unsupported,
-    #[error("Schriftdatei ist beschädigt: {0}")]
+    #[error("Font file is damaged: {0}")]
     Corrupt(String),
-    #[error("E/A-Fehler: {0}")]
+    #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
 
@@ -120,7 +120,7 @@ pub fn inspect(data: &[u8]) -> Result<Vec<FaceInfo>> {
         faces.push(face_info(&face, index));
     }
     if faces.is_empty() {
-        return Err(FontError::Corrupt("keine Schnitte".into()));
+        return Err(FontError::Corrupt("no styles".into()));
     }
     Ok(faces)
 }
@@ -146,7 +146,7 @@ fn best_name(face: &ttf_parser::Face, ids: &[u16]) -> Option<String> {
 fn face_info(face: &ttf_parser::Face, index: u32) -> FaceInfo {
     use ttf_parser::name_id;
     let family = best_name(face, &[name_id::TYPOGRAPHIC_FAMILY, name_id::FAMILY])
-        .unwrap_or_else(|| "Unbenannt".into());
+        .unwrap_or_else(|| "Untitled".into());
     let style = best_name(face, &[name_id::TYPOGRAPHIC_SUBFAMILY, name_id::SUBFAMILY])
         .unwrap_or_else(|| "Regular".into());
     let full_name =
@@ -186,12 +186,12 @@ fn face_info(face: &ttf_parser::Face, index: u32) -> FaceInfo {
 fn be_u16(d: &[u8], o: usize) -> Result<u16> {
     d.get(o..o + 2)
         .map(|b| u16::from_be_bytes([b[0], b[1]]))
-        .ok_or_else(|| FontError::Corrupt("WOFF zu kurz".into()))
+        .ok_or_else(|| FontError::Corrupt("WOFF too short".into()))
 }
 fn be_u32(d: &[u8], o: usize) -> Result<u32> {
     d.get(o..o + 4)
         .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
-        .ok_or_else(|| FontError::Corrupt("WOFF zu kurz".into()))
+        .ok_or_else(|| FontError::Corrupt("WOFF too short".into()))
 }
 
 /// Unpacks WOFF 1.0 into a normal SFNT file (TTF/OTF).
@@ -203,7 +203,7 @@ pub fn woff_to_sfnt(d: &[u8]) -> Result<Vec<u8>> {
     let num = be_u16(d, 12)? as usize;
     // 0 or more tables than the 16-bit header fields hold: not a valid font
     if num == 0 || num > 4095 {
-        return Err(FontError::Corrupt("WOFF-Tabellenzahl".into()));
+        return Err(FontError::Corrupt("WOFF table count".into()));
     }
     // lengths come from the file: without a limit on the SUM many entries pointing to the same
     // small zlib block reach hundreds of GB of memory
@@ -212,7 +212,7 @@ pub fn woff_to_sfnt(d: &[u8]) -> Result<Vec<u8>> {
         total += be_u32(d, 44 + i * 20 + 12)? as u64;
     }
     if total > 64 << 20 {
-        return Err(FontError::Corrupt("WOFF-Tabellen zu groß".into()));
+        return Err(FontError::Corrupt("WOFF tables too large".into()));
     }
     let mut tables = Vec::with_capacity(num);
     for i in 0..num {
@@ -224,7 +224,7 @@ pub fn woff_to_sfnt(d: &[u8]) -> Result<Vec<u8>> {
         let csum = be_u32(d, e + 16)?;
         let src = d
             .get(off..off + comp)
-            .ok_or_else(|| FontError::Corrupt("WOFF-Tabelle außerhalb".into()))?;
+            .ok_or_else(|| FontError::Corrupt("WOFF table out of bounds".into()))?;
         let data = if comp < orig {
             let mut out = Vec::with_capacity(orig);
             // unpack at most orig + 1 bytes (zip bomb); too long shows up below
@@ -233,7 +233,7 @@ pub fn woff_to_sfnt(d: &[u8]) -> Result<Vec<u8>> {
                 .read_to_end(&mut out)
                 .map_err(|e| FontError::Corrupt(format!("zlib: {e}")))?;
             if out.len() != orig {
-                return Err(FontError::Corrupt("WOFF-Länge stimmt nicht".into()));
+                return Err(FontError::Corrupt("WOFF length does not match".into()));
             }
             out
         } else {
@@ -481,7 +481,7 @@ impl FontLibrary {
         Ok(paths.len())
     }
 
-    /// Which of the required families are missing (for the „Fehlende Schriften“ dialog)?
+    /// Which of the required families are missing (for the "Missing fonts" dialog)?
     pub fn missing<'a>(
         &self,
         needed: impl IntoIterator<Item = &'a str>,
@@ -625,7 +625,7 @@ mod tests {
         d[44 + 4..44 + 8].copy_from_slice(&64u32.to_be_bytes());
         d[44 + 12..44 + 16].copy_from_slice(&u32::MAX.to_be_bytes());
         let e = woff_to_sfnt(&d).unwrap_err();
-        assert!(e.to_string().contains("zu groß"), "{e}");
+        assert!(e.to_string().contains("too large"), "{e}");
     }
 
     #[test]
@@ -649,7 +649,7 @@ mod tests {
         }
         d.extend_from_slice(&block);
         let e = woff_to_sfnt(&d).unwrap_err();
-        assert!(e.to_string().contains("zu groß"), "{e}");
+        assert!(e.to_string().contains("too large"), "{e}");
     }
 
     /// A real system font for tests (Windows: Arial/Impact, Linux: DejaVu).
@@ -750,12 +750,12 @@ mod tests {
     fn measure_and_wrap() {
         let Some(src) = sample_font() else { return };
         let d = std::fs::read(src).unwrap();
-        let w1 = text_width(&d, 0, 100.0, "Hallo").unwrap();
-        let w2 = text_width(&d, 0, 200.0, "Hallo").unwrap();
+        let w1 = text_width(&d, 0, 100.0, "Hello").unwrap();
+        let w2 = text_width(&d, 0, 200.0, "Hello").unwrap();
         assert!(w1 > 100.0 && (w2 / w1 - 2.0).abs() < 0.01);
-        let wrapped = wrap_text(&d, 0, 100.0, "eins zwei drei vier fünf sechs", w1 * 1.5);
+        let wrapped = wrap_text(&d, 0, 100.0, "one two three four five six", w1 * 1.5);
         assert!(wrapped.lines().count() >= 3, "{wrapped}");
-        assert_eq!(wrapped.replace('\n', " "), "eins zwei drei vier fünf sechs");
+        assert_eq!(wrapped.replace('\n', " "), "one two three four five six");
         assert_eq!(wrap_text(&d, 0, 100.0, "D E R  F I L M", 1e6), "D E R  F I L M");
     }
 
@@ -805,11 +805,11 @@ mod tests {
         let data = std::fs::read(src).unwrap();
         for cut in [12, 100, 1000, data.len() / 2] {
             let _ = inspect(&data[..cut]);
-            let _ = text_width(&data[..cut], 0, 20.0, "Hallo");
+            let _ = text_width(&data[..cut], 0, 20.0, "Hello");
         }
         assert!(inspect(&data).is_ok());
         assert_eq!(text_width(&data, 99, 20.0, "x"), None, "index out of range");
-        assert_eq!(text_width(b"kaputt", 0, 20.0, "x"), None);
+        assert_eq!(text_width(b"broken", 0, 20.0, "x"), None);
     }
 
     #[test]
@@ -820,8 +820,8 @@ mod tests {
         assert_eq!(wrap_text(&d, 0, 40.0, "a\n\nb", 1000.0), "a\n\nb");
         assert_eq!(wrap_text(&d, 0, 40.0, "D E R  F I L M", 10_000.0), "D E R  F I L M");
         // width 0: every word one line, no word disappears
-        let w = wrap_text(&d, 0, 40.0, "eins zwei drei", 0.0);
-        assert_eq!(w, "eins\nzwei\ndrei");
+        let w = wrap_text(&d, 0, 40.0, "one two three", 0.0);
+        assert_eq!(w, "one\ntwo\nthree");
         let long = "Donaudampfschifffahrtsgesellschaft";
         assert_eq!(wrap_text(&d, 0, 40.0, long, 10.0), long);
         let emoji = wrap_text(&d, 0, 40.0, "🎬🎬 مرحبا שלום", 50.0);
@@ -839,16 +839,16 @@ mod tests {
         assert!(!sanitize(&"a/".repeat(100)).contains('/'));
         let dir = tempfile::tempdir().unwrap();
         // foreign files are ignored, broken fonts reported, subfolders skipped
-        std::fs::write(dir.path().join("liesmich.txt"), b"hallo").unwrap();
-        std::fs::write(dir.path().join("kaputt.ttf"), b"\0\x01\0\0 kaputt").unwrap();
-        std::fs::create_dir(dir.path().join("ordner.ttf")).unwrap();
+        std::fs::write(dir.path().join("liesmich.txt"), b"hello").unwrap();
+        std::fs::write(dir.path().join("broken.ttf"), b"\0\x01\0\0 broken").unwrap();
+        std::fs::create_dir(dir.path().join("folder.ttf")).unwrap();
         let mut lib = FontLibrary::open(dir.path()).unwrap();
         assert!(lib.faces().is_empty());
         assert_eq!(lib.errors.len(), 1);
         assert!(lib.import_bytes(b"", "x").is_err());
         assert!(matches!(lib.import_bytes(b"wOF2xxxx", "x"), Err(FontError::Woff2Unsupported)));
-        assert!(lib.import_file(&dir.path().join("fehlt.ttf")).is_err());
-        assert_eq!(lib.remove_family("Gibt es nicht").unwrap(), 0);
+        assert!(lib.import_file(&dir.path().join("missing.ttf")).is_err());
+        assert_eq!(lib.remove_family("Does not exist").unwrap(), 0);
         assert!(lib.regular_face("").is_none());
         let sys: HashSet<String> = ["Arial".to_string()].into();
         assert_eq!(lib.missing(["Arial", "Zz", "Zz", "Aa", ""], &sys), vec!["", "Aa", "Zz"]);

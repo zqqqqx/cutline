@@ -49,42 +49,42 @@ fn ev(w: u32) -> u32 {
     (w.max(2)) & !1
 }
 
-pub const EFFECT_CATEGORIES: [&str; 5] = ["Basis", "Retro", "Bewegung", "Licht", "Stil"];
+pub const EFFECT_CATEGORIES: [&str; 5] = ["Basic", "Retro", "Motion", "Light", "Style"];
 
 pub static EFFECTS: &[FxDef] = &[
     // basic
     FxDef {
         id: "blur",
-        name: "Unschärfe",
-        category: "Basis",
+        name: "Blur",
+        category: "Basic",
         native_intensity: true,
         build: |i, _| format!("gblur=sigma={:.2}", 1.0 + 14.0 * i),
     },
     FxDef {
         id: "sharpen",
-        name: "Schärfen",
-        category: "Basis",
+        name: "Sharpen",
+        category: "Basic",
         native_intensity: true,
         build: |i, _| format!("unsharp=5:5:{:.2}", 0.4 + 2.0 * i),
     },
     FxDef {
         id: "bw",
-        name: "Schwarzweiß",
-        category: "Basis",
+        name: "Black & white",
+        category: "Basic",
         native_intensity: true,
         build: |i, _| format!("hue=s={:.3}", 1.0 - i),
     },
     FxDef {
         id: "invert",
-        name: "Negativ",
-        category: "Basis",
+        name: "Negative",
+        category: "Basic",
         native_intensity: false,
         build: |_, _| "negate".into(),
     },
     FxDef {
         id: "pixelate",
-        name: "Verpixeln",
-        category: "Basis",
+        name: "Pixelate",
+        category: "Basic",
         native_intensity: true,
         build: |i, s| {
             let f = 4.0 + 36.0 * i;
@@ -101,21 +101,21 @@ pub static EFFECTS: &[FxDef] = &[
     FxDef {
         id: "vignette",
         name: "Vignette",
-        category: "Basis",
+        category: "Basic",
         native_intensity: true,
         build: |i, _| format!("vignette=angle={:.3}", 0.2 + 0.9 * i),
     },
     FxDef {
         id: "grain",
-        name: "Filmkorn",
-        category: "Basis",
+        name: "Film grain",
+        category: "Basic",
         native_intensity: true,
         build: |i, _| format!("noise=alls={:.0}:allf=t", 6.0 + 34.0 * i),
     },
     FxDef {
         id: "edges",
-        name: "Konturen",
-        category: "Basis",
+        name: "Edges",
+        category: "Basic",
         native_intensity: false,
         build: |_, _| "edgedetect=mode=colormix:high=0.2:low=0.05".into(),
     },
@@ -147,7 +147,7 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "old-film",
-        name: "Alter Film",
+        name: "Old film",
         category: "Retro",
         native_intensity: false,
         build: |_, _| {
@@ -163,14 +163,14 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "scanlines",
-        name: "Bildschirmzeilen",
+        name: "Scanlines",
         category: "Retro",
         native_intensity: true,
         build: |i, _| format!("drawgrid=w=0:h=4:t=1:c=black@{:.2}", 0.15 + 0.6 * i),
     },
     FxDef {
         id: "posterize",
-        name: "Poster",
+        name: "Posterize",
         category: "Retro",
         native_intensity: true,
         build: |i, _| {
@@ -190,8 +190,8 @@ pub static EFFECTS: &[FxDef] = &[
     // motion
     FxDef {
         id: "shake",
-        name: "Wackeln",
-        category: "Bewegung",
+        name: "Shake",
+        category: "Motion",
         native_intensity: true,
         build: |i, s| {
             let a = 0.03 * i;
@@ -201,8 +201,8 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "zoom-pulse",
-        name: "Zoom-Puls",
-        category: "Bewegung",
+        name: "Zoom pulse",
+        category: "Motion",
         native_intensity: true,
         build: |i, s| {
             // scale by the frame's time and crop centered: frame count and timestamps
@@ -213,22 +213,22 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "motion-blur",
-        name: "Bewegungsunschärfe",
-        category: "Bewegung",
+        name: "Motion blur",
+        category: "Motion",
         native_intensity: false,
         build: |_, _| "tmix=frames=4:weights='1 1 1 1'".into(),
     },
     FxDef {
         id: "echo",
-        name: "Nachzieher",
-        category: "Bewegung",
+        name: "Trails",
+        category: "Motion",
         native_intensity: false,
         build: |_, _| "tmix=frames=8:weights='1 1 1 2 2 3 4 8'".into(),
     },
     FxDef {
         id: "glitch",
         name: "Glitch",
-        category: "Bewegung",
+        category: "Motion",
         native_intensity: false,
         build: |_, _| {
             "rgbashift=rh=-8:bh=8:gv=3,hue=h='if(lt(mod(t,1.1),0.12),120,0)',noise=alls=20:allf=t+u"
@@ -237,16 +237,16 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "rainbow",
-        name: "Regenbogen",
-        category: "Bewegung",
+        name: "Rainbow",
+        category: "Motion",
         native_intensity: true,
         build: |i, _| format!("hue=h='t*{:.0}'", 60.0 + 240.0 * i),
     },
     // light
     FxDef {
         id: "strobe",
-        name: "Stroboskop",
-        category: "Licht",
+        name: "Strobe",
+        category: "Light",
         native_intensity: true,
         build: |i, _| {
             format!(
@@ -257,8 +257,8 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "flash",
-        name: "Blitz",
-        category: "Licht",
+        name: "Flash",
+        category: "Light",
         native_intensity: true,
         build: |i, _| {
             format!(
@@ -269,8 +269,8 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "dreamy",
-        name: "Verträumt",
-        category: "Licht",
+        name: "Dreamy",
+        category: "Light",
         native_intensity: false,
         build: |_, _| {
             "gblur=sigma=3,eq=brightness=0.05:contrast=0.92:saturation=1.15,colortemperature=temperature=5600".into()
@@ -278,8 +278,8 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "glow-edges",
-        name: "Leuchtkanten",
-        category: "Licht",
+        name: "Glow edges",
+        category: "Light",
         native_intensity: false,
         build: |_, _| {
             "edgedetect=mode=colormix:high=0.15:low=0.04,eq=saturation=2.2:brightness=0.06,gblur=sigma=1.2".into()
@@ -287,8 +287,8 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "warm-leak",
-        name: "Lichteinfall",
-        category: "Licht",
+        name: "Light leak",
+        category: "Light",
         native_intensity: false,
         build: |_, _| {
             "colorbalance=rh=0.25:gh=0.08:rm=0.12,eq=brightness='0.06+0.05*sin(t*1.7)':eval=frame"
@@ -297,8 +297,8 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "chroma",
-        name: "Farbversatz",
-        category: "Licht",
+        name: "Color shift",
+        category: "Light",
         native_intensity: true,
         build: |i, _| {
             let px = (2.0 + 10.0 * i).round() as i32;
@@ -308,15 +308,15 @@ pub static EFFECTS: &[FxDef] = &[
     // style
     FxDef {
         id: "heat",
-        name: "Wärmebild",
-        category: "Stil",
+        name: "Thermal",
+        category: "Style",
         native_intensity: false,
         build: |_, _| "format=gbrp,pseudocolor=preset=heat".into(),
     },
     FxDef {
         id: "night-vision",
-        name: "Nachtsicht",
-        category: "Stil",
+        name: "Night vision",
+        category: "Style",
         native_intensity: false,
         build: |_, _| {
             "hue=s=0,colorchannelmixer=0.2:0:0:0:0.3:1.2:0.2:0:0.1:0.2:0.1,noise=alls=22:allf=t,vignette=angle=0.8".into()
@@ -324,15 +324,15 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "duotone",
-        name: "Duoton",
-        category: "Stil",
+        name: "Duotone",
+        category: "Style",
         native_intensity: false,
         build: |_, _| "hue=s=0,colorbalance=rs=0.35:gs=-0.1:bs=0.45:rh=0.4:gh=0.1:bh=-0.25".into(),
     },
     FxDef {
         id: "emboss",
-        name: "Relief",
-        category: "Stil",
+        name: "Emboss",
+        category: "Style",
         native_intensity: false,
         build: |_, _| {
             "convolution='-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2:-2 -1 0 -1 1 1 0 1 2'".into()
@@ -340,8 +340,8 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "lens",
-        name: "Linse",
-        category: "Stil",
+        name: "Lens",
+        category: "Style",
         native_intensity: true,
         build: |i, _| {
             format!(
@@ -353,8 +353,8 @@ pub static EFFECTS: &[FxDef] = &[
     },
     FxDef {
         id: "cinema-bars",
-        name: "Kinobalken",
-        category: "Stil",
+        name: "Letterbox",
+        category: "Style",
         native_intensity: true,
         build: |i, _| {
             let f = 0.06 + 0.1 * i;
@@ -366,70 +366,70 @@ pub static EFFECTS: &[FxDef] = &[
 pub static FILTERS: &[FxDef] = &[
     FxDef {
         id: "natural",
-        name: "Natürlich",
-        category: "Porträt",
+        name: "Natural",
+        category: "Portrait",
         native_intensity: false,
         build: |_, _| "eq=saturation=1.1:contrast=1.05".into(),
     },
     FxDef {
         id: "vivid",
-        name: "Lebendig",
-        category: "Porträt",
+        name: "Vivid",
+        category: "Portrait",
         native_intensity: false,
         build: |_, _| "eq=saturation=1.45:contrast=1.1,vibrance=intensity=0.3".into(),
     },
     FxDef {
         id: "pastel",
-        name: "Pastell",
-        category: "Porträt",
+        name: "Pastel",
+        category: "Portrait",
         native_intensity: false,
         build: |_, _| "eq=saturation=0.7:brightness=0.05,curves=all='0/0.1 1/1'".into(),
     },
     FxDef {
         id: "bright",
-        name: "Hell",
-        category: "Porträt",
+        name: "Light~bright",
+        category: "Portrait",
         native_intensity: false,
         build: |_, _| "curves=preset=lighter".into(),
     },
     FxDef {
         id: "warm",
         name: "Warm",
-        category: "Landschaft",
+        category: "Landscape",
         native_intensity: false,
         build: |_, _| "colortemperature=temperature=4600".into(),
     },
     FxDef {
         id: "cool",
-        name: "Kühl",
-        category: "Landschaft",
+        name: "Cool",
+        category: "Landscape",
         native_intensity: false,
         build: |_, _| "colortemperature=temperature=9000".into(),
     },
     FxDef {
         id: "golden",
-        name: "Goldene Stunde",
-        category: "Landschaft",
+        name: "Golden hour",
+        category: "Landscape",
         native_intensity: false,
         build: |_, _| "colortemperature=temperature=3800,eq=saturation=1.2".into(),
     },
     FxDef {
         id: "forest",
-        name: "Wald",
-        category: "Landschaft",
+        name: "Forest",
+        category: "Landscape",
         native_intensity: false,
         build: |_, _| "colorbalance=gm=0.12:rs=-0.05:bs=0.03,eq=saturation=1.1".into(),
     },
     FxDef {
         id: "sunset",
-        name: "Sonnenuntergang",
-        category: "Landschaft",
+        name: "Sunset",
+        category: "Landscape",
         native_intensity: false,
         build: |_, _| "colorbalance=rm=0.18:gm=0.02:bm=-0.12:rh=0.1,eq=saturation=1.15".into(),
     },
     FxDef {
         id: "cinematic",
-        name: "Kino",
+        name: "Cinema",
         category: "Film",
         native_intensity: false,
         build: |_, _| {
@@ -452,28 +452,28 @@ pub static FILTERS: &[FxDef] = &[
     },
     FxDef {
         id: "cross",
-        name: "Crossentwicklung",
+        name: "Cross process",
         category: "Film",
         native_intensity: false,
         build: |_, _| "curves=preset=cross_process".into(),
     },
     FxDef {
         id: "matte",
-        name: "Matt",
+        name: "Matte",
         category: "Film",
         native_intensity: false,
         build: |_, _| "curves=all='0/0.12 1/0.92',eq=saturation=0.85".into(),
     },
     FxDef {
         id: "bleach",
-        name: "Bleach Bypass",
+        name: "Bleach bypass",
         category: "Film",
         native_intensity: false,
         build: |_, _| "eq=saturation=0.45:contrast=1.3".into(),
     },
     FxDef {
         id: "polaroid",
-        name: "Sofortbild",
+        name: "Instant",
         category: "Film",
         native_intensity: false,
         build: |_, _| "curves=preset=vintage,eq=saturation=0.9,vignette=angle=0.5".into(),
@@ -481,49 +481,49 @@ pub static FILTERS: &[FxDef] = &[
     FxDef {
         id: "mono",
         name: "Mono",
-        category: "Schwarzweiß",
+        category: "Black & white",
         native_intensity: false,
         build: |_, _| "hue=s=0,eq=contrast=1.15".into(),
     },
     FxDef {
         id: "noir",
         name: "Noir",
-        category: "Schwarzweiß",
+        category: "Black & white",
         native_intensity: false,
         build: |_, _| "hue=s=0,curves=preset=strong_contrast".into(),
     },
     FxDef {
         id: "silver",
-        name: "Silber",
-        category: "Schwarzweiß",
+        name: "Silver",
+        category: "Black & white",
         native_intensity: false,
         build: |_, _| "hue=s=0,curves=all='0/0.08 0.5/0.55 1/0.95'".into(),
     },
     FxDef {
         id: "moody",
-        name: "Düster",
-        category: "Stimmung",
+        name: "Moody",
+        category: "Mood",
         native_intensity: false,
         build: |_, _| "eq=brightness=-0.05:saturation=0.75,curves=preset=darker".into(),
     },
     FxDef {
         id: "cyber",
         name: "Cyber",
-        category: "Stimmung",
+        category: "Mood",
         native_intensity: false,
         build: |_, _| "colorbalance=rs=0.1:bs=0.25:rh=0.2:bh=0.2:gm=-0.1,eq=saturation=1.3".into(),
     },
     FxDef {
         id: "contrast",
-        name: "Kontrast",
-        category: "Stimmung",
+        name: "Contrast",
+        category: "Mood",
         native_intensity: false,
         build: |_, _| "curves=preset=strong_contrast".into(),
     },
 ];
 
 pub const FILTER_CATEGORIES: [&str; 5] =
-    ["Porträt", "Landschaft", "Film", "Schwarzweiß", "Stimmung"];
+    ["Portrait", "Landscape", "Film", "Black & white", "Mood"];
 
 /// Display name of an effect/filter (built-in or from a package).
 pub fn fx_name(id: &str) -> String {
@@ -543,66 +543,66 @@ pub fn filter(id: &str) -> Option<&'static FxDef> {
 
 /// Transitions: (id, name, category). The id is the name of the `xfade` variant.
 pub static TRANSITIONS: &[(&str, &str, &str)] = &[
-    ("fade", "Überblenden", "Basis"),
-    ("dissolve", "Auflösen", "Basis"),
-    ("fadeblack", "Über Schwarz", "Basis"),
-    ("fadewhite", "Über Weiß", "Basis"),
-    ("fadegrays", "Über Grau", "Basis"),
-    ("fadefast", "Schnell blenden", "Basis"),
-    ("fadeslow", "Langsam blenden", "Basis"),
-    ("distance", "Abstand", "Basis"),
-    ("wipeleft", "Wischen links", "Wischen"),
-    ("wiperight", "Wischen rechts", "Wischen"),
-    ("wipeup", "Wischen hoch", "Wischen"),
-    ("wipedown", "Wischen runter", "Wischen"),
-    ("wipetl", "Wischen ↖", "Wischen"),
-    ("wipetr", "Wischen ↗", "Wischen"),
-    ("wipebl", "Wischen ↙", "Wischen"),
-    ("wipebr", "Wischen ↘", "Wischen"),
-    ("smoothleft", "Weich links", "Wischen"),
-    ("smoothright", "Weich rechts", "Wischen"),
-    ("smoothup", "Weich hoch", "Wischen"),
-    ("smoothdown", "Weich runter", "Wischen"),
-    ("slideleft", "Schieben links", "Bewegung"),
-    ("slideright", "Schieben rechts", "Bewegung"),
-    ("slideup", "Schieben hoch", "Bewegung"),
-    ("slidedown", "Schieben runter", "Bewegung"),
-    ("coverleft", "Überdecken links", "Bewegung"),
-    ("coverright", "Überdecken rechts", "Bewegung"),
-    ("coverup", "Überdecken hoch", "Bewegung"),
-    ("coverdown", "Überdecken runter", "Bewegung"),
-    ("revealleft", "Aufdecken links", "Bewegung"),
-    ("revealright", "Aufdecken rechts", "Bewegung"),
-    ("revealup", "Aufdecken hoch", "Bewegung"),
-    ("revealdown", "Aufdecken runter", "Bewegung"),
-    ("zoomin", "Hineinzoomen", "Bewegung"),
-    ("squeezeh", "Stauchen horizontal", "Bewegung"),
-    ("hlwind", "Wind links", "Bewegung"),
-    ("hrwind", "Wind rechts", "Bewegung"),
-    ("vuwind", "Wind hoch", "Bewegung"),
-    ("vdwind", "Wind runter", "Bewegung"),
-    ("circleopen", "Kreis öffnen", "Form"),
-    ("circleclose", "Kreis schließen", "Form"),
-    ("circlecrop", "Kreisblende", "Form"),
-    ("rectcrop", "Rechteckblende", "Form"),
-    ("radial", "Radial", "Form"),
-    ("vertopen", "Vertikal öffnen", "Form"),
-    ("vertclose", "Vertikal schließen", "Form"),
-    ("horzopen", "Horizontal öffnen", "Form"),
-    ("horzclose", "Horizontal schließen", "Form"),
-    ("diagtl", "Diagonal ↖", "Form"),
-    ("diagbr", "Diagonal ↘", "Form"),
-    ("diagtr", "Diagonal ↗", "Form"),
-    ("diagbl", "Diagonal ↙", "Form"),
-    ("hlslice", "Streifen links", "Effekt"),
-    ("hrslice", "Streifen rechts", "Effekt"),
-    ("vuslice", "Streifen hoch", "Effekt"),
-    ("vdslice", "Streifen runter", "Effekt"),
-    ("pixelize", "Verpixeln", "Effekt"),
-    ("hblur", "Verwischen", "Effekt"),
+    ("fade", "Cross dissolve", "Basic"),
+    ("dissolve", "Dissolve", "Basic"),
+    ("fadeblack", "Fade to black", "Basic"),
+    ("fadewhite", "Fade to white", "Basic"),
+    ("fadegrays", "Fade to gray", "Basic"),
+    ("fadefast", "Quick fade", "Basic"),
+    ("fadeslow", "Slow fade", "Basic"),
+    ("distance", "Distance", "Basic"),
+    ("wipeleft", "Wipe left", "Wipe"),
+    ("wiperight", "Wipe right", "Wipe"),
+    ("wipeup", "Wipe up", "Wipe"),
+    ("wipedown", "Wipe down", "Wipe"),
+    ("wipetl", "Wipe ↖", "Wipe"),
+    ("wipetr", "Wipe ↗", "Wipe"),
+    ("wipebl", "Wipe ↙", "Wipe"),
+    ("wipebr", "Wipe ↘", "Wipe"),
+    ("smoothleft", "Smooth left", "Wipe"),
+    ("smoothright", "Smooth right", "Wipe"),
+    ("smoothup", "Smooth up", "Wipe"),
+    ("smoothdown", "Smooth down", "Wipe"),
+    ("slideleft", "Slide left", "Motion"),
+    ("slideright", "Slide right", "Motion"),
+    ("slideup", "Slide up", "Motion"),
+    ("slidedown", "Slide down", "Motion"),
+    ("coverleft", "Cover left", "Motion"),
+    ("coverright", "Cover right", "Motion"),
+    ("coverup", "Cover up", "Motion"),
+    ("coverdown", "Cover down", "Motion"),
+    ("revealleft", "Reveal left", "Motion"),
+    ("revealright", "Reveal right", "Motion"),
+    ("revealup", "Reveal up", "Motion"),
+    ("revealdown", "Reveal down", "Motion"),
+    ("zoomin", "Zoom in~into", "Motion"),
+    ("squeezeh", "Squeeze horizontal", "Motion"),
+    ("hlwind", "Wind left", "Motion"),
+    ("hrwind", "Wind right", "Motion"),
+    ("vuwind", "Wind up", "Motion"),
+    ("vdwind", "Wind down", "Motion"),
+    ("circleopen", "Circle open", "Shape"),
+    ("circleclose", "Circle close", "Shape"),
+    ("circlecrop", "Circle crop", "Shape"),
+    ("rectcrop", "Rectangle crop", "Shape"),
+    ("radial", "Radial", "Shape"),
+    ("vertopen", "Vertical open", "Shape"),
+    ("vertclose", "Vertical close", "Shape"),
+    ("horzopen", "Horizontal open", "Shape"),
+    ("horzclose", "Horizontal close", "Shape"),
+    ("diagtl", "Diagonal ↖", "Shape"),
+    ("diagbr", "Diagonal ↘", "Shape"),
+    ("diagtr", "Diagonal ↗", "Shape"),
+    ("diagbl", "Diagonal ↙", "Shape"),
+    ("hlslice", "Slice left", "Effect"),
+    ("hrslice", "Slice right", "Effect"),
+    ("vuslice", "Slice up", "Effect"),
+    ("vdslice", "Slice down", "Effect"),
+    ("pixelize", "Pixelate", "Effect"),
+    ("hblur", "Smear", "Effect"),
 ];
 
-pub const TRANSITION_CATEGORIES: [&str; 5] = ["Basis", "Wischen", "Bewegung", "Form", "Effekt"];
+pub const TRANSITION_CATEGORIES: [&str; 5] = ["Basic", "Wipe", "Motion", "Shape", "Effect"];
 
 /// Name of a built-in or package transition (built-in: German, the UI translates).
 pub fn transition_name(id: &str) -> String {
@@ -611,7 +611,7 @@ pub fn transition_name(id: &str) -> String {
         .find(|t| t.0 == id)
         .map(|t| t.1.to_string())
         .or_else(|| catalog::name_any(id))
-        .unwrap_or_else(|| "Übergang".into())
+        .unwrap_or_else(|| "Transition".into())
 }
 
 /// Effective length (s) of the transition at the end of `a` to the neighbour `b`: at most as long as either
@@ -649,7 +649,7 @@ pub fn piecewise_expr(points: &[(f64, f64)], var: &str) -> String {
             .last()
             .is_some_and(|l: &(f64, f64)| (p.0 - l.0).abs() < 1e-9)
         {
-            *pts.last_mut().expect("nicht leer") = p;
+            *pts.last_mut().expect("not empty") = p;
             continue;
         }
         while pts.len() >= 2 {
@@ -808,7 +808,7 @@ pub struct ChainOpts {
     pub apply_reverse: bool,
     /// LUT file, already escaped for filter options
     pub lut: Option<String>,
-    /// Label of a mask stream (grayscale, same size/time) for „Hintergrund entfernen“
+    /// Label of a mask stream (grayscale, same size/time) for „Remove background“
     pub matte: Option<String>,
 }
 
@@ -1502,7 +1502,7 @@ mod tests {
                 Err(_) => 0,
             };
             if n < 10 {
-                failed.push(format!("{id} ({n} Bilder)"));
+                failed.push(format!("{id} ({n} frames)"));
             }
         }
         assert!(failed.is_empty(), "do not run as a stream: {failed:?}");
@@ -1537,8 +1537,8 @@ mod tests {
         };
         // old chain: lines 14.6 instead of 3.7, color shift 76 instead of 21
         let (export, preview) = (look(1920, 1080), look(480, 270));
-        assert!((export.0 - preview.0).abs() < 4.0, "Zeilen: Export {export:?}, Vorschau {preview:?}");
-        assert!((export.1 - preview.1).abs() < 4.0, "Farbversatz: Export {export:?}, Vorschau {preview:?}");
+        assert!((export.0 - preview.0).abs() < 4.0, "lines: export {export:?}, preview {preview:?}");
+        assert!((export.1 - preview.1).abs() < 4.0, "color offset: export {export:?}, preview {preview:?}");
     }
 
     fn run_graph(graph: &str, extra_inputs: &[&str]) -> std::result::Result<(), String> {
@@ -1911,7 +1911,7 @@ mod tests {
         assert_eq!(atempo_chain(1.0), "");
         assert_eq!(atempo_chain(4.0), "atempo=2,atempo=2.00000");
         assert_eq!(atempo_chain(0.25), "atempo=0.5,atempo=0.50000");
-        // don't cap very slow pieces of a speed curve (e.g. 0.5× with „Kugel“)
+        // don't cap very slow pieces of a speed curve (e.g. 0.5× with „Sphere“)
         let prod: f64 = atempo_chain(0.05).split(',').map(|a| a[7..].parse::<f64>().unwrap()).product();
         assert!((prod - 0.05).abs() < 1e-4, "{prod}");
         if !cl_media::test_tools() {
@@ -1934,14 +1934,14 @@ mod tests {
         .unwrap();
     }
 
-    /// Package „Effekte und Filter“ (`plugins/cutline-effekte`): every chain runs in FFmpeg on
+    /// Package "Effects and filters" (`plugins/cutline-effects`): every chain runs in FFmpeg on
     /// export input (YUV), keeps the image size, and effects do practically nothing at strength 0.
     /// (RGBA input as in the preview: `every_chain_runs_at_odd_sizes_and_strengths`.)
     #[test]
-    fn effekte_pack_chains_run() {
+    fn effects_pack_chains_run() {
         let src = std::fs::read_to_string(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../plugins/cutline-effekte/plugin.toml"
+            "/../../plugins/cutline-effects/plugin.toml"
         ))
         .unwrap();
         // shortcut: read lines instead of parsing TOML (cl-fx does not depend on toml); the package writes
@@ -2021,7 +2021,7 @@ mod tests {
         if !cl_media::test_tools() {
             return;
         }
-        // package chains of all bundled packages (lines as in `effekte_pack_chains_run`)
+        // package chains of all bundled packages (lines as in `effects_pack_chains_run`)
         let mut packs = Vec::new();
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins");
         for d in std::fs::read_dir(root).unwrap().flatten() {

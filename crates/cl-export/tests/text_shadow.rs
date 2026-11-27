@@ -13,7 +13,7 @@ fn graph(st: &TextStyle) -> String {
 
 fn graph_lines(st: &TextStyle, keep: impl Fn(&str) -> bool) -> String {
     let dir = tempfile::tempdir().unwrap();
-    let font = dir.path().join("schrift.ttf");
+    let font = dir.path().join("font.ttf");
     std::fs::write(&font, b"no real font").unwrap();
     let mut p = Project::new("T");
     (p.settings.width, p.settings.height) = (640, 360);
@@ -39,6 +39,7 @@ fn graph_lines(st: &TextStyle, keep: impl Fn(&str) -> bool) -> String {
 }
 
 fn styles() -> Vec<(&'static str, TextStyle)> {
+    // German sample texts on purpose: the pinned graphs in snapshots/text_graphs.txt contain their widths
     let base = TextStyle { text: "Hallo Welt".into(), size: 44.0, ..Default::default() };
     let red = Shadow { color: [255, 0, 0, 153], dx: 12.0, dy: -8.0, blur: 0.0 };
     vec![
@@ -178,7 +179,7 @@ fn shadow_compensation_changes_only_the_shadow_alpha() {
 "));
     assert_eq!(strip(old), strip(new));
     // no box or a translucent one: √0.6; the default look on an opaque box that holds the shadow: 0.6
-    let base = TextStyle { text: "Hallo".into(), size: 44.0, ..Default::default() };
+    let base = TextStyle { text: "Hello".into(), size: 44.0, ..Default::default() };
     assert!(graph(&base).contains("shadowcolor=black@0.775"));
     assert!(graph(&TextStyle { background: Some([0, 0, 0, 170]), ..base.clone() }).contains("shadowcolor=black@0.775"));
     let g = graph(&TextStyle { background: Some([0, 0, 0, 255]), ..base.clone() });

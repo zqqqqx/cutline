@@ -30,7 +30,7 @@ pub fn fmt_bytes(b: u64) -> String {
 pub fn file_size(p: &std::path::Path) -> String {
     match std::fs::metadata(p).map(|m| m.len()) {
         Ok(b) => fmt_bytes(b),
-        Err(_) => crate::tr("Datei fehlt"),
+        Err(_) => crate::tr("File missing"),
     }
 }
 
@@ -51,7 +51,7 @@ impl App {
         let kind_name = |k: MediaKind| match k {
             MediaKind::Video => "Video",
             MediaKind::Audio => "Audio",
-            MediaKind::Image => "Bild",
+            MediaKind::Image => "Image",
         };
         match p {
             Props::Media(id) => {
@@ -65,62 +65,62 @@ impl App {
                     .filter(|c| matches!(&c.content, ClipContent::Media { media, .. } if media == id))
                     .count();
                 let mut rows = vec![
-                    ("Art", crate::tr(kind_name(m.kind))),
-                    ("Dateigröße", file_size(&m.path)),
+                    ("Type", crate::tr(kind_name(m.kind))),
+                    ("File size", file_size(&m.path)),
                 ];
                 if m.kind != MediaKind::Image {
-                    rows.push(("Länge", secs(m.duration)));
+                    rows.push(("Length", secs(m.duration)));
                 }
                 if m.kind != MediaKind::Audio {
-                    rows.push(("Auflösung", format!("{} × {}", m.width, m.height)));
+                    rows.push(("Resolution", format!("{} × {}", m.width, m.height)));
                 }
                 if let Some(f) = m.fps {
-                    rows.push(("Bildrate", format!("{} fps", theme::dec(f.as_f64(), 3))));
+                    rows.push(("Frame rate", format!("{} fps", theme::dec(f.as_f64(), 3))));
                 }
                 if let Some(c) = &m.video_codec {
-                    rows.push(("Video-Codec", c.clone()));
+                    rows.push(("Video codec", c.clone()));
                 }
                 if let Some(c) = &m.audio_codec {
-                    rows.push(("Audio-Codec", c.clone()));
+                    rows.push(("Audio codec", c.clone()));
                 }
-                rows.push(("Verwendet", format!("{uses} ×")));
+                rows.push(("Used", format!("{uses} ×")));
                 let name = m.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 (name, rows, Some(m.path.clone()))
             }
             Props::Clip(id) => {
                 let Some((t, c)) = self.project.find_clip(*id) else { return (String::new(), vec![], None) };
                 let mut rows = vec![
-                    ("Spur", t.name.as_deref().map(crate::captions::shown_track_name).unwrap_or_else(|| crate::tr(format!("{:?}", t.kind)))),
+                    ("Track", t.name.as_deref().map(crate::captions::shown_track_name).unwrap_or_else(|| crate::tr(format!("{:?}", t.kind)))),
                     ("Start", secs(c.start)),
-                    ("Ende", secs(c.end())),
-                    ("Dauer", secs(c.duration)),
+                    ("End", secs(c.end())),
+                    ("Duration", secs(c.duration)),
                 ];
                 let mut path = None;
                 if let ClipContent::Media { media, .. } = &c.content {
-                    rows.push(("Quellbeginn", secs(c.source_in)));
+                    rows.push(("Source in", secs(c.source_in)));
                     if let Some(m) = self.project.media(*media) {
                         path = Some(m.path.clone());
                     }
                 }
                 if (c.speed - 1.0).abs() > 1e-3 || c.fx.speed_curve.is_some() {
-                    rows.push(("Tempo", format!("{}×", theme::dec(c.speed as f64, 2))));
+                    rows.push(("Speed", format!("{}×", theme::dec(c.speed as f64, 2))));
                 }
                 if c.fx.reverse {
-                    rows.push(("Rückwärts", crate::tr("Ja")));
+                    rows.push(("Reverse", crate::tr("Yes")));
                 }
-                rows.push(("Lautstärke", format!("{} dB", theme::local_num(format!("{:+.1}", c.volume_db)))));
+                rows.push(("Volume", format!("{} dB", theme::local_num(format!("{:+.1}", c.volume_db)))));
                 if c.fade_in > Time::ZERO || c.fade_out > Time::ZERO {
-                    rows.push(("Ein-/Ausblenden", format!("{} / {}", secs(c.fade_in), secs(c.fade_out))));
+                    rows.push(("Fade in/out", format!("{} / {}", secs(c.fade_in), secs(c.fade_out))));
                 }
-                rows.push(("Deckkraft", format!("{:.0} %", c.opacity * 100.0)));
+                rows.push(("Opacity", format!("{:.0} %", c.opacity * 100.0)));
                 if !c.fx.effects.is_empty() {
                     rows.push((
-                        "Effekte",
+                        "Effects",
                         c.fx.effects.iter().map(|e| crate::tr(cl_fx::fx_name(&e.id))).collect::<Vec<_>>().join(", "),
                     ));
                 }
                 if let Some(f) = &c.fx.filter {
-                    rows.push(("Filter", crate::tr(cl_fx::fx_name(&f.id))));
+                    rows.push(("Filters", crate::tr(cl_fx::fx_name(&f.id))));
                 }
                 if !c.keyframes.is_empty() {
                     rows.push(("Keyframes", c.keyframes.times().len().to_string()));
@@ -133,33 +133,33 @@ impl App {
                 };
                 let end = t.clips.iter().map(|c| c.end()).max().unwrap_or(Time::ZERO);
                 let mut flags = Vec::new();
-                for (on, n) in [(t.main, "Hauptspur"), (t.locked, "gesperrt"), (t.hidden, "ausgeblendet"), (t.muted, "stumm")] {
+                for (on, n) in [(t.main, "main track"), (t.locked, "locked"), (t.hidden, "hidden"), (t.muted, "muted")] {
                     if on {
                         flags.push(crate::tr(n));
                     }
                 }
                 let rows = vec![
-                    ("Art", crate::tr(format!("{:?}", t.kind))),
+                    ("Type", crate::tr(format!("{:?}", t.kind))),
                     ("Clips", t.clips.len().to_string()),
-                    ("Ende", secs(end)),
+                    ("End", secs(end)),
                     ("Status", if flags.is_empty() { "–".into() } else { flags.join(", ") }),
                 ];
-                (t.name.as_deref().map(crate::captions::shown_track_name).unwrap_or_else(|| crate::tr("Spur")), rows, None)
+                (t.name.as_deref().map(crate::captions::shown_track_name).unwrap_or_else(|| crate::tr("Track")), rows, None)
             }
             Props::Project(path) => {
-                let mut rows = vec![("Dateigröße", file_size(path))];
+                let mut rows = vec![("File size", file_size(path))];
                 if let Ok(t) = std::fs::metadata(path).and_then(|m| m.modified()) {
-                    rows.push(("Geändert", crate::home::ago(t)));
+                    rows.push(("Modified", crate::home::ago(t)));
                 }
                 let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 if let Some(p) = std::fs::read_to_string(path).ok().and_then(|s| Project::from_json(&s).ok()) {
-                    rows.push(("Länge", secs(p.duration())));
+                    rows.push(("Length", secs(p.duration())));
                     rows.push(("Format", format!("{} × {}", p.settings.width, p.settings.height)));
-                    rows.push(("Bildrate", format!("{} fps", theme::dec(p.settings.fps.as_f64(), 2))));
-                    rows.push(("Medien", p.media.len().to_string()));
+                    rows.push(("Frame rate", format!("{} fps", theme::dec(p.settings.fps.as_f64(), 2))));
+                    rows.push(("Media", p.media.len().to_string()));
                     let missing = p.media.iter().filter(|m| !m.path.is_file()).count();
                     if missing > 0 {
-                        rows.push(("Fehlende Dateien", missing.to_string()));
+                        rows.push(("Missing files", missing.to_string()));
                     }
                 }
                 (name, rows, Some(path.clone()))
@@ -186,7 +186,7 @@ impl App {
             return;
         }
         let mut open = true;
-        let head = format!("{}  Eigenschaften", icon::INFO);
+        let head = format!("{}  Properties", icon::INFO);
         crate::dialog::window(ctx, crate::tr(head.as_str()), "props")
             .default_width(340.0)
             .show(ctx, |ui| {
@@ -206,11 +206,11 @@ impl App {
                     ui.add_space(8.0);
                     ui.label(RichText::new(crate::paths::shown(path)).small().color(theme::TEXT_DIM()));
                     ui.horizontal(|ui| {
-                        if ui.add(theme::secondary(format!("{}  Pfad kopieren", icon::COPY))).clicked() {
+                        if ui.add(theme::secondary(format!("{}  Copy path", icon::COPY))).clicked() {
                             ui.ctx().copy_text(path.display().to_string());
-                            self.toast(format!("{} Kopiert", icon::CHECK));
+                            self.toast(format!("{} Copied", icon::CHECK));
                         }
-                        if ui.add(theme::secondary(format!("{}  Im Explorer zeigen", icon::FOLDER_OPEN))).clicked() {
+                        if ui.add(theme::secondary(format!("{}  Show in Explorer", icon::FOLDER_OPEN))).clicked() {
                             crate::home::reveal(path);
                         }
                     });

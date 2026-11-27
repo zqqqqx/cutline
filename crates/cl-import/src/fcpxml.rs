@@ -81,10 +81,10 @@ pub fn convert(text: &str, name: &str, dir: &Path) -> Result<(Project, Report)> 
 }
 
 fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) -> Result<(Project, Report)> {
-    let doc = roxmltree::Document::parse(text).map_err(|e| format!("FCPXML nicht lesbar: {e}"))?;
+    let doc = roxmltree::Document::parse(text).map_err(|e| format!("FCPXML not readable: {e}"))?;
     let root = doc.root_element();
     if root.tag_name().name() != "fcpxml" {
-        return Err("Keine FCPXML-Datei".into());
+        return Err("Not an FCPXML file".into());
     }
     let mut rep = Report::default();
     let mut p = Project::new(name);
@@ -145,7 +145,7 @@ fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) 
     let seq = root
         .descendants()
         .find(|n| n.has_tag_name("sequence"))
-        .ok_or("Keine Sequenz gefunden")?;
+        .ok_or("No sequence found")?;
     if let Some((w, h, fd)) = seq.attribute("format").and_then(|f| formats.get(f)) {
         p.settings.width = *w & !1;
         p.settings.height = *h & !1;
@@ -158,7 +158,7 @@ fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) 
     let spine = seq
         .descendants()
         .find(|n| n.has_tag_name("spine"))
-        .ok_or("Keine Hauptspur (spine) gefunden")?;
+        .ok_or("No main track (spine) found")?;
     // lane → track
     let mut lanes: std::collections::BTreeMap<i32, Track> = Default::default();
     let mut main = Track::new(TrackKind::Video);
@@ -205,9 +205,9 @@ fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) 
                 }
             }
         } else if tag == "title" {
-            rep.skip("Titel");
+            rep.skip("Title");
         } else if tag == "transition" {
-            rep.skip("Übergänge");
+            rep.skip("Transitions");
         }
     }
     p.timeline.tracks.push(main);
@@ -220,7 +220,7 @@ fn convert_with(text: &str, name: &str, dir: &Path, progress: &crate::Progress) 
     }
     p.timeline.tracks.retain(|t| !t.clips.is_empty() || t.main);
     if rep.clips == 0 {
-        return Err("In der FCPXML wurden keine übertragbaren Clips gefunden".into());
+        return Err("No transferable clips found in the FCPXML".into());
     }
     Ok((p, rep))
 }
@@ -268,12 +268,12 @@ mod tests {
     #[test]
     fn missing_asset_keeps_clip() {
         let xml = r#"<?xml version="1.0"?><fcpxml version="1.9"><resources><format id="r1" frameDuration="1/25s" width="1280" height="720"/>
-            <asset id="r2" src="file:///gibt/es/nicht.mov" duration="6s" hasVideo="1" hasAudio="1" format="r1"/></resources>
+            <asset id="r2" src="file:///does/not/exist.mov" duration="6s" hasVideo="1" hasAudio="1" format="r1"/></resources>
             <library><event><project name="P"><sequence format="r1"><spine>
               <asset-clip ref="r2" offset="0s" start="1s" duration="2s"/>
             </spine></sequence></project></event></library></fcpxml>"#;
         let (p, rep) = convert(xml, "P", Path::new("")).unwrap();
-        assert_eq!(rep.missing, [PathBuf::from("/gibt/es/nicht.mov")]);
+        assert_eq!(rep.missing, [PathBuf::from("/does/not/exist.mov")]);
         assert_eq!((p.media.len(), rep.clips, p.timeline.tracks[0].clips.len()), (1, 1, 1));
         let m = &p.media[0];
         assert_eq!((m.kind, m.width, m.height, m.duration), (MediaKind::Video, 1280, 720, Time::from_secs_f64(6.0)));
@@ -330,6 +330,6 @@ mod tests {
             p.timeline.tracks[1].clips[0].start,
             Time::from_secs_f64(0.5)
         );
-        assert!(rep.skipped.iter().any(|(w, _)| w == "Übergänge"));
+        assert!(rep.skipped.iter().any(|(w, _)| w == "Transitions"));
     }
 }

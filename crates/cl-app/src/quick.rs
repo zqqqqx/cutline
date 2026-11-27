@@ -1,6 +1,6 @@
 //! Quick actions with settings: remove pauses, filler words, ducking, zoom punch-in.
 //! One shared window: set values, analyze first for pauses and filler words,
-//! check hits (click jumps there, individually deselectable), „Anwenden“ cuts.
+//! check hits (click jumps there, individually deselectable), „Apply“ cuts.
 //! Esc closes, Enter triggers the main action.
 
 use std::path::PathBuf;
@@ -105,7 +105,7 @@ fn last_used_values_survive_a_restart() {
     assert_eq!(vol_back, vol);
     assert!(safe && back.thresh_db == -40.0 && back.words == "also" && back.whole_track);
     assert_eq!(th_back, th);
-    assert!(back.open.is_none(), "das Fenster geht nicht von selbst wieder auf");
+    assert!(back.open.is_none(), "the window does not open again by itself");
     assert_eq!(back.min_pause, Quick::default().min_pause);
     // broken or empty file: default instead of a crash
     for bad in ["", "{", r#"{"quick": 7, "safe_area": "ja", "volume": "laut"}"#, r#"{"volume": {"percent": 500}}"#] {
@@ -123,7 +123,7 @@ impl Default for Quick {
             min_pause: 0.55,
             pad_before: 0.12,
             pad_after: 0.12,
-            words: cl_analyze::audio::FILLERS.join(", "),
+            words: cl_analyze::audio::fillers().join(", "),
             duck_db: 12.0,
             ramp_ms: 300.0,
             zoom: 1.25,
@@ -237,11 +237,11 @@ impl App {
         // Speed curves cannot be converted linearly: skip such clips
         let (curved, srcs): (Vec<Src>, Vec<Src>) = self.quick_sources().into_iter().partition(|s| s.curve);
         if !curved.is_empty() {
-            self.toast_err("Clips mit Tempo-Kurve werden übersprungen");
+            self.toast_err("Clips with a speed curve are skipped");
         }
         if srcs.is_empty() {
             if curved.is_empty() {
-                self.toast_err("Kein ausgewählter Clip mit Ton");
+                self.toast_err("No selected clip with audio");
             }
             return;
         }
@@ -255,10 +255,10 @@ impl App {
         let words = filler_words(&q.words);
         let models = self.models();
         if kind == QuickKind::Fillers && models.parakeet().is_none() {
-            self.toast_err("Benötigt: Parakeet TDT 0.6B v3 (Einstellungen → Modelle)");
+            self.toast_err("Requires: Parakeet TDT 0.6B v3 (Settings → Models)");
             return;
         }
-        let label = if kind == QuickKind::Pauses { "Pausen werden gesucht …" } else { "Füllwörter werden gesucht …" };
+        let label = if kind == QuickKind::Pauses { "Looking for pauses …" } else { "Looking for filler words …" };
         self.tasks.spawn(ctx, "tool", label, move |p, cancel| {
             let mut hits = Vec::new();
             let n = srcs.len() as f32;
@@ -287,7 +287,7 @@ impl App {
                             .filter(|w| words.contains(&norm(&w.text)))
                             .map(|w| {
                                 let (a, b) = clip((w.start - 0.03).max(0.0), w.end + 0.03);
-                                (a, b, format!("„{}“", w.text.trim()))
+                                (a, b, format!("“{}”", w.text.trim()))
                             })
                             .collect(),
                         Err(e) => return TaskDone::Failed(e),
@@ -323,13 +323,13 @@ impl App {
                 }
                 let total: f64 = ranges.iter().map(|r| (r.2 - r.1).as_secs_f64()).sum();
                 let n = ranges.len();
-                let label = if kind == QuickKind::Pauses { "Pausen entfernen" } else { "Füllwörter entfernen" };
+                let label = if kind == QuickKind::Pauses { "Remove pauses" } else { "Remove filler words" };
                 if self.ripple_ranges(ranges, label) {
 
                     self.toast(if kind == QuickKind::Pauses {
-                        format!("{} ({})", crate::theme::count_text(n, "{} Pause entfernt", "{} Pausen entfernt"), crate::theme::secs(total as f64, 1))
+                        format!("{} ({})", crate::theme::count_text(n, "{} pause removed", "{} pauses removed"), crate::theme::secs(total as f64, 1))
                     } else {
-                        crate::theme::count_text(n, "{} Füllwort entfernt", "{} Füllwörter entfernt")
+                        crate::theme::count_text(n, "{} filler word removed", "{} filler words removed")
                     });
                 }
                 true
@@ -363,17 +363,17 @@ impl App {
         let busy = self.tasks.running("tool").is_some();
         // Enter in a text field (word list, number field) is input, not the main action
         let (mut close, mut main) = crate::dialog::keys(ctx);
-        // Filler words without a speech recognition model: model download instead of „Analysieren“
+        // Filler words without a speech recognition model: model download instead of „Analyze“
         let no_model = kind == QuickKind::Fillers && self.models().parakeet().is_none();
         let multi = self.project.settings.ripple_all_tracks
             && self.quick.cover.iter().any(|c| self.quick.cover.first().is_some_and(|f| f.0 != c.0));
         let mut jump: Option<Time> = None;
         let mut x = false;
         let title = match kind {
-            QuickKind::Pauses => "Pausen entfernen",
-            QuickKind::Fillers => "Füllwörter entfernen",
-            QuickKind::Ducking => "Musik unter Sprache absenken",
-            QuickKind::Punch => "Zoom-Punch-in",
+            QuickKind::Pauses => "Remove pauses",
+            QuickKind::Fillers => "Remove filler words",
+            QuickKind::Ducking => "Lower music under speech",
+            QuickKind::Punch => "Zoom punch-in",
         };
         crate::dialog::window(ctx, crate::tr(title), "quick-action")
             .default_width(340.0)
@@ -384,46 +384,46 @@ impl App {
                 let mut changed = false;
                 match kind {
                     QuickKind::Pauses => {
-                        theme::row(ui, "Schwelle", |ui| {
+                        theme::row(ui, "Threshold", |ui| {
                             changed |= Slider::new(&mut q.thresh_db, -60.0..=-10.0).default(-32.0).suffix(" dB").show(ui).changed;
                         });
-                        theme::row(ui, "Mindestlänge", |ui| {
+                        theme::row(ui, "Minimum length", |ui| {
                             changed |= Slider::new(&mut q.min_pause, 0.2..=3.0).default(0.55).decimals(2).suffix(" s").show(ui).changed;
                         });
-                        theme::row(ui, "Rand davor", |ui| {
+                        theme::row(ui, "Margin before", |ui| {
                             changed |= Slider::new(&mut q.pad_before, 0.0..=0.5).default(0.12).decimals(2).suffix(" s").show(ui).changed;
                         });
-                        theme::row(ui, "Rand danach", |ui| {
+                        theme::row(ui, "Margin after", |ui| {
                             changed |= Slider::new(&mut q.pad_after, 0.0..=0.5).default(0.12).decimals(2).suffix(" s").show(ui).changed;
                         });
                     }
                     QuickKind::Fillers => {
-                        ui.label(RichText::new(crate::tr("Wörter (durch Komma getrennt)")).size(theme::FS_UI).color(theme::TEXT_DIM()));
+                        ui.label(RichText::new(crate::tr("Words (comma-separated)")).size(theme::FS_UI).color(theme::TEXT_DIM()));
                         changed |= ui.add(egui::TextEdit::multiline(&mut q.words).desired_rows(2).desired_width(f32::INFINITY)).changed();
                         if no_model {
-                            ui.label(RichText::new(crate::tr("Noch kein Spracherkennungsmodell installiert")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
+                            ui.label(RichText::new(crate::tr("No speech recognition model installed yet")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
                         }
                     }
                     QuickKind::Ducking => {
-                        ui.label(RichText::new(crate::tr("Wirkt auf den ausgewählten Musik-Clip")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
-                        theme::row(ui, "Absenkung", |ui| {
+                        ui.label(RichText::new(crate::tr("Applies to the selected music clip")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
+                        theme::row(ui, "Reduction", |ui| {
                             Slider::new(&mut q.duck_db, 1.0..=40.0).default(12.0).suffix(" dB").show(ui);
                         });
-                        theme::row(ui, "Rampe", |ui| {
+                        theme::row(ui, "Ramp", |ui| {
                             Slider::new(&mut q.ramp_ms, 0.0..=2000.0).default(300.0).suffix(" ms").show(ui);
                         });
                     }
                     QuickKind::Punch => {
-                        theme::row(ui, "Stärke", |ui| {
+                        theme::row(ui, "Strength", |ui| {
                             Slider::new(&mut q.zoom, 1.05..=2.0).default(1.25).percent().show(ui);
                         });
-                        theme::row(ui, "Dauer", |ui| {
+                        theme::row(ui, "Duration", |ui| {
                             Slider::new(&mut q.zoom_dur, 0.6..=5.0).default(1.7).decimals(1).suffix(" s").show(ui);
                         });
                     }
                 }
                 if analyzes {
-                    changed |= widgets::check(ui, &mut q.whole_track, crate::tr("Alle Clips der Spur")).changed();
+                    changed |= widgets::check(ui, &mut q.whole_track, crate::tr("All clips on the track")).changed();
                     if changed {
                         q.hits = None;
                     }
@@ -431,14 +431,14 @@ impl App {
                         let on: Vec<&Hit> = hits.iter().filter(|h| h.on).collect();
                         let secs: f64 = on.iter().map(|h| (h.to - h.from).as_secs_f64()).sum::<f64>().abs();
                         let sum = if kind == QuickKind::Pauses {
-                            format!("{}, {secs:.0} s kürzer", crate::theme::count_text(on.len(), "{} Pause", "{} Pausen"))
+                            format!("{}, {secs:.0} s shorter", crate::theme::count_text(on.len(), "{} pause", "{} pauses"))
                         } else {
-                            format!("{}, {secs:.0} s kürzer", crate::theme::count_text(on.len(), "{} Füllwort", "{} Füllwörter"))
+                            format!("{}, {secs:.0} s shorter", crate::theme::count_text(on.len(), "{} filler word", "{} filler words"))
                         };
                         ui.add_space(6.0);
                         ui.label(RichText::new(crate::tr(sum)).size(theme::FS_TEXT).strong());
                         if hits.is_empty() {
-                            theme::empty_state(ui, icon::CHECK_CIRCLE, "Nichts gefunden", "Werte anpassen und erneut analysieren");
+                            theme::empty_state(ui, icon::CHECK_CIRCLE, "Nothing found", "Adjust the values and analyze again");
                         }
                         egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
                             for h in hits.iter_mut() {
@@ -447,7 +447,7 @@ impl App {
                                     let text = format!("{}   {}   {}", mmss(h.from), theme::secs((h.to - h.from).as_secs_f64(), 1), h.text);
                                     let color = if h.on { theme::TEXT() } else { theme::TEXT_FAINT() };
                                     let r = ui.add(egui::Label::new(RichText::new(text).size(theme::FS_UI).color(color)).sense(egui::Sense::click()));
-                                    if r.on_hover_text(crate::tr("Zum Treffer springen")).clicked() {
+                                    if r.on_hover_text(crate::tr("Jump to this result")).clicked() {
                                         jump = Some(h.from);
                                     }
                                 });
@@ -459,16 +459,16 @@ impl App {
                 }
                 if kind == QuickKind::Ducking && q.confirm_replace {
                     ui.add_space(6.0);
-                    ui.label(RichText::new(crate::tr("Der Clip hat schon Lautstärke-Keyframes. Ersetzen?")).size(theme::FS_UI).color(theme::TEXT_DIM()));
+                    ui.label(RichText::new(crate::tr("The clip already has volume keyframes. Replace them?")).size(theme::FS_UI).color(theme::TEXT_DIM()));
                 }
                 let label = if no_model {
-                    "Modell laden …"
+                    "Download model …"
                 } else if analyzes && q.hits.is_none() {
-                    "Analysieren"
+                    "Analyze"
                 } else if q.confirm_replace {
-                    "Ersetzen"
+                    "Replace"
                 } else {
-                    "Anwenden"
+                    "Apply"
                 };
                 let (m, c) = crate::dialog::buttons(ui, theme::primary(label), !busy);
                 main |= m;
@@ -511,6 +511,7 @@ mod tests {
         let _g = crate::paths::test_lock();
         cl_i18n::set_ui_lang(cl_i18n::Lang::De);
         assert_eq!(mmss(Time::from_secs_f64(65.3)), "1:05,3");
+        cl_i18n::set_ui_lang(cl_i18n::Lang::En);
     }
 
     #[test]

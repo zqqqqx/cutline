@@ -120,7 +120,7 @@ impl Tasks {
     /// work can start again at once instead of being taken for still running.
     pub fn retire(&mut self, key: &str) {
         for t in self.list.iter_mut().filter(|t| t.key == key && t.cancel.load(Ordering::Relaxed)) {
-            t.key.push_str(":abgebrochen");
+            t.key.push_str(":canceled");
         }
     }
 
@@ -189,7 +189,7 @@ impl Tasks {
                 let done = if t.generation == self.generation || global {
                     done
                 } else {
-                    TaskDone::Failed("Ergebnis verworfen, weil inzwischen ein anderes Projekt geöffnet wurde".into())
+                    TaskDone::Failed("Result discarded because another project has been opened since".into())
                 };
                 out.push((t.key, done));
             }
@@ -218,9 +218,9 @@ mod tests {
         let ctx = egui::Context::default();
         let mut t = Tasks::default();
         let (go, wait) = channel::<()>();
-        t.spawn(&ctx, "roto:1", "alt", move |_, _| {
+        t.spawn(&ctx, "roto:1", "old", move |_, _| {
             let _ = wait.recv();
-            TaskDone::Failed("Abgebrochen".into())
+            TaskDone::Failed("Canceled".into())
         });
         // not cancelled: it keeps the key
         t.retire("roto:1");
@@ -228,7 +228,7 @@ mod tests {
         t.running("roto:1").unwrap().cancel();
         t.retire("roto:1");
         assert!(t.running("roto:1").is_none(), "the cancelled task gave the key up");
-        t.spawn(&ctx, "roto:1", "neu", |_, _| TaskDone::Failed("neu".into()));
+        t.spawn(&ctx, "roto:1", "new", |_, _| TaskDone::Failed("new".into()));
         assert!(t.running("roto:1").is_some_and(|n| n.id != old), "the new task runs under the key");
         assert_eq!(kind(&t.list[0].key), "roto", "the old one stays in its group until it ends");
         go.send(()).unwrap();
@@ -244,9 +244,9 @@ mod tests {
             while !cancel.load(Ordering::Relaxed) {
                 std::thread::yield_now();
             }
-            TaskDone::Failed("Abgebrochen".into())
+            TaskDone::Failed("Canceled".into())
         });
-        t.spawn(&ctx, "roto:2", "y", |_, _| TaskDone::Failed("kaputt".into()));
+        t.spawn(&ctx, "roto:2", "y", |_, _| TaskDone::Failed("broken".into()));
         t.running("roto:1").unwrap().cancel();
         let mut got = Vec::new();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
@@ -255,15 +255,15 @@ mod tests {
             got.extend(t.poll());
             std::thread::yield_now();
         }
-        assert!(matches!(&got[..], [(k, TaskDone::Failed(e))] if k == "roto:2" && e == "kaputt"), "{}", got.len());
+        assert!(matches!(&got[..], [(k, TaskDone::Failed(e))] if k == "roto:2" && e == "broken"), "{}", got.len());
     }
 
     #[test]
     fn results_from_a_left_project_are_dropped() {
         let ctx = egui::Context::default();
         let mut t = Tasks::default();
-        t.spawn(&ctx, "asr", "Untertitel", |_, _| TaskDone::Captions { segments: Vec::new(), offset: Time::ZERO, engine: "x" });
-        t.spawn(&ctx, "model", "Modell", |_, _| TaskDone::Model { id: "m" });
+        t.spawn(&ctx, "asr", "Captions", |_, _| TaskDone::Captions { segments: Vec::new(), offset: Time::ZERO, engine: "x" });
+        t.spawn(&ctx, "model", "Model", |_, _| TaskDone::Model { id: "m" });
         t.next_generation();
         let mut got = Vec::new();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);

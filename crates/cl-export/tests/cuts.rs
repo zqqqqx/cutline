@@ -65,7 +65,7 @@ fn media_dir() -> PathBuf {
 
 /// One video track with clips edge to edge at `cuts` (µs), clip `i` from source `i % n`.
 fn project(fps: Rational, m: &[MediaRef], cuts: &[i64]) -> Project {
-    let mut p = Project::new("Schnitte");
+    let mut p = Project::new("Cuts");
     p.settings.width = 64;
     p.settings.height = 36;
     p.settings.fps = fps;

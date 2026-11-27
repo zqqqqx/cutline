@@ -1,0 +1,27 @@
+# Names that versions up to 0.19.3 wrote to disk in German: key<TAB>old<TAB>new.
+# Read by cl_core::legacy::old(key) / pairs(key); the new names are in the code.
+tracks_dir	Vorrat	Tracks
+trash_dir	Papierkorb	Trash
+caption_track	Untertitel	Captions
+pack_folder	cutline-effekte	cutline-effects
+pack_folder	cutline-elemente	cutline-elements
+pack_folder	cutline-uebergaenge	cutline-transitions
+library_folder	Alle	All
+library_folder	Favoriten	Favorites
+library_folder	Zuletzt	Recent
+layout	Standard	Default
+layout	Getauscht	Swapped
+layout	Oben	Top
+layout	Beides	Both
+archive_media	Medien	Media
+archive_fonts	Schriften	Fonts
+parts_ext	teile	parts
+source_file	quelle.txt	source.txt
+export_part	Teil	Part
+log_session	sitzung	session
+log_crash	absturz	crash
+log_start	beginnt	starts
+log_end	endet sauber	ends cleanly
+log_panic	Absturz	Panic
+log_sent	Fehlerbericht gesendet	Error report sent
+log_graphics	Grafik	Graphics

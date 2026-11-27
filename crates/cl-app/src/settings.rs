@@ -65,7 +65,7 @@ pub struct AppSettings {
     pub auto_update: bool,
     /// Version skipped by the user
     pub skipped_version: Option<String>,
-    /// Last started version (for „Was ist neu“ after an update)
+    /// Last started version (for „What's new“ after an update)
     pub last_version: Option<String>,
     /// Plugin ID → active (overrides the manifest's `default_enabled`)
     pub plugin_states: std::collections::BTreeMap<String, bool>,
@@ -82,7 +82,7 @@ pub struct AppSettings {
     pub auto_quality: bool,
     /// Introduction finished or skipped
     pub onboarding_done: bool,
-    /// Answers to „Wofür nutzt du Cutline?“
+    /// Answers to „What do you use Cutline for?“
     pub use_cases: Vec<String>,
     /// Design: „system“, „dark“, „darkgray“, „gray“, „light“
     pub theme: String,
@@ -130,10 +130,10 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            // Tests check German texts: the system language (Linux: LANG=en_US…) must not quietly switch
-            // the global language of `tr` to English
+            // Tests check the texts as written in the code (English): the system language must not
+            // quietly switch the global language of `tr`
             lang: cl_i18n::Lang::from_locale(&if cfg!(test) {
-                "de".into()
+                "en".into()
             } else {
                 std::env::var("LANG").unwrap_or_else(|_| "de".into())
             })
@@ -199,6 +199,9 @@ impl AppSettings {
     }
     pub fn load() -> Self {
         let mut s: AppSettings = paths::read_json_or_quarantine(&Self::path());
+        if let Some(name) = crate::legacy::layout_name(&s.layout.name) {
+            s.layout.name = name.into();
+        }
         // Migration from phase 1 (separate file for the UI scale)
         if !Self::path().is_file() {
             s.ui_scale = crate::chrome::load_ui_scale();
@@ -359,21 +362,21 @@ impl Section {
 }
 
 const SECTIONS: [(Section, &str, &str); 15] = [
-    (Section::Library, icon::BOOKMARKS, "Bibliothek"),
-    (Section::Contents, icon::PACKAGE, "Inhalte"),
+    (Section::Library, icon::BOOKMARKS, "Library"),
+    (Section::Contents, icon::PACKAGE, "Content~plural"),
     (Section::Brand, icon::PALETTE, "Brand Kit"),
-    (Section::General, icon::GEAR_SIX, "Allgemein"),
-    (Section::Projects, icon::FOLDERS, "Projekte"),
-    (Section::Editing, icon::SCISSORS, "Bearbeiten"),
+    (Section::General, icon::GEAR_SIX, "General"),
+    (Section::Projects, icon::FOLDERS, "Projects"),
+    (Section::Editing, icon::SCISSORS, "Edit"),
     (Section::Audio, icon::SPEAKER_HIGH, "Audio"),
-    (Section::Performance, icon::GAUGE, "Leistung"),
-    (Section::Mcp, icon::PLUGS_CONNECTED, "MCP-Schnittstelle"),
-    (Section::Shortcuts, icon::KEYBOARD, "Tastenkürzel"),
-    (Section::Models, icon::CPU, "Modelle (lokale KI)"),
+    (Section::Performance, icon::GAUGE, "Performance"),
+    (Section::Mcp, icon::PLUGS_CONNECTED, "MCP interface"),
+    (Section::Shortcuts, icon::KEYBOARD, "Keyboard shortcuts"),
+    (Section::Models, icon::CPU, "Models (local AI)"),
     (Section::Updates, icon::ARROW_CIRCLE_UP, "Updates"),
-    (Section::Integrations, icon::PUZZLE_PIECE, "Plugins und Konten"),
+    (Section::Integrations, icon::PUZZLE_PIECE, "Plugins and accounts"),
     (Section::Import, icon::DOWNLOAD_SIMPLE, "Import"),
-    (Section::About, icon::INFO, "Über Cutline"),
+    (Section::About, icon::INFO, "About Cutline"),
 ];
 
 impl App {
@@ -441,7 +444,7 @@ impl App {
                                 ui.set_width(170.0);
                                 ui.set_height(446.0);
                                 ui.label(
-                                    RichText::new(crate::tr("Einstellungen"))
+                                    RichText::new(crate::tr("Settings"))
                                         .strong()
                                         .size(theme::FS_TITLE),
                                 );
@@ -506,7 +509,7 @@ impl App {
                                     if theme::icon_button(
                                         ui,
                                         icon::X,
-                                        "Schließen (Esc)",
+                                        "Close (Esc)",
                                         true,
                                         false,
                                     )
@@ -518,7 +521,7 @@ impl App {
                                         && theme::icon_button(
                                             ui,
                                             icon::ARROW_COUNTER_CLOCKWISE,
-                                            "Diesen Bereich zurücksetzen",
+                                            "Reset this section",
                                             true,
                                             false,
                                         )
@@ -567,7 +570,7 @@ impl App {
         }
     }
 
-    /// Integrations with a toggle; switched-off ones are grayed out. Content packs are under „Inhalte“.
+    /// Integrations with a toggle; switched-off ones are grayed out. Content packs are under „Content“.
     pub fn plugins_settings(&mut self, ui: &mut egui::Ui) {
         let lang = self.i18n.lang().code().to_string();
         let mut toggled = None;
@@ -633,7 +636,7 @@ impl App {
             _ => {}
         }
         self.settings.save();
-        self.toast("Bereich zurückgesetzt");
+        self.toast("Section reset");
     }
 
     fn settings_body(&mut self, ui: &mut egui::Ui) {
@@ -654,7 +657,7 @@ impl App {
         }
         match self.settings_section {
             Section::General => {
-                theme::row(ui, "Sprache", |ui| {
+                theme::row(ui, "Language", |ui| {
                     egui::ComboBox::from_id_salt("set-lang")
                         .selected_text(crate::tr(self.i18n.lang().native_name()))
                         .show_ui(ui, |ui| {
@@ -676,7 +679,7 @@ impl App {
                             }
                         });
                 });
-                theme::row(ui, "Design", |ui| {
+                theme::row(ui, "Theme", |ui| {
                     ui.horizontal_wrapped(|ui| {
                         let mut opts: Vec<(&str, &str, Option<&theme::Palette>)> =
                             vec![("system", "System", None)];
@@ -724,7 +727,7 @@ impl App {
                         }
                     });
                 });
-                theme::row(ui, "Akzentfarbe", |ui| {
+                theme::row(ui, "Accent color", |ui| {
                     ui.horizontal_wrapped(|ui| {
                         let mut pick = None;
                         for (id, name, dark, light) in theme::ACCENTS {
@@ -749,11 +752,11 @@ impl App {
                         let [r, g, b, _] = theme::ACCENT().to_array();
                         let mut rgb = egui::Color32::from_hex(&self.settings.accent).map_or([r, g, b], |c| [c.r(), c.g(), c.b()]);
                         ui.add_space(4.0);
-                        if ui.color_edit_button_srgb(&mut rgb).on_hover_text(crate::tr("Eigene Farbe")).changed() {
+                        if ui.color_edit_button_srgb(&mut rgb).on_hover_text(crate::tr("Custom color")).changed() {
                             pick = Some(format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]));
                         }
                         if custom {
-                            ui.label(RichText::new(crate::tr("Eigene Farbe")).small().color(theme::TEXT_DIM()));
+                            ui.label(RichText::new(crate::tr("Custom color")).small().color(theme::TEXT_DIM()));
                         }
                         if let Some(spec) = pick {
                             theme::set_accent(&spec);
@@ -766,14 +769,14 @@ impl App {
                 });
                 // Arrangement of the large panels (tiles with a mini sketch), see layout.rs
                 self.arrangement_settings(ui);
-                if widgets::toggle_row(ui, "Animationen", &mut self.settings.animations) {
+                if widgets::toggle_row(ui, "Animations", &mut self.settings.animations) {
 
                     theme::set_animations(self.settings.animations);
                     let ctx = ui.ctx().clone();
                     theme::apply(&ctx);
                 }
-                widgets::toggle_row(ui, "Scrollleiste in der Zeitleiste", &mut self.settings.timeline_scrollbar);
-                theme::row(ui, "Oberfläche", |ui| {
+                widgets::toggle_row(ui, "Scrollbar in the timeline", &mut self.settings.timeline_scrollbar);
+                theme::row(ui, "Interface", |ui| {
                     let mut v = self.settings.ui_scale;
                     let e = Slider::new(&mut v, 0.6..=2.0)
                         .percent()
@@ -786,14 +789,14 @@ impl App {
                 });
                 widgets::toggle_row(
                     ui,
-                    "Beim Start die Projektübersicht zeigen",
+                    "Show projects on startup",
                     &mut self.settings.start_on_home,
                 );
-                widgets::toggle_row(ui, "Beim Schließen zur Projektübersicht", &mut self.settings.close_to_home);
+                widgets::toggle_row(ui, "Go to projects when closing", &mut self.settings.close_to_home);
                 // Tour and introduction are in the main menu
             }
             Section::Projects => {
-                theme::row(ui, "Projektordner", |ui| {
+                theme::row(ui, "Project folder", |ui| {
                     let d = paths::projects_dir();
                     let full = d.display().to_string();
                     let n = full.chars().count();
@@ -804,7 +807,7 @@ impl App {
                     };
                     if ui
                         .add(theme::ghost(format!("{}  {short}", icon::FOLDER_OPEN)))
-                        .on_hover_text(format!("{}\n{full}", crate::tr("Im Explorer öffnen")))
+                        .on_hover_text(format!("{}\n{full}", crate::tr("Open in Explorer")))
                         .clicked()
                     {
                         let _ = std::fs::create_dir_all(&d);
@@ -813,33 +816,33 @@ impl App {
                 });
                 ui.horizontal(|ui| {
                     ui.add_space(theme::LABEL_W + 6.0);
-                    if ui.add(theme::secondary(format!("{}  Ändern …", icon::FOLDER_SIMPLE_PLUS))).on_hover_text(crate::tr("Vorhandene Projekte werden mit verschoben")).clicked() {
-                        if let Some(new) = crate::dialog().set_title(crate::tr("Neuer Projektordner")).pick_folder() {
+                    if ui.add(theme::secondary(format!("{}  Change …", icon::FOLDER_SIMPLE_PLUS))).on_hover_text(crate::tr("Existing projects are moved along")).clicked() {
+                        if let Some(new) = crate::dialog().set_title(crate::tr("New projects folder")).pick_folder() {
                             self.change_projects_dir(new);
                         }
                     }
                     if self.settings.projects_dir.is_some()
-                        && ui.add(theme::ghost("Standard")).on_hover_text(crate::tr("Zurück in den Datenordner")).clicked()
+                        && ui.add(theme::ghost("Default")).on_hover_text(crate::tr("Back to the data folder")).clicked()
                     {
                         self.change_projects_dir(paths::data_dir().join("Projects"));
                     }
                 });
-                theme::section(ui, "Speichern");
-                widgets::toggle_row(ui, "Automatisch speichern", &mut self.settings.autosave);
-                theme::row(ui, "Sicherung alle", |ui| {
+                theme::section(ui, "Save");
+                widgets::toggle_row(ui, "Auto save", &mut self.settings.autosave);
+                theme::row(ui, "Backup every", |ui| {
                     let mut v = self.settings.backup_minutes as f32;
                     if Slider::new(&mut v, 1.0..=60.0).suffix(" min").decimals(0).default(5.0).show(ui).changed {
                         self.settings.backup_minutes = v.round() as u32;
                     }
                 });
-                theme::row(ui, "Aufbewahren", |ui| {
+                theme::row(ui, "Keep", |ui| {
                     let mut v = self.settings.backup_keep as f32;
                     if Slider::new(&mut v, 3.0..=100.0).decimals(0).default(30.0).show(ui).changed {
                         self.settings.backup_keep = v.round() as usize;
                     }
                 });
-                theme::section(ui, "Neue Projekte");
-                theme::row(ui, "Bildrate", |ui| {
+                theme::section(ui, "New projects");
+                theme::row(ui, "Frame rate", |ui| {
                     egui::ComboBox::from_id_salt("set-new-fps")
                         .selected_text(crate::tr(format!("{} fps", theme::dec(self.settings.new_fps.as_f64(), 3))))
                         .show_ui(ui, |ui| {
@@ -849,10 +852,10 @@ impl App {
                             }
                         });
                 });
-                theme::section(ui, "Exportieren");
-                widgets::toggle_row(ui, "Kapitel aus Markern", &mut self.settings.export_chapters);
+                theme::section(ui, "Export");
+                widgets::toggle_row(ui, "Chapters from markers", &mut self.settings.export_chapters);
                 ui.add_enabled_ui(self.settings.export_chapters, |ui| {
-                    widgets::toggle_row(ui, "Hinweis bei Kapiteln unter 10 s", &mut self.settings.chapter_hint);
+                    widgets::toggle_row(ui, "Hint for chapters under 10 s", &mut self.settings.chapter_hint);
                 });
             }
             Section::Library => {
@@ -861,19 +864,19 @@ impl App {
                     for d in self.library.linked(k) {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(format!("{}  {}", icon::LINK_SIMPLE, crate::paths::shown(&d))).small());
-                            if theme::icon_button(ui, icon::X, "Verknüpfung lösen", true, false).clicked() {
+                            if theme::icon_button(ui, icon::X, "Unlink", true, false).clicked() {
                                 self.library.unlink_folder(k, &d);
                             }
                         });
                     }
-                    if ui.add(theme::secondary(format!("{}  Ordner verknüpfen …", icon::FOLDER_SIMPLE_PLUS))).clicked() {
+                    if ui.add(theme::secondary(format!("{}  Link folder …", icon::FOLDER_SIMPLE_PLUS))).clicked() {
                         if let Some(d) = crate::dialog().pick_folder() {
                             self.library.link_folder(k, d);
                         }
                     }
                 }
                 theme::section(ui, "Plugins");
-                widgets::toggle_row(ui, "Downloads in die Bibliothek übernehmen", &mut self.settings.lib_downloads);
+                widgets::toggle_row(ui, "Add downloads to the library", &mut self.settings.lib_downloads);
             }
             Section::Audio => {
                 // Query the device list once per opening (the query is not cheap)
@@ -884,12 +887,12 @@ impl App {
                     v
                 });
                 let before = self.settings.audio_device.clone();
-                theme::row(ui, "Ausgabegerät", |ui| {
+                theme::row(ui, "Output device", |ui| {
                     egui::ComboBox::from_id_salt("set-audio-out")
                         .width(300.0)
-                        .selected_text(self.settings.audio_device.clone().unwrap_or_else(|| crate::tr("Systemstandard")))
+                        .selected_text(self.settings.audio_device.clone().unwrap_or_else(|| crate::tr("System default")))
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.settings.audio_device, None, crate::tr("Systemstandard"));
+                            ui.selectable_value(&mut self.settings.audio_device, None, crate::tr("System default"));
                             for d in &devices {
                                 ui.selectable_value(&mut self.settings.audio_device, Some(d.clone()), d);
                             }
@@ -901,10 +904,10 @@ impl App {
                         self.restart_audio();
                     }
                 }
-                widgets::toggle_row(ui, "Ton beim Ziehen des Playheads", &mut self.settings.scrub_audio);
-                widgets::toggle_row(ui, "Hinweiston, wenn ein Export fertig ist", &mut self.settings.export_sound);
-                theme::section(ui, "Neue Projekte");
-                theme::row(ui, "Kanäle", |ui| {
+                widgets::toggle_row(ui, "Sound while dragging the playhead", &mut self.settings.scrub_audio);
+                widgets::toggle_row(ui, "Play a sound when an export is finished", &mut self.settings.export_sound);
+                theme::section(ui, "New projects");
+                theme::row(ui, "Channels", |ui| {
                     egui::ComboBox::from_id_salt("set-channels")
                         .selected_text(crate::tr(self.settings.new_channels.name()))
                         .show_ui(ui, |ui| {
@@ -916,21 +919,21 @@ impl App {
                 // Channels of the open project: project tab → format
             }
             Section::Editing => {
-                theme::row(ui, "Bilddauer", |ui| {
+                theme::row(ui, "Image duration", |ui| {
                     Slider::new(&mut self.settings.image_duration, 0.5..=30.0)
                         .suffix(" s")
                         .decimals(1)
                         .default(5.0)
                         .show(ui)
                 });
-                theme::row(ui, "Textdauer", |ui| {
+                theme::row(ui, "Text duration", |ui| {
                     Slider::new(&mut self.settings.text_duration, 0.5..=30.0)
                         .suffix(" s")
                         .decimals(1)
                         .default(3.0)
                         .show(ui)
                 });
-                theme::row(ui, "Übergang", |ui| {
+                theme::row(ui, "Transition", |ui| {
                     Slider::new(&mut self.settings.transition_duration, 0.1..=3.0)
                         .suffix(" s")
                         .decimals(1)
@@ -948,12 +951,12 @@ impl App {
             }
             Section::Performance => {
                 // the preview quality itself only on the player chip (one place)
-                theme::section(ui, "Vorschau");
-                if widgets::toggle_row(ui, "Vorschauqualität beim Abspielen automatisch anpassen", &mut self.settings.auto_quality) {
+                theme::section(ui, "Preview");
+                if widgets::toggle_row(ui, "Adjust preview quality automatically during playback", &mut self.settings.auto_quality) {
                     self.settings.save();
                 }
                 ui.add_space(8.0);
-                theme::section(ui, "Hardware-Kodierung");
+                theme::section(ui, "Hardware encoding");
                 theme::row(ui, "Encoder", |ui| {
                     use cl_export::Encoder;
                     // only the paths whose test run worked here (detection in the background)
@@ -962,7 +965,7 @@ impl App {
                         ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
                     }
                     let found = found.unwrap_or(&[]);
-                    let mut choices = vec![("auto", "Automatisch")];
+                    let mut choices = vec![("auto", "Automatic")];
                     choices.extend(
                         Encoder::AUTO
                             .into_iter()
@@ -993,11 +996,11 @@ impl App {
                     self.cache_size = Some((std::time::Instant::now(), n));
                 }
                 let bytes = self.cache_size.map(|c| c.1).unwrap_or(0);
-                theme::row(ui, "Belegt", |ui| {
+                theme::row(ui, "Used~occupied", |ui| {
                     ui.label(RichText::new(crate::props::fmt_bytes(bytes)).strong());
                     if ui
-                        .add(theme::secondary(format!("{}  Cache leeren", icon::BROOM)))
-                        .on_hover_text(crate::tr("Proxys, Vorschaubilder und Projektbilder. Werden bei Bedarf neu erzeugt."))
+                        .add(theme::secondary(format!("{}  Clear cache", icon::BROOM)))
+                        .on_hover_text(crate::tr("Proxies, previews and project images. Created again when needed."))
                         .clicked()
                     {
                         // masks and SVG images of older projects are in the cache too: leave them
@@ -1007,13 +1010,13 @@ impl App {
                         self.fx_thumbs_requested.clear();
                         self.cache_size = None;
                         self.invalidate_preview();
-                        self.toast(format!("{} {}", icon::CHECK, crate::tr("Cache geleert")));
+                        self.toast(format!("{} {}", icon::CHECK, crate::tr("Cache cleared")));
                     }
                 });
-                theme::row(ui, "Aufräumen", |ui| {
+                theme::row(ui, "Clean up", |ui| {
                     let name = |d: u32| match d {
-                        0 => crate::tr("Nie"),
-                        d => crate::tr(format!("Älter als {d} Tage")),
+                        0 => crate::tr("Never"),
+                        d => crate::tr(format!("Older than {d} days")),
                     };
                     egui::ComboBox::from_id_salt("set-cache-days")
                         .selected_text(name(self.settings.cache_days))
@@ -1026,7 +1029,7 @@ impl App {
             }
             Section::Mcp => {
                 let mut on = self.settings.mcp_enabled;
-                if widgets::toggle_row(ui, "MCP-Server aktivieren", &mut on) {
+                if widgets::toggle_row(ui, "Enable MCP server", &mut on) {
                     self.settings.mcp_enabled = on;
                     if on {
                         self.start_mcp();
@@ -1046,23 +1049,23 @@ impl App {
                     });
                     widgets::toggle_row(
                         ui,
-                        "Nur lesen (keine Änderungen erlauben)",
+                        "Read only (allow no changes)",
                         &mut self.settings.mcp_read_only,
                     );
                 });
                 if let Some((port, token, ro)) = running {
-                    theme::section(ui, "Verbindung");
+                    theme::section(ui, "Connection");
                     theme::row(ui, "Status", |ui| {
                         ui.label(
                             RichText::new(crate::tr(format!(
-                                "{}  aktiv auf Port {port}{}",
+                                "{}  active on port {port}{}",
                                 icon::CIRCLE,
-                                if ro { " · nur lesen" } else { "" }
+                                if ro { " · read only" } else { "" }
                             )))
                             .color(theme::TEXT()),
                         )
                     });
-                    theme::row(ui, "Adresse", |ui| {
+                    theme::row(ui, "Address", |ui| {
                         ui.monospace(format!("http://127.0.0.1:{port}/mcp"))
                     });
                     theme::row(ui, "Token", |ui| {
@@ -1070,7 +1073,7 @@ impl App {
                         if theme::icon_button(
                             ui,
                             icon::ARROWS_CLOCKWISE,
-                            "Neues Token erzeugen (alte Clients verlieren den Zugriff)",
+                            "Generate new token (old clients lose access)",
                             true,
                             false,
                         )
@@ -1082,7 +1085,7 @@ impl App {
                     ui.add_space(6.0);
                     if ui
                         .add(theme::primary(format!(
-                            "{}  Client-Konfiguration kopieren",
+                            "{}  Copy client configuration",
                             icon::COPY
                         )))
                         .clicked()
@@ -1092,11 +1095,11 @@ impl App {
                             "headers": { "Authorization": format!("Bearer {token}") } } } });
                         ui.ctx()
                             .copy_text(serde_json::to_string_pretty(&cfg).unwrap_or_default());
-                        self.toast("MCP-Konfiguration kopiert");
+                        self.toast("MCP configuration copied");
                     }
                     ui.label(
                         RichText::new(crate::tr(format!(
-                            "Auch gespeichert in {}",
+                            "Also saved in {}",
                             paths::data_dir().join("mcp.json").display()
                         )))
                         .small()
@@ -1104,14 +1107,14 @@ impl App {
                     );
                 } else if self.settings.mcp_enabled {
                     ui.label(
-                        RichText::new(crate::tr("Server startet …"))
+                        RichText::new(crate::tr("Server starting …"))
                             .small()
                             .color(theme::TEXT_DIM()),
                     );
                 }
-                theme::section(ui, "Ohne laufende App (stdio)");
+                theme::section(ui, "Without the running app (stdio)");
                 ui.label(
-                    RichText::new(crate::tr("cutline --mcp projekt.cutline"))
+                    RichText::new(crate::tr("cutline --mcp project.cutline"))
                         .monospace()
                         .color(theme::TEXT_DIM()),
                 );
@@ -1131,11 +1134,11 @@ impl App {
                         "Version {} · MPL-2.0",
                         env!("CARGO_PKG_VERSION")
                     )));
-                    if ui.add(theme::ghost(format!("{}  Was ist neu", icon::SPARKLE))).clicked() {
+                    if ui.add(theme::ghost(format!("{}  What's new", icon::SPARKLE))).clicked() {
                         self.updater.view = Some(crate::update::View::News(crate::update::embedded_notes()));
                     }
                 });
-                ui.label(RichText::new(crate::tr("Das offene Schnittprogramm für Creator. Einfach zu bedienen, schnell, komplett auf deinem Rechner.")).color(theme::TEXT_DIM()));
+                ui.label(RichText::new(crate::tr("The open video editor for creators. Easy to use, fast, entirely on your computer.")).color(theme::TEXT_DIM()));
                 ui.add_space(8.0);
                 let (e, f, t) = (
                     cl_fx::EFFECTS.len(),
@@ -1143,7 +1146,7 @@ impl App {
                     cl_fx::TRANSITIONS.len(),
                 );
                 ui.label(RichText::new(crate::tr(format!(
-                    "{e} Effekte · {f} Filter · {t} Übergänge · {} Sticker · {} Soundeffekte · {} Textvorlagen",
+                    "{e} effects · {f} filters · {t} transitions · {} stickers · {} sound effects · {} text templates",
                     cl_fx::stickers::STICKERS.len(),
                     cl_fx::sfx::SFX.len(),
                     cl_fx::text::TEMPLATES.len()
@@ -1152,7 +1155,7 @@ impl App {
                 .color(theme::TEXT_DIM()));
                 ui.label(
                     RichText::new(crate::tr(format!(
-                        "{} Plugins geladen",
+                        "{} plugins loaded",
                         self.plugins.plugins.len()
                     )))
                     .small()
@@ -1161,7 +1164,7 @@ impl App {
                 ui.add_space(8.0);
                 crate::applog::about_buttons(self, ui);
                 if crate::report::available() {
-                    widgets::toggle_row(ui, "Fehlerberichte senden", &mut self.settings.send_reports);
+                    widgets::toggle_row(ui, "Send error reports", &mut self.settings.send_reports);
                 }
                 crate::report::feedback_ui(ui, self);
             }
@@ -1174,16 +1177,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_apps_stay_german_under_an_english_system_language() {
+    fn test_apps_stay_english_under_a_german_system_language() {
         let _g = crate::paths::test_lock();
         let old = std::env::var_os("LANG");
-        std::env::set_var("LANG", "en_US.UTF-8");
+        std::env::set_var("LANG", "de_DE.UTF-8");
         let lang = AppSettings::default().lang();
         match old {
             Some(v) => std::env::set_var("LANG", v),
             None => std::env::remove_var("LANG"),
         }
-        assert_eq!(lang, cl_i18n::Lang::De);
+        assert_eq!(lang, cl_i18n::Lang::En);
     }
 
     #[test]
@@ -1273,7 +1276,7 @@ mod tests {
         assert_eq!(ok.new_fps, cl_core::Rational::new(24000, 1001));
         assert!(serde_json::from_str::<AppSettings>("{}").is_ok());
         // wrong type: error, the file is set aside (paths::read_json_or_quarantine)
-        assert!(serde_json::from_str::<AppSettings>(r#"{"ui_scale":"groß"}"#).is_err());
+        assert!(serde_json::from_str::<AppSettings>(r#"{"ui_scale":"large"}"#).is_err());
     }
 
     /// Each section resets exactly its own values; history, language, project folder and sections with
@@ -1338,7 +1341,7 @@ mod tests {
     fn brand_reset_empties_the_kit() {
         let mut app = crate::saving::tests::test_app();
         let mut kit = crate::brand::BrandKit::default();
-        kit.colors.push(crate::brand::BrandColor { name: "Rot".into(), rgb: [255, 0, 0] });
+        kit.colors.push(crate::brand::BrandColor { name: "Red".into(), rgb: [255, 0, 0] });
         kit.fonts[1] = Some("Poppins".into());
         let ctx = egui::Context::default();
         app.set_brand(&ctx, kit);

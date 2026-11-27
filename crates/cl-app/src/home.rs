@@ -50,14 +50,14 @@ pub fn thumb_path(project: &Path) -> PathBuf {
         .join(format!("{:016x}.rgba", h.finish()))
 }
 
-/// Free file name for a duplicated project: `<name> (Kopie).cutline`, then `(Kopie 2)` …
+/// Free file name for a duplicated project: `<name> (Copy).cutline`, then `(Copy 2)` …
 /// Special characters in the name (`/`, `:`, `?` …) are replaced.
 fn copy_path(dir: &Path, name: &str) -> PathBuf {
     let base = paths::safe_name(name);
-    let mut out = dir.join(format!("{base} (Kopie).cutline"));
+    let mut out = dir.join(format!("{base} (Copy).cutline"));
     let mut n = 2;
     while out.exists() {
-        out = dir.join(format!("{base} (Kopie {n}).cutline"));
+        out = dir.join(format!("{base} (Copy {n}).cutline"));
         n += 1;
     }
     out
@@ -119,13 +119,13 @@ pub fn reveal(p: &Path) {
     }
 }
 
-/// Free name „Projekt N“.
+/// Free name "Project N".
 pub fn next_project_name() -> String {
     let dir = paths::projects_dir();
     (1..)
-        .map(|n| format!("Projekt {n}"))
+        .map(|n| format!("Project {n}"))
         .find(|n| !dir.join(format!("{n}.cutline")).exists())
-        .unwrap_or_else(|| "Projekt".into())
+        .unwrap_or_else(|| "Project".into())
 }
 
 pub fn ago(t: SystemTime) -> String {
@@ -134,11 +134,11 @@ pub fn ago(t: SystemTime) -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     match s {
-        0..=59 => crate::tr("gerade eben"),
-        60..=3599 => crate::tr(format!("vor {} Min.", s / 60)),
-        3600..=86399 => crate::tr(format!("vor {} Std.", s / 3600)),
-        86400..=172799 => crate::tr("gestern"),
-        _ => crate::tr(format!("vor {} Tagen", s / 86400)),
+        0..=59 => crate::tr("just now"),
+        60..=3599 => crate::tr(format!("{} min ago", s / 60)),
+        3600..=86399 => crate::tr(format!("{} h ago", s / 3600)),
+        86400..=172799 => crate::tr("yesterday"),
+        _ => crate::tr(format!("{} days ago", s / 86400)),
     }
 }
 
@@ -166,7 +166,7 @@ impl HomeState {
                 let _ = tx.send(scan_projects(&paths::projects_dir(), &recent, &cache));
                 c.request_repaint();
             })
-            .expect("Projektliste");
+            .expect("project list");
         self.scan_rx = Some(rx);
     }
 
@@ -277,7 +277,7 @@ impl App {
             if ui
                 .add_sized(
                     [ui.available_width(), 34.0],
-                    theme::primary(format!("{}  Neues Projekt", icon::PLUS)),
+                    theme::primary(format!("{}  New project", icon::PLUS)),
                 )
                 .clicked()
             {
@@ -287,7 +287,7 @@ impl App {
             if ui
                 .add_sized(
                     [ui.available_width(), 30.0],
-                    theme::secondary(format!("{}  Projekt öffnen …", icon::FOLDER_OPEN)),
+                    theme::secondary(format!("{}  Open project …", icon::FOLDER_OPEN)),
                 )
                 .clicked()
             {
@@ -297,10 +297,10 @@ impl App {
             if self.import_enabled() {
                 ui.add_space(6.0);
                 let r = ui.with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
-                    ui.add(theme::ghost(format!("{}  Projekt importieren …", icon::DOWNLOAD_SIMPLE)).min_size(vec2(0.0, 30.0)))
+                    ui.add(theme::ghost(format!("{}  Import project …", icon::DOWNLOAD_SIMPLE)).min_size(vec2(0.0, 30.0)))
                 });
                 if r.inner
-                    .on_hover_text(crate::tr("Aus CapCut, Final Cut Pro oder DaVinci Resolve"))
+                    .on_hover_text(crate::tr("From CapCut, Final Cut Pro or DaVinci Resolve"))
                     .clicked()
                 {
                     self.import.open = true;
@@ -339,19 +339,19 @@ impl App {
                 );
                 resp.clicked()
             };
-            nav(ui, icon::SQUARES_FOUR, "Projekte", true);
-            if nav(ui, icon::FOLDER_SIMPLE, "Projektordner", false) {
+            nav(ui, icon::SQUARES_FOUR, "Projects", true);
+            if nav(ui, icon::FOLDER_SIMPLE, "Project folder", false) {
                 let d = paths::projects_dir();
                 let _ = std::fs::create_dir_all(&d);
                 reveal(&d);
             }
-            if nav(ui, icon::GEAR_SIX, "Einstellungen", false) {
+            if nav(ui, icon::GEAR_SIX, "Settings", false) {
                 self.settings_open = true;
             }
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                 ui.label(
                     RichText::new(crate::tr(format!(
-                        "Cutline {} · Open Source · MPL-2.0",
+                        "Cutline {} · Open source · MPL-2.0",
                         env!("CARGO_PKG_VERSION")
                     )))
                     .small()
@@ -365,13 +365,13 @@ impl App {
             egui::UiBuilder::new().max_rect(main.shrink2(vec2(24.0, 18.0))),
             |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(crate::tr("Projekte")).size(theme::FS_PAGE).strong());
+                    ui.label(RichText::new(crate::tr("Projects")).size(theme::FS_PAGE).strong());
                     ui.label(
                         RichText::new(crate::tr(format!("{}", self.home.entries.len())))
                             .color(theme::TEXT_DIM()),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if theme::icon_button(ui, icon::LIST, "Liste", true, self.home.list_view)
+                        if theme::icon_button(ui, icon::LIST, "List", true, self.home.list_view)
                             .clicked()
                         {
                             self.home.list_view = true;
@@ -379,7 +379,7 @@ impl App {
                         if theme::icon_button(
                             ui,
                             icon::SQUARES_FOUR,
-                            "Kacheln",
+                            "Grid",
                             true,
                             !self.home.list_view,
                         )
@@ -391,7 +391,7 @@ impl App {
                         ui.add(
                             egui::TextEdit::singleline(&mut self.home.search)
                                 .hint_text(crate::tr(format!(
-                                    "{}  Projekte suchen",
+                                    "{}  Search projects",
                                     icon::MAGNIFYING_GLASS
                                 )))
                                 // text and placeholder the same size
@@ -450,7 +450,7 @@ impl App {
                                     format!(
                                         "{} · {} · {}×{}",
                                         fmt_dur(dur),
-                                        crate::tr(crate::theme::count_text(clips, "{} Clip", "{} Clips")),
+                                        crate::tr(crate::theme::count_text(clips, "{} clip", "{} clips")),
                                         size.0,
                                         size.1
                                     ),
@@ -470,7 +470,7 @@ impl App {
                                 resp.context_menu(|ui| project_menu(ui, &path, &mut action));
                             }
                         } else {
-                            // „Neues Projekt“ tile + projects
+                            // „New project“ tile + projects
                             let n = idx.len() + 1;
                             let gap = 16.0;
                             let avail = ui.available_width();
@@ -537,14 +537,14 @@ impl App {
                                         ui.painter().text(
                                             thumb_r.center() + vec2(0.0, 24.0),
                                             egui::Align2::CENTER_CENTER,
-                                            crate::tr("Neues Projekt"),
+                                            crate::tr("New project"),
                                             egui::FontId::proportional(theme::FS_TEXT),
                                             theme::TEXT(),
                                         );
                                         ui.painter().text(
                                             pos2(r.left() + 2.0, thumb_r.bottom() + 14.0),
                                             egui::Align2::LEFT_CENTER,
-                                            crate::tr("Oder Dateien hierher ziehen"),
+                                            crate::tr("Or drop files here"),
                                             egui::FontId::proportional(theme::FS_HINT),
                                             theme::TEXT_DIM(),
                                         );
@@ -652,7 +652,7 @@ impl App {
                                 ui.add_space(gap);
                             }
                             if idx.is_empty() && !q.is_empty() {
-                                theme::empty_state(ui, icon::MAGNIFYING_GLASS, "Keine Projekte gefunden", "");
+                                theme::empty_state(ui, icon::MAGNIFYING_GLASS, "No projects found", "");
                             }
                         }
                     });
@@ -717,7 +717,7 @@ impl App {
             .and_then(|mut proj| {
                 let dir = paths::projects_dir();
                 let out = copy_path(&dir, &proj.name);
-                proj.name = format!("{} (Kopie)", proj.name);
+                proj.name = crate::tr(format!("{} (Copy)", proj.name));
                 std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
                 paths::write_atomic(&out, proj.to_json()).map_err(|e| e.to_string())?;
                 Ok(out)
@@ -725,9 +725,9 @@ impl App {
         match r {
             Ok(out) => {
                 let _ = std::fs::copy(thumb_path(p), thumb_path(&out));
-                self.toast("Projekt dupliziert");
+                self.toast("Project duplicated");
             }
-            Err(e) => self.toast_err(format!("Duplizieren fehlgeschlagen: {e}")),
+            Err(e) => self.toast_err(format!("Duplicating failed: {e}")),
         }
         self.home.refresh();
     }
@@ -738,7 +738,7 @@ impl App {
             let mut save = false;
             let m = crate::dialog::modal(ctx, "rename").show(ctx, |ui| {
                 ui.set_width(340.0);
-                if crate::dialog::title(ui, "Projekt umbenennen") {
+                if crate::dialog::title(ui, "Rename project") {
                     keep = false;
                 }
                 let r = ui.add(
@@ -752,7 +752,7 @@ impl App {
                 if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     save = true;
                 }
-                let (m, c) = crate::dialog::buttons(ui, theme::primary("Umbenennen"), true);
+                let (m, c) = crate::dialog::buttons(ui, theme::primary("Rename"), true);
                 save |= m;
                 keep &= !c;
             });
@@ -792,13 +792,13 @@ impl App {
             let mut close = false;
             let m = crate::dialog::modal(ctx, "delete").show(ctx, |ui| {
                 ui.set_width(380.0);
-                close |= crate::dialog::title(ui, "Projekt löschen?");
+                close |= crate::dialog::title(ui, "Delete project?");
                 let name = self.home.entries.iter().find(|e| e.path == path).map(|e| e.name.clone()).unwrap_or_default();
-                ui.label(crate::tr(format!("„{name}“ wird in den Cutline-Papierkorb verschoben. Deine Medien-Dateien bleiben unverändert.")));
-                ui.label(RichText::new(paths::shown(&paths::data_dir().join("Papierkorb"))).small().color(theme::TEXT_DIM()));
+                ui.label(crate::tr(format!("“{name}” will be moved to the Cutline trash. Your media files stay untouched.")));
+                ui.label(RichText::new(paths::shown(&paths::data_dir().join("Trash"))).small().color(theme::TEXT_DIM()));
                 crate::dialog::footer(ui, |ui| {
-                    if ui.add(theme::danger("Löschen")).clicked() {
-                        let trash = paths::data_dir().join("Papierkorb");
+                    if ui.add(theme::danger("Delete")).clicked() {
+                        let trash = paths::data_dir().join("Trash");
                         let _ = std::fs::create_dir_all(&trash);
                         let stamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
                         let fname = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
@@ -807,11 +807,11 @@ impl App {
                             let _ = std::fs::remove_file(thumb_path(&path));
                             self.settings.recent.retain(|r| r != &path);
                             self.settings.save();
-                            self.toast("Projekt in den Papierkorb verschoben");
+                            self.toast("Project moved to trash");
                         }
                         close = true;
                     }
-                    if ui.add(theme::secondary("Abbrechen")).clicked() {
+                    if ui.add(theme::secondary("Cancel")).clicked() {
                         close = true;
                     }
                 });
@@ -826,13 +826,13 @@ impl App {
 
 fn project_menu(ui: &mut egui::Ui, path: &Path, action: &mut Option<(&'static str, PathBuf)>) {
     for (a, g, t) in [
-        ("open", icon::FOLDER_OPEN, "Öffnen"),
-        ("rename", icon::PENCIL_SIMPLE, "Umbenennen"),
-        ("duplicate", icon::COPY_SIMPLE, "Duplizieren"),
-        ("reveal", icon::FOLDER_SIMPLE, "Im Explorer zeigen"),
-        ("exports", icon::EXPORT, "Exporte"),
-        ("props", icon::INFO, "Eigenschaften"),
-        ("delete", icon::TRASH, "Löschen"),
+        ("open", icon::FOLDER_OPEN, "Open"),
+        ("rename", icon::PENCIL_SIMPLE, "Rename"),
+        ("duplicate", icon::COPY_SIMPLE, "Duplicate"),
+        ("reveal", icon::FOLDER_SIMPLE, "Show in Explorer"),
+        ("exports", icon::EXPORT, "Exports"),
+        ("props", icon::INFO, "Properties"),
+        ("delete", icon::TRASH, "Delete"),
     ] {
         if ui
             .add(theme::menu_row(crate::tr(format!("{g}   {t}"))).min_width(170.0))
@@ -864,10 +864,10 @@ mod scan_tests {
         cache.lock().unwrap().get_mut(&f).unwrap().2.name = "Zwischenspeicher".into();
         assert_eq!(scan_projects(dir.path(), &[], &cache)[0].name, "Zwischenspeicher");
         // a changed file (different size) is re-read; a broken one is simply missing
-        std::fs::write(&f, Project::new("Zweiter Stand").to_json()).unwrap();
+        std::fs::write(&f, Project::new("Second version").to_json()).unwrap();
         std::fs::write(dir.path().join("b.cutline"), "{").unwrap();
         let e = scan_projects(dir.path(), &[], &cache);
         assert_eq!(e.len(), 1);
-        assert_eq!(e[0].name, "Zweiter Stand");
+        assert_eq!(e[0].name, "Second version");
     }
 }

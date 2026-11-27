@@ -37,12 +37,12 @@ fn dir() -> Option<&'static PathBuf> {
 fn mods(s: Option<&str>) -> Modifiers {
     let mut m = Modifiers::NONE;
     for p in s.unwrap_or("").split('+') {
-        match p.trim().to_ascii_lowercase().as_str() {
-            "ctrl" | "strg" => {
+        match cl_i18n::key_english(p.trim()).to_ascii_lowercase().as_str() {
+            "ctrl" => {
                 m.ctrl = true;
                 m.command = true;
             }
-            "shift" | "umschalt" => m.shift = true,
+            "shift" => m.shift = true,
             "alt" => m.alt = true,
             _ => {}
         }
@@ -213,7 +213,7 @@ mod tests {
         assert!(matches!(k[0].0[0], Event::Key { key: Key::Z, pressed: true, modifiers, .. } if modifiers.ctrl && modifiers.command));
         assert!(matches!(parse("key escape", 1.0)[0].0[0], Event::Key { key: Key::Escape, .. }));
         assert!(matches!(parse("key left", 1.0)[0].0[0], Event::Key { key: Key::ArrowLeft, .. }));
-        assert!(matches!(&parse("text  Hallo Welt", 1.0)[0].0[0], Event::Text(t) if t == "Hallo Welt"));
+        assert!(matches!(&parse("text  Hello World", 1.0)[0].0[0], Event::Text(t) if t == "Hello World"));
         assert!(matches!(parse("wheel 10 10 0 -120", 1.0)[1].0[0], Event::MouseWheel { delta, .. } if delta.y == -120.0));
         // Drop files: hover first, then drop (paths with spaces, separated by |)
         let f = parse("drop 200 100 C:/a b/x.mp4|y.wav", 2.0);

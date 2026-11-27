@@ -55,7 +55,7 @@ pub fn task_summary(tasks: &[(&str, f32)]) -> Option<TaskSummary> {
         label: if tasks.len() == 1 {
             first.trim_end_matches(" …").trim_end_matches('…').trim_end().to_string()
         } else {
-            format!("{} Aufgaben", tasks.len())
+            format!("{} tasks", tasks.len())
         },
         progress: known.then(|| tasks.iter().map(|t| t.1.clamp(0.0, 1.0)).sum::<f32>() / tasks.len() as f32),
         count: tasks.len(),
@@ -89,7 +89,7 @@ impl App {
             })
             .collect();
         if pt > 0 && pd < pt && !self.proxies.stopped && self.settings.use_proxies && self.tasks.running("proxy").is_none() {
-            rows.push((crate::tr(format!("Proxys {} / {}", pd + 1, pt)), (pd as f32 / pt as f32).max(1e-3), Vec::new()));
+            rows.push((crate::tr(format!("Proxies {} / {}", pd + 1, pt)), (pd as f32 / pt as f32).max(1e-3), Vec::new()));
         }
         rows
     }
@@ -157,7 +157,7 @@ impl App {
     fn task_buttons(&mut self, ui: &mut egui::Ui, group: &[usize]) {
         // empty group: proxy round between two jobs (see `task_rows`)
         let proxy = group.is_empty() || group.iter().any(|i| self.tasks.list.get(*i).is_some_and(|t| t.key == "proxy"));
-        if theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked() {
+        if theme::icon_button(ui, icon::X, "Cancel", true, false).clicked() {
             if proxy {
                 self.stop_proxies();
             }
@@ -169,7 +169,7 @@ impl App {
         }
         if proxy {
             let paused = crate::proxy::ProxyState::paused();
-            let (g, tip) = if paused { (icon::PLAY, "Fortsetzen") } else { (icon::PAUSE, "Pausieren") };
+            let (g, tip) = if paused { (icon::PLAY, "Resume") } else { (icon::PAUSE, "Pause~verb") };
             if theme::icon_button(ui, g, tip, true, false).clicked() {
                 crate::proxy::ProxyState::set_paused(!paused);
             }
@@ -182,7 +182,7 @@ impl App {
         self.settings.ui_scale = self.ui_scale;
         self.settings.save();
         self.toast(format!(
-            "{} Oberfläche {:.0} %",
+            "{} Interface {:.0} %",
             icon::MAGNIFYING_GLASS,
             self.ui_scale * 100.0
         ));
@@ -312,7 +312,7 @@ impl App {
                         if theme::icon_button(
                             ui,
                             icon::GEAR_SIX,
-                            "Einstellungen (Strg+,)",
+                            "Settings (Ctrl+,)",
                             true,
                             false,
                         )
@@ -326,13 +326,13 @@ impl App {
                     return;
                 }
                 if lresp
-                    .on_hover_text(crate::tr("Zur Projektübersicht"))
+                    .on_hover_text(crate::tr("Back to projects"))
                     .clicked()
                 {
                     self.go_home();
                     return;
                 }
-                if theme::icon_button(ui, icon::HOUSE, "Projektübersicht", true, false).clicked() {
+                if theme::icon_button(ui, icon::HOUSE, "Projects~overview", true, false).clicked() {
                     self.go_home();
                     return;
                 }
@@ -341,27 +341,27 @@ impl App {
                     if self.revision == self.saved_revision && self.project_path.is_some() {
                         let when = self.last_saved.map(|t| t.elapsed().as_secs()).map(|s| {
                             if s < 60 {
-                                crate::tr("gerade eben")
+                                crate::tr("just now")
                             } else {
-                                crate::tr(format!("vor {} Min.", s / 60))
+                                crate::tr(format!("{} min ago", s / 60))
                             }
                         });
                         (
                             icon::CHECK_CIRCLE,
-                            when.map(|w| format!("Gespeichert {w}"))
-                                .unwrap_or_else(|| "Gespeichert".into()),
+                            when.map(|w| format!("Saved {w}"))
+                                .unwrap_or_else(|| "Saved".into()),
                             theme::TEXT_DIM(),
                         )
                     } else if self.project_path.is_none() && self.revision == self.saved_revision {
                         (
                             icon::CIRCLE_DASHED,
-                            "Noch nicht gespeichert".to_string(),
+                            "Not saved yet".to_string(),
                             theme::TEXT_DIM(),
                         )
                     } else {
                         (
                             icon::CIRCLE_DASHED,
-                            "Wird gespeichert …".to_string(),
+                            "Saving …".to_string(),
                             theme::TEXT_DIM(),
                         )
                     };
@@ -390,12 +390,12 @@ impl App {
                         self.t("export")
                     )));
                     self.tour_rects.insert("export", ex.rect);
-                    if ex.on_hover_text(crate::tr("Strg+E")).clicked() {
+                    if ex.on_hover_text(crate::tr("Ctrl+E")).clicked() {
                         self.commit_live();
                         self.export
                             .open_for(&self.project, self.project_path.as_deref(), self.revision, self.range_in.zip(self.range_out));
                     }
-                    if theme::icon_button(ui, icon::GEAR_SIX, "Einstellungen (Strg+,)", true, false)
+                    if theme::icon_button(ui, icon::GEAR_SIX, "Settings (Ctrl+,)", true, false)
                         .clicked()
                     {
                         self.settings_open = true;
@@ -410,7 +410,7 @@ impl App {
                                 .color(theme::TEXT_DIM()),
                         )
                         .on_hover_text(crate::tr(
-                            "MCP-Server aktiv (Einstellungen → MCP-Schnittstelle)",
+                            "MCP server active (Settings → MCP interface)",
                         ));
                     }
                 });
@@ -465,33 +465,33 @@ impl App {
                     }
                     r
                 };
-                item(self, ui, "new_project", "Neues Projekt");
-                item(self, ui, "open", "Öffnen …");
-                item(self, ui, "save", "Speichern");
-                item(self, ui, "save_as", "Speichern unter …");
+                item(self, ui, "new_project", "New project");
+                item(self, ui, "open", "Open …");
+                item(self, ui, "save", "Save");
+                item(self, ui, "save_as", "Save as …");
                 ui.separator();
                 item(self, ui, "import", &self.t("import-media"));
                 // same dialog as on the start page; off when all formats are switched off
-                item(self, ui, "import_project", "Projekt aus anderem Programm importieren …")
-                    .on_hover_text(crate::tr("Aus CapCut, Final Cut Pro oder DaVinci Resolve"));
+                item(self, ui, "import_project", "Import project from another app …")
+                    .on_hover_text(crate::tr("From CapCut, Final Cut Pro or DaVinci Resolve"));
                 item(self, ui, "import_fonts", &self.t("import-fonts"));
                 item(self, ui, "export", &self.t("export"));
-                item(self, ui, "exports", "Exporte");
-                item(self, ui, "history", "Bearbeitungsverlauf");
-                item(self, ui, "layout_edit", "Layout bearbeiten …");
+                item(self, ui, "exports", "Exports");
+                item(self, ui, "history", "Edit history");
+                item(self, ui, "layout_edit", "Edit layout …");
                 ui.separator();
-                item(self, ui, "template_save", "Als Vorlage speichern …");
-                item(self, ui, "template_insert", "Aus Vorlage einfügen …");
-                item(self, ui, "archive", "Projekt archivieren …").on_hover_text(crate::tr(
-                    "Projekt mit allen Medien und Schriften in einen Ordner kopieren",
+                item(self, ui, "template_save", "Save as template …");
+                item(self, ui, "template_insert", "Insert from template …");
+                item(self, ui, "archive", "Archive project …").on_hover_text(crate::tr(
+                    "Copy the project with all media and fonts into one folder",
                 ));
-                item(self, ui, "relink", "Medien neu verknüpfen …");
-                item(self, ui, "backups", "Sicherungen …");
+                item(self, ui, "relink", "Relink media …");
+                item(self, ui, "backups", "Backups …");
                 ui.separator();
                 theme::submenu(
                     ui,
                     icon::MAGNIFYING_GLASS,
-                    &format!("Oberflächengröße  ({:.0} %)", self.ui_scale * 100.0),
+                    &format!("Interface size  ({:.0} %)", self.ui_scale * 100.0),
                     |ui| {
                         for v in [0.8, 0.9, 1.0, 1.1, 1.25, 1.5] {
                             if ui
@@ -507,18 +507,18 @@ impl App {
                             }
                         }
                         ui.label(
-                            RichText::new(crate::tr("Strg + / Strg − / Strg 0"))
+                            RichText::new(crate::tr("Ctrl + / Ctrl − / Ctrl 0"))
                                 .small()
                                 .color(theme::TEXT_DIM()),
                         );
                     },
                 );
                 ui.separator();
-                item(self, ui, "settings", "Einstellungen …");
-                item(self, ui, "go_home", "Projektübersicht");
+                item(self, ui, "settings", "Settings …");
+                item(self, ui, "go_home", "Projects~overview");
                 ui.separator();
-                item(self, ui, "tour", "Rundgang");
-                item(self, ui, "onboarding", "Einführung wiederholen");
+                item(self, ui, "tour", "Tour");
+                item(self, ui, "onboarding", "Repeat introduction");
                 if let Some(a) = act {
                     ui.close_menu();
                     self.run_action(&ctx, a);
@@ -537,12 +537,12 @@ mod scale_tests {
     fn tasks_are_summarized_for_the_status_bar() {
         assert_eq!(task_summary(&[]), None);
         // one task: its name without „…“, progress only once one is reported
-        let one = task_summary(&[("Proxy wird erstellt: a.mp4 …", 0.0)]).unwrap();
-        assert_eq!((one.label.as_str(), one.progress, one.count), ("Proxy wird erstellt: a.mp4", None, 1));
+        let one = task_summary(&[("Creating proxy: a.mp4 …", 0.0)]).unwrap();
+        assert_eq!((one.label.as_str(), one.progress, one.count), ("Creating proxy: a.mp4", None, 1));
         assert_eq!(task_summary(&[("Analyse", 0.4)]).unwrap().progress, Some(0.4));
         // several: counter; mean only if all report progress, otherwise running line
         let two = task_summary(&[("A", 0.2), ("B", 0.6)]).unwrap();
-        assert_eq!(two.label, "2 Aufgaben");
+        assert_eq!(two.label, "2 tasks");
         assert!((two.progress.unwrap() - 0.4).abs() < 1e-6);
         assert_eq!(task_summary(&[("A", 0.2), ("B", 0.0), ("C", 1.0)]).unwrap().progress, None);
         assert_eq!(task_summary(&[("A", 0.2), ("B", 0.0), ("C", 1.0)]).unwrap().count, 3);

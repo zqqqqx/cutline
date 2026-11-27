@@ -142,7 +142,7 @@ pub fn move_dir(old: &Path, new: &Path) -> usize {
 }
 
 impl crate::app::App {
-    /// List of a project's finished exports, each with „Zur Datei“
+    /// List of a project's finished exports, each with „Go to file“
     pub fn exports_window(&mut self, ctx: &eframe::egui::Context) {
         use crate::theme::{self, icon};
         use eframe::egui::{self, RichText};
@@ -164,14 +164,14 @@ impl crate::app::App {
                     d = format!("{d} · {w}×{h}");
                 }
                 if parts > 0 {
-                    d = format!("{d} · {}", crate::tr(format!("{parts} Teile")));
+                    d = format!("{d} · {}", crate::tr(format!("{parts} parts")));
                 }
-                (file(f), format!("{d} · {}", crate::tr("Wartet")))
+                (file(f), format!("{d} · {}", crate::tr("Waiting")))
             })
             .collect();
         let (mut cancel, mut remove) = (false, None);
         let mut open = true;
-        let title = format!("{}  Exporte", icon::EXPORT);
+        let title = format!("{}  Exports", icon::EXPORT);
         crate::dialog::window(ctx, crate::tr(title.as_str()), "exports")
             .default_width(420.0)
             .show(ctx, |ui| {
@@ -190,7 +190,7 @@ impl crate::app::App {
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(RichText::new(format!("{:.0} %", prog * 100.0)).color(theme::TEXT_DIM()));
-                            cancel = theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked();
+                            cancel = theme::icon_button(ui, icon::X, "Cancel", true, false).clicked();
                         });
                     });
                     ui.separator();
@@ -203,18 +203,18 @@ impl crate::app::App {
                             ui.label(RichText::new(d).small().color(theme::TEXT_DIM()));
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if theme::icon_button(ui, icon::X, "Entfernen", true, false).clicked() {
+                            if theme::icon_button(ui, icon::X, "Remove", true, false).clicked() {
                                 remove = Some(Some(i));
                             }
                         });
                     });
                     ui.separator();
                 }
-                if waiting.len() > 1 && ui.add(theme::secondary("Alle wartenden entfernen")).clicked() {
+                if waiting.len() > 1 && ui.add(theme::secondary("Remove all waiting")).clicked() {
                     remove = Some(None);
                 }
                 if list.is_empty() && current.is_none() && waiting.is_empty() {
-                    theme::empty_state(ui, icon::EXPORT, "Noch nichts exportiert", "");
+                    theme::empty_state(ui, icon::EXPORT, "Nothing exported yet", "");
                 }
                 egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
                     for (e, size) in list {
@@ -231,7 +231,7 @@ impl crate::app::App {
                                 .on_hover_text(crate::paths::shown(&e.path));
                             });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.add(theme::secondary(format!("{}  Im Explorer zeigen", icon::FOLDER_OPEN))).clicked() {
+                                if ui.add(theme::secondary(format!("{}  Show in Explorer", icon::FOLDER_OPEN))).clicked() {
                                     crate::home::reveal(&e.path);
                                 }
                             });
@@ -256,27 +256,27 @@ impl crate::app::App {
 fn exports_are_listed_per_project_and_move_with_the_folder() {
     let h = crate::export_ui::TestHome::new();
     let home = &h.dir;
-    let (a, b) = (home.path().join("alt"), home.path().join("neu"));
+    let (a, b) = (home.path().join("old"), home.path().join("new"));
     std::fs::create_dir_all(&a).unwrap();
     std::fs::create_dir_all(&b).unwrap();
     std::fs::write(a.join("Film.mp4"), b"x").unwrap();
     std::fs::write(a.join("Film.srt"), b"x").unwrap();
-    std::fs::write(a.join("fremd.mp4"), b"x").unwrap();
+    std::fs::write(a.join("other.mp4"), b"x").unwrap();
     let (pa, pb) = (a.join("Film.cutline"), b.join("Film.cutline"));
     record_all("Film", Some(&pa), &[&a.join("Film.mp4")]);
     record_all("Film", Some(&pa), &[&a.join("Film.mp4")]);
-    record_all("Film", Some(&pa), &[&a.join("weg.mp4")]);
+    record_all("Film", Some(&pa), &[&a.join("gone.mp4")]);
     assert_eq!(for_project("Film", Some(&pa)).len(), 1);
-    assert!(for_project("Anderes", None).is_empty());
+    assert!(for_project("Other", None).is_empty());
     // a same-named project elsewhere does not see the exports, an old entry without a path counts by name
     assert!(for_project("Film", Some(&home.path().join("x/Film.cutline"))).is_empty());
     assert_eq!(for_project("Film", None).len(), 1);
     assert_eq!(move_dir(&a, &b), 1);
     assert!(b.join("Film.mp4").is_file() && b.join("Film.srt").is_file());
-    assert!(a.join("fremd.mp4").is_file(), "nur bekannte Exporte ziehen um");
+    assert!(a.join("other.mp4").is_file(), "only known exports move");
     move_projects(&[(pa.clone(), pb.clone())]);
     assert_eq!(for_project("Film", Some(&pb))[0].path, b.join("Film.mp4"));
     let pk = b.join("Kino.cutline");
-    rename_project(&pb, &pk, "Film", "Kino");
-    assert_eq!(for_project("Kino", Some(&pk)).len(), 1);
+    rename_project(&pb, &pk, "Film", "Cinema");
+    assert_eq!(for_project("Cinema", Some(&pk)).len(), 1);
 }

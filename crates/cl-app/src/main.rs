@@ -24,6 +24,7 @@ mod import_ui;
 mod inspector;
 mod keymap;
 mod layout;
+mod legacy;
 mod library;
 mod library_ui;
 mod multi_edit;
@@ -108,8 +109,8 @@ pub fn dialog() -> rfd::FileDialog {
 }
 
 /// Project to open from the command line: the first argument that is not an option. An empty
-/// argument (start script with `"$1"` without a project) is none – otherwise Windows reported „Pfad nicht
-/// gefunden (os error 3)“ at startup.
+/// argument (start script with `"$1"` without a project) is none – otherwise Windows reported
+/// that the path was not found (os error 3) at startup.
 fn open_arg(args: &[String]) -> Option<std::path::PathBuf> {
     args.iter().skip(1).find(|a| !a.starts_with("--") && !a.trim().is_empty()).map(std::path::PathBuf::from)
 }
@@ -126,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app::perf_mark("main");
     let args: Vec<String> = std::env::args().collect();
 
-    // Headless MCP over stdio: `cutline --mcp projekt.cutline`
+    // Headless MCP over stdio: `cutline --mcp project.cutline`
     if let Some(i) = args.iter().position(|a| a == "--mcp") {
         return run_mcp_stdio(args.get(i + 1).map(std::path::PathBuf::from));
     }
@@ -178,7 +179,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(move |cc| Ok(Box::new(app::App::new(cc, open)))),
     )
     .map_err(|e| {
-        log::error!("Fenster: {e}");
+        log::error!("Window: {e}");
         applog::flush();
         e.to_string().into()
     })
@@ -191,12 +192,12 @@ fn mcp_save(p: &std::path::Path, d: &cl_core::Document, saved: &mut u64, me: u32
         return;
     }
     if paths::lock_held_by_other(&paths::lock_path(p), me) {
-        eprintln!("Nicht gespeichert: {} ist in einem anderen Cutline-Fenster geöffnet", p.display());
+        eprintln!("Not saved: {} is open in another Cutline window", p.display());
         return;
     }
     match paths::write_atomic(p, d.project().to_json()) {
         Ok(()) => *saved = d.revision(),
-        Err(e) => eprintln!("Speichern fehlgeschlagen: {e}"),
+        Err(e) => eprintln!("Saving failed: {e}"),
     }
 }
 
@@ -227,9 +228,9 @@ fn run_mcp_stdio(project: Option<std::path::PathBuf>) -> Result<(), Box<dyn std:
         Some(p) => Project::new(
             p.file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "Projekt".into()),
+                .unwrap_or_else(|| "Project".into()),
         ),
-        None => Project::new("MCP-Projekt"),
+        None => Project::new("MCP project"),
     };
     let doc = Arc::new(Mutex::new(Document::new(proj)));
     let fonts = cl_fonts::FontLibrary::open(paths::font_dir())

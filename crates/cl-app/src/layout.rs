@@ -27,7 +27,7 @@ pub struct LayoutProfile {
 impl Default for LayoutProfile {
     fn default() -> Self {
         Self {
-            name: "Standard".into(),
+            name: "Default".into(),
             assets_right: false,
             timeline_top: false,
             timeline_full: true,
@@ -43,17 +43,17 @@ pub fn builtin() -> Vec<LayoutProfile> {
     vec![
         d.clone(),
         LayoutProfile {
-            name: "Großer Player".into(),
+            name: "Large player".into(),
             frac: (0.2, 0.18, 0.3),
             ..d.clone()
         },
         LayoutProfile {
-            name: "Medien rechts".into(),
+            name: "Media on the right".into(),
             assets_right: true,
             ..d.clone()
         },
         LayoutProfile {
-            name: "Lange Zeitleiste".into(),
+            name: "Long timeline".into(),
             timeline_full: false,
             frac: (0.24, 0.2, 0.45),
             ..d
@@ -63,10 +63,10 @@ pub fn builtin() -> Vec<LayoutProfile> {
 
 /// Arrangement tiles in the settings: (label, explanation, media on the right, timeline at the top)
 pub const ARRANGEMENTS: [(&str, &str, bool, bool); 4] = [
-    ("Standard", "Medien links, Inspektor rechts, Zeitleiste unten", false, false),
-    ("Getauscht", "Medien rechts, Inspektor links, Zeitleiste unten", true, false),
-    ("Oben", "Medien links, Inspektor rechts, Zeitleiste oben", false, true),
-    ("Beides", "Medien rechts, Inspektor links, Zeitleiste oben", true, true),
+    ("Default", "Media left, inspector right, timeline at the bottom", false, false),
+    ("Swapped", "Media right, inspector left, timeline at the bottom", true, false),
+    ("Top", "Media left, inspector right, timeline at the top", false, true),
+    ("Both", "Media right, inspector left, timeline at the top", true, true),
 ];
 
 /// Mini sketch of an arrangement in `r`: rects for media, player, inspector, timeline
@@ -106,7 +106,7 @@ impl App {
     pub fn arrangement_settings(&mut self, ui: &mut egui::Ui) {
         let cur = self.settings.layout.clone();
         let mut pick: Option<LayoutProfile> = None;
-        theme::row(ui, "Anordnung", |ui| {
+        theme::row(ui, "Arrangement", |ui| {
             ui.horizontal_wrapped(|ui| {
                 for (name, tip, ar, tt) in ARRANGEMENTS {
                     let on = cur.assets_right == ar && cur.timeline_top == tt;
@@ -144,11 +144,11 @@ impl App {
             });
         });
         let mut l = pick.unwrap_or_else(|| cur.clone());
-        crate::widgets::toggle_row(ui, "Zeitleiste über die ganze Breite", &mut l.timeline_full);
-        theme::row(ui, "Symbolleiste", |ui| {
+        crate::widgets::toggle_row(ui, "Timeline across the full width", &mut l.timeline_full);
+        theme::row(ui, "Toolbar", |ui| {
             let mut sel = l.rail_top as usize;
             ui.allocate_ui(vec2(200.0, 24.0), |ui| {
-                if crate::widgets::segmented(ui, &["Seitlich", "Oben"], &mut sel) {
+                if crate::widgets::segmented(ui, &["Side", "Top"], &mut sel) {
                     l.rail_top = sel == 1;
                 }
             });
@@ -157,7 +157,7 @@ impl App {
             l.frac = self.layout_frac;
             self.apply_layout(l);
         }
-        if crate::widgets::toggle_row(ui, "Layout sperren", &mut self.settings.layout_locked) {
+        if crate::widgets::toggle_row(ui, "Lock layout", &mut self.settings.layout_locked) {
             self.settings.save();
         }
     }
@@ -183,9 +183,9 @@ impl App {
         let mut l = self.settings.layout.clone();
         for (k, r) in rects {
             let title = match k {
-                "assets" => "Medien",
-                "inspector" => "Inspektor",
-                "timeline" => "Zeitleiste",
+                "assets" => "Media",
+                "inspector" => "Inspector",
+                "timeline" => "Timeline",
                 _ => "Player",
             };
             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new(("lay-dim", k))));
@@ -203,9 +203,9 @@ impl App {
                                 "assets" | "inspector" => {
                                     let left = (k == "assets") != l.assets_right;
                                     let (g, tip) = if left {
-                                        (icon::ARROW_RIGHT, "Auf die andere Seite")
+                                        (icon::ARROW_RIGHT, "To the other side")
                                     } else {
-                                        (icon::ARROW_LEFT, "Auf die andere Seite")
+                                        (icon::ARROW_LEFT, "To the other side")
                                     };
                                     if theme::icon_button(ui, g, tip, true, false).clicked() {
                                         l.assets_right = !l.assets_right;
@@ -213,10 +213,10 @@ impl App {
                                 }
                                 "timeline" => {
                                     let g = if l.timeline_top { icon::ARROW_DOWN } else { icon::ARROW_UP };
-                                    if theme::icon_button(ui, g, if l.timeline_top { "Nach unten" } else { "Nach oben" }, true, false).clicked() {
+                                    if theme::icon_button(ui, g, if l.timeline_top { "Down" } else { "Up" }, true, false).clicked() {
                                         l.timeline_top = !l.timeline_top;
                                     }
-                                    if theme::icon_button(ui, icon::ARROWS_OUT_LINE_HORIZONTAL, "Volle Breite", true, l.timeline_full).clicked() {
+                                    if theme::icon_button(ui, icon::ARROWS_OUT_LINE_HORIZONTAL, "Full width", true, l.timeline_full).clicked() {
                                         l.timeline_full = !l.timeline_full;
                                     }
                                 }
@@ -253,16 +253,16 @@ impl App {
                             });
                         let r = ui.add(
                             egui::TextEdit::singleline(&mut self.layout_name)
-                                .hint_text(crate::tr("Name des Profils"))
+                                .hint_text(crate::tr("Profile name"))
                                 .desired_width(130.0),
                         );
                         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        if ui.add(theme::secondary(format!("{}  Speichern", icon::FLOPPY_DISK))).clicked() || enter {
+                        if ui.add(theme::secondary(format!("{}  Save", icon::FLOPPY_DISK))).clicked() || enter {
                             let name = self.layout_name.trim().to_string();
                             if name.is_empty() {
-                                self.dialog_error = Some("Bitte einen Namen eingeben".into());
+                                self.dialog_error = Some("Please enter a name".into());
                             } else if builtin().iter().any(|b| b.name == name) {
-                                self.dialog_error = Some("Dieser Name gehört zu einem mitgelieferten Profil".into());
+                                self.dialog_error = Some("This name belongs to a built-in profile".into());
                             } else {
                                 let mut p = self.settings.layout.clone();
                                 p.name = name.clone();
@@ -272,16 +272,16 @@ impl App {
                                 self.settings.layout = p;
                                 self.settings.save();
                                 self.dialog_error = None;
-                                self.toast(format!("{} {}", icon::CHECK, crate::tr("Layout gespeichert")));
+                                self.toast(format!("{} {}", icon::CHECK, crate::tr("Layout saved")));
                             }
                         }
                         let own = self.settings.layouts.iter().any(|p| p.name == self.settings.layout.name);
-                        if own && theme::icon_button(ui, icon::TRASH, "Profil löschen", true, false).clicked() {
+                        if own && theme::icon_button(ui, icon::TRASH, "Delete profile", true, false).clicked() {
                             let n = self.settings.layout.name.clone();
                             self.settings.layouts.retain(|p| p.name != n);
                             self.apply_layout(LayoutProfile::default());
                         }
-                        if ui.add(theme::primary(format!("{}  Fertig", icon::CHECK))).clicked() {
+                        if ui.add(theme::primary(format!("{}  Done", icon::CHECK))).clicked() {
                             self.layout_edit = false;
                             self.dialog_error = None;
                             self.settings.layout.frac = self.layout_frac;
@@ -312,9 +312,9 @@ mod tests {
         // older settings without the field → default
         assert_eq!(serde_json::from_str::<LayoutProfile>("{}").unwrap(), LayoutProfile::default());
         // Profile from before `rail_top`: loads, toolbar at the side
-        let old = r#"{"name":"Mein","assets_right":true,"timeline_top":true,"timeline_full":false,"frac":[0.3,0.2,0.4]}"#;
+        let old = r#"{"name":"My","assets_right":true,"timeline_top":true,"timeline_full":false,"frac":[0.3,0.2,0.4]}"#;
         let p = serde_json::from_str::<LayoutProfile>(old).unwrap();
-        assert!(p.assets_right && p.timeline_top && !p.timeline_full && !p.rail_top && p.name == "Mein");
+        assert!(p.assets_right && p.timeline_top && !p.timeline_full && !p.rail_top && p.name == "My");
         assert!(builtin().iter().all(|p| !p.rail_top));
     }
 

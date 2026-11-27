@@ -53,14 +53,14 @@ fn censor_flip(c: &Clip, k: CensorKey) -> CensorKey {
 }
 
 pub const LANGS: [(&str, &str); 8] = [
-    ("auto", "Automatisch"),
-    ("de", "Deutsch"),
-    ("en", "Englisch"),
-    ("fr", "Französisch"),
-    ("es", "Spanisch"),
-    ("it", "Italienisch"),
-    ("nl", "Niederländisch"),
-    ("pl", "Polnisch"),
+    ("auto", "Automatic"),
+    ("de", "German"),
+    ("en", "English"),
+    ("fr", "French"),
+    ("es", "Spanish"),
+    ("it", "Italian"),
+    ("nl", "Dutch"),
+    ("pl", "Polish"),
 ];
 
 fn task_bar(ui: &mut egui::Ui, app: &App, key: &str) -> bool {
@@ -68,7 +68,7 @@ fn task_bar(ui: &mut egui::Ui, app: &App, key: &str) -> bool {
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2((ui.available_width() - 36.0).max(20.0), 3.0), egui::Sense::hover());
             widgets::task_line(ui.painter(), egui::Id::new(("task", t.id)), r, t.progress());
-            if theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked() {
+            if theme::icon_button(ui, icon::X, "Cancel", true, false).clicked() {
                 t.cancel();
             }
         });
@@ -93,7 +93,7 @@ pub(crate) enum CutMode {
 
 impl CutMode {
     const ALL: [(CutMode, &'static str); 4] =
-        [(CutMode::Off, "Aus"), (CutMode::Person, "Person"), (CutMode::Object, "Objekt"), (CutMode::Color, "Farbe")];
+        [(CutMode::Off, "Off"), (CutMode::Person, "Person"), (CutMode::Object, "Object"), (CutMode::Color, "Color")];
 
     /// `roto`: the clip has object marks; `matte_running`: a person mask job runs for the clip.
     /// Older projects with mask and color key = Person.
@@ -151,8 +151,8 @@ fn gpu_status(installed: bool) -> Option<String> {
         return None;
     }
     match cl_analyze::runtime_note() {
-        Some(n) => Some(format!("{}  Grafikkarte nicht nutzbar: {n}", icon::WARNING)),
-        None => cl_analyze::runtime_loaded().then(|| format!("{}  Aktiv nach Neustart", icon::INFO)),
+        Some(n) => Some(format!("{}  Graphics card not usable: {n}", icon::WARNING)),
+        None => cl_analyze::runtime_loaded().then(|| format!("{}  Active after a restart", icon::INFO)),
     }
 }
 
@@ -162,11 +162,11 @@ pub(crate) fn mask_status(c: &Clip, busy: bool) -> Option<&'static str> {
     c.fx.cutout.as_ref().filter(|_| !busy)?;
     if cl_fx::matte_file(&c.fx).is_none() {
         // an object mask appears once tracked
-        return Some(if c.roto.is_some() { "Noch nicht verfolgt" } else { "Maske fehlt" });
+        return Some(if c.roto.is_some() { "Not tracked yet" } else { "Mask missing" });
     }
     let span = c.fx.cutout_span?;
     let (a, b) = (c.source_time(c.start), c.source_time(c.end()));
-    (a.min(b) < span.start || a.max(b) > span.end).then_some("Bereich nicht verfolgt")
+    (a.min(b) < span.start || a.max(b) > span.end).then_some("Range not tracked")
 }
 
 fn matte_cache(path: &std::path::Path) -> PathBuf {
@@ -191,7 +191,7 @@ pub(crate) fn asr_offer(
     filter: bool,
     saved: &str,
 ) -> (Vec<(&'static str, String)>, &'static str) {
-    let mut v = vec![("auto", "Automatisch".to_string())];
+    let mut v = vec![("auto", "Automatic".to_string())];
     if parakeet {
         v.push(("parakeet", cl_analyze::asr::Engine::Parakeet.name().to_string()));
     }
@@ -247,7 +247,7 @@ impl App {
             })
             .collect();
         self.toast_err(format!(
-            "Benötigt: {} (Einstellungen → Modelle)",
+            "Requires: {} (Settings → Models)",
             names.join(", ")
         ));
         self.settings_section = crate::settings::Section::Models;
@@ -279,7 +279,7 @@ impl App {
                         .find(|c| c.id == id)
                         .map(|c| c.name)
                         .unwrap_or(id);
-                    self.toast(format!("{n} installiert"));
+                    self.toast(format!("{n} installed"));
                 }
                 TaskDone::Captions {
                     segments,
@@ -291,7 +291,7 @@ impl App {
                         c.fx.cutout = Some(out.to_string_lossy().into_owned());
                         self.live = None;
                         self.apply(EditOp::ReplaceClip { clip: c });
-                        self.toast("Hintergrund entfernt");
+                        self.toast("Background removed");
                     }
                 }
                 TaskDone::Scenes { clip, times } => {
@@ -309,7 +309,7 @@ impl App {
                     cuts.sort();
                     cuts.dedup();
                     if cuts.is_empty() {
-                        self.toast("Keine Szenenwechsel gefunden");
+                        self.toast("No scene changes found");
                         continue;
                     }
                     let n = cuts.len();
@@ -319,7 +319,7 @@ impl App {
                         .map(|at| EditOp::SplitClip { clip, at })
                         .collect();
                     self.apply_batch(ops);
-                    self.toast(format!("{} Szenen erkannt und geteilt", n + 1));
+                    self.toast(format!("{} scenes detected and split", n + 1));
                 }
                 TaskDone::Beats { clip, times, bpm } => {
                     if let Some(mut c) = self.clip_view(clip) {
@@ -331,7 +331,7 @@ impl App {
                         let n = c.beats.len();
                         self.live = None;
                         self.apply(EditOp::ReplaceClip { clip: c });
-                        self.toast(format!("{n} Beats erkannt ({bpm:.0} BPM)"));
+                        self.toast(format!("{n} beats detected ({bpm:.0} BPM)"));
                     }
                 }
                 TaskDone::Track {
@@ -347,7 +347,7 @@ impl App {
 
     fn insert_captions(&mut self, segs: &[cl_analyze::asr::Segment], offset: Time, engine: &str) {
         if segs.is_empty() {
-            self.toast_err("Keine Sprache erkannt");
+            self.toast_err("No speech detected");
             return;
         }
         // Whisper returns finished lines: bring them to the preset's length
@@ -358,7 +358,7 @@ impl App {
             segs.to_vec()
         };
         let n = self.add_caption_segments(&segs, offset);
-        self.toast(format!("{n} Untertitel erzeugt ({engine})"));
+        self.toast(format!("{n} captions created ({engine})"));
     }
 
     fn apply_tracking(
@@ -414,7 +414,7 @@ impl App {
         }
         self.live = None;
         self.apply(EditOp::ReplaceClip { clip: c });
-        self.toast(format!("Bewegung verfolgt ({} Punkte)", pts.len()));
+        self.toast(format!("Motion tracked ({} points)", pts.len()));
     }
 
     fn apply_reframe(&mut self, clip: ClipId, pts: &[(f64, f32, f32)]) {
@@ -433,7 +433,7 @@ impl App {
         }
         self.live = None;
         self.apply_batch(ops);
-        self.toast("Auto-Reframe angewendet");
+        self.toast("Auto reframe applied");
     }
 
     fn reframed(&self, clip: ClipId, pts: &[(f64, f32, f32)]) -> Option<Clip> {
@@ -493,7 +493,7 @@ impl App {
                 self.tasks.spawn(
                     ctx,
                     "captions",
-                    "Untertitel werden erkannt …",
+                    "Recognizing speech …",
                     move |p, cancel| match cl_analyze::asr::transcribe(
                         &models, &m.path, start, span, &opt, p, cancel,
                     ) {
@@ -509,20 +509,20 @@ impl App {
                                 engine: eng.name(),
                             }
                         }
-                        Err(e) => TaskDone::Failed(format!("Untertitel: {e}")),
+                        Err(e) => TaskDone::Failed(format!("Captions: {e}")),
                     },
                 );
             }
             None => {
                 let project = self.project.clone();
                 if project.duration() <= Time::ZERO {
-                    self.toast_err("Das Projekt ist leer");
+                    self.toast_err("The project is empty");
                     return;
                 }
                 self.tasks.spawn(
                     ctx,
                     "captions",
-                    "Untertitel werden erkannt …",
+                    "Recognizing speech …",
                     move |p, cancel| {
                         // mix the audio of the whole timeline
                         let dir = std::env::temp_dir()
@@ -561,7 +561,7 @@ impl App {
                                 offset: Time::ZERO,
                                 engine: eng.name(),
                             },
-                            Err(e) => TaskDone::Failed(format!("Untertitel: {e}")),
+                            Err(e) => TaskDone::Failed(format!("Captions: {e}")),
                         }
                     },
                 );
@@ -577,7 +577,7 @@ impl App {
             kind: MediaKind::Video,
         } = c.content
         else {
-            self.toast_err("Hintergrund entfernen geht bei Videoclips");
+            self.toast_err("Background removal works on video clips");
             return;
         };
         let Some(m) = self.project.media(media).cloned() else {
@@ -599,7 +599,7 @@ impl App {
             ctx,
             format!("matte:{id}"),
             format!(
-                "Hintergrund wird entfernt: {}",
+                "Removing background: {}",
                 m.path
                     .file_name()
                     .map(|s| s.to_string_lossy().into_owned())
@@ -607,7 +607,7 @@ impl App {
             ),
             move |p, cancel| match cl_analyze::matte::matte(&models, &m.path, &out, p, cancel) {
                 Ok(()) => TaskDone::Matte { clip: id, out },
-                Err(e) => TaskDone::Failed(format!("Freistellen: {e}")),
+                Err(e) => TaskDone::Failed(format!("Cut-out: {e}")),
             },
         );
     }
@@ -625,9 +625,9 @@ impl App {
             c.id,
         );
         let (key, label) = match what {
-            "scenes" => (format!("scenes:{id}"), "Szenen werden erkannt …"),
-            "beats" => (format!("beats:{id}"), "Beats werden erkannt …"),
-            _ => (format!("reframe:{id}"), "Auto-Reframe analysiert …"),
+            "scenes" => (format!("scenes:{id}"), "Detecting scenes …"),
+            "beats" => (format!("beats:{id}"), "Detecting beats …"),
+            _ => (format!("reframe:{id}"), "Auto reframe is analyzing …"),
         };
         self.tasks
             .spawn(ctx, key, label, move |p, cancel| match what {
@@ -652,7 +652,7 @@ impl App {
             });
     }
 
-    /// Video clip under an overlay at the playhead (for „Bewegung verfolgen“).
+    /// Video clip under an overlay at the playhead (for „Motion tracking“).
     fn video_below(&self, clip: ClipId) -> Option<ClipId> {
         let ti = self
             .project
@@ -680,7 +680,7 @@ impl App {
 
     // ------------------------------------------------------------ inspector
 
-    /// „Smart“ tab (video/image); for text only „Bewegung verfolgen“ in the „Basis“ tab.
+    /// „Smart“ tab (video/image); for text only „Motion tracking“ in the „Basic“ tab.
     pub fn pro_visual(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
         let ctx = ui.ctx().clone();
         let is_video = matches!(
@@ -698,7 +698,7 @@ impl App {
             .iter()
             .any(|t| t.main && t.clips.iter().any(|x| x.id == c.id));
         if is_media {
-            theme::section(ui, "Freistellen");
+            theme::section(ui, "Cutout");
             let task = format!("matte:{}", c.id);
             let rtask = format!("roto:{}", c.id);
             let mode = CutMode::of(&c.fx, c.roto.is_some(), self.tasks.running(&task).is_some());
@@ -732,7 +732,7 @@ impl App {
             if mode == CutMode::Object {
                 let marking = self.pick == Some(Pick::Roto(c.id));
                 ui.horizontal_wrapped(|ui| {
-                    let label = format!("{}  Objekt markieren", icon::CURSOR_CLICK);
+                    let label = format!("{}  Mark object", icon::CURSOR_CLICK);
                     if ui.add(if marking { theme::primary(label) } else { theme::secondary(label) }).clicked() {
                         if marking {
                             self.roto_leave(&ctx);
@@ -741,7 +741,7 @@ impl App {
                         }
                     }
                     let marked = c.roto.as_ref().is_some_and(|r| !r.keys.is_empty());
-                    if marked && ui.add(theme::ghost(format!("{}  Markierung löschen", icon::X))).clicked() {
+                    if marked && ui.add(theme::ghost(format!("{}  Clear selection~marks", icon::X))).clicked() {
                         if let Some(t) = self.tasks.running(&rtask) {
                             t.cancel();
                         }
@@ -756,7 +756,7 @@ impl App {
                     }
                 }
                 if let Some(n) = cl_analyze::runtime_note().filter(|_| self.models().installed("directml")) {
-                    ui.label(RichText::new(crate::tr(format!("{}  Grafikkarte nicht nutzbar: {n}", icon::WARNING))).small().color(theme::WARN_TEXT()));
+                    ui.label(RichText::new(crate::tr(format!("{}  Graphics card not usable: {n}", icon::WARNING))).small().color(theme::WARN_TEXT()));
                 }
             }
             if mode == CutMode::Person {
@@ -767,8 +767,8 @@ impl App {
                 }
                 // older projects: mask and color key at once
                 if c.fx.chroma.is_some() {
-                    let x = theme::row(ui, "Farbe zusätzlich aktiv", |ui| {
-                        theme::icon_button(ui, icon::X, "Farbschlüssel entfernen", true, false).clicked()
+                    let x = theme::row(ui, "Color key also active", |ui| {
+                        theme::icon_button(ui, icon::X, "Remove color key", true, false).clicked()
                     });
                     if x {
                         c.fx.chroma = None;
@@ -777,7 +777,7 @@ impl App {
                 }
             }
             if let Some(k) = c.fx.chroma.as_mut().filter(|_| mode == CutMode::Color) {
-                theme::row(ui, "Farbe", |ui| {
+                theme::row(ui, "Color", |ui| {
                     let mut rgba = [k.color[0], k.color[1], k.color[2], 255];
                     if widgets::color_button(ui, &mut rgba) {
                         k.color = [rgba[0], rgba[1], rgba[2]];
@@ -787,7 +787,7 @@ impl App {
                     if theme::icon_button(
                         ui,
                         icon::EYEDROPPER,
-                        "Farbe im Player aufnehmen",
+                        "Pick color in the player",
                         true,
                         picking,
                     )
@@ -800,19 +800,19 @@ impl App {
                         };
                     }
                 });
-                *e |= theme::row(ui, "Toleranz", |ui| {
+                *e |= theme::row(ui, "Tolerance", |ui| {
                     Slider::new(&mut k.similarity, 0.01..=0.6)
                         .percent()
                         .default(0.18)
                         .show(ui)
                 });
-                *e |= theme::row(ui, "Farbübergang", |ui| {
+                *e |= theme::row(ui, "Key blend", |ui| {
                     Slider::new(&mut k.blend, 0.0..=0.5)
                         .percent()
                         .default(0.08)
                         .show(ui)
                 });
-                *e |= theme::row(ui, "Farbsaum", |ui| {
+                *e |= theme::row(ui, "Spill", |ui| {
                     Slider::new(&mut k.spill, 0.0..=1.0)
                         .percent()
                         .default(0.5)
@@ -828,7 +828,7 @@ impl App {
                     PersonFx::KINDS[1],
                     PersonFx::KINDS[2],
                 ];
-                theme::row(ui, "Hintergrund", |ui| {
+                theme::row(ui, "Background", |ui| {
                     egui::ComboBox::from_id_salt(("person", c.id))
                         .selected_text(crate::tr(items[sel]))
                         .width((ui.available_width() - 12.0).max(60.0))
@@ -843,7 +843,7 @@ impl App {
                 });
                 match &mut c.fx.person {
                     Some(PersonFx::BlurBackground { amount }) => {
-                        *e |= theme::row(ui, "Unschärfe", |ui| {
+                        *e |= theme::row(ui, "Blur", |ui| {
                             Slider::new(amount, 0.0..=1.0)
                                 .percent()
                                 .default(0.6)
@@ -851,7 +851,7 @@ impl App {
                         });
                     }
                     Some(PersonFx::ColorBackground { color }) => {
-                        theme::row(ui, "Farbe", |ui| {
+                        theme::row(ui, "Color", |ui| {
                             let mut rgba = [color[0], color[1], color[2], 255];
                             if widgets::color_button(ui, &mut rgba) {
                                 *color = [rgba[0], rgba[1], rgba[2]];
@@ -860,55 +860,55 @@ impl App {
                         });
                     }
                     Some(PersonFx::Outline { color, width, transparent }) => {
-                        theme::row(ui, "Farbe", |ui| {
+                        theme::row(ui, "Color", |ui| {
                             let mut rgba = [color[0], color[1], color[2], 255];
                             if widgets::color_button(ui, &mut rgba) {
                                 *color = [rgba[0], rgba[1], rgba[2]];
                                 e.commit = true;
                             }
                         });
-                        *e |= theme::row(ui, "Breite", |ui| {
+                        *e |= theme::row(ui, "Width", |ui| {
                             Slider::new(width, 0.0..=1.0)
                                 .percent()
                                 .default(0.4)
                                 .show(ui)
                         });
-                        if widgets::toggle_row(ui, "Ohne Hintergrund", transparent) {
+                        if widgets::toggle_row(ui, "No background", transparent) {
                             e.commit = true;
                         }
                     }
                     None => {}
                 }
-                *e |= theme::row(ui, "Weiche Kante", |ui| {
+                *e |= theme::row(ui, "Feather", |ui| {
                     Slider::new(&mut c.fx.edge.feather, 0.0..=1.0)
                         .percent()
                         .default(0.0)
                         .show(ui)
                 });
-                *e |= theme::row(ui, "Kantenlage", |ui| {
+                *e |= theme::row(ui, "Shift edge", |ui| {
                     Slider::new(&mut c.fx.edge.shift, -1.0..=1.0)
                         .percent()
                         .default(0.0)
                         .show(ui)
                 });
-                if widgets::toggle_row(ui, "Umkehren", &mut c.fx.edge.invert) {
+                if widgets::toggle_row(ui, "Invert", &mut c.fx.edge.invert) {
                     e.commit = true;
                 }
             }
         }
         if is_video {
-            theme::section(ui, "Bildqualität");
-            *e |= theme::row(ui, "Entrauschen", |ui| {
+            theme::section(ui, "Image quality");
+            *e |= theme::row(ui, "Reduce noise", |ui| {
                 Slider::new(&mut c.fx.denoise, 0.0..=1.0)
                     .percent()
                     .default(0.0)
                     .show(ui)
             });
-            if widgets::toggle_row(ui, "Flackern ausgleichen", &mut c.fx.deflicker) {
+            if widgets::toggle_row(ui, "Remove flicker", &mut c.fx.deflicker) {
                 e.commit = true;
             }
-            theme::section(ui, "Bewegung");
-            *e |= theme::row(ui, "Stabilisieren", |ui| {
+            theme::section(ui, "Motion");
+            *e |= theme::row(ui, "Stabilize", |ui| {
                 Slider::new(&mut c.fx.stabilize, 0.0..=1.0)
                     .percent()
                     .default(0.0)
@@ -917,27 +917,27 @@ impl App {
             if c.fx.stabilize > 0.0 && c.fx.cutout.is_some() {
                 ui.label(
                     RichText::new(crate::tr(
-                        "Bei entferntem Hintergrund wird nicht stabilisiert",
+                        "Stabilization is skipped while the background is removed",
                     ))
                     .small()
                     .color(theme::TEXT_DIM()),
                 );
             }
             ui.horizontal_wrapped(|ui| {
-                if ui.add(theme::secondary(format!("{}  Auto-Reframe", icon::CROP))).on_hover_text(crate::tr("Hält das Wichtige im aktuellen Seitenverhältnis im Bild (setzt Keyframes)")).clicked() {
+                if ui.add(theme::secondary(format!("{}  Auto reframe", icon::CROP))).on_hover_text(crate::tr("Keeps the important part in frame for the current aspect ratio (sets keyframes)")).clicked() {
                     let (w, h) = (self.project.settings.width as f32, self.project.settings.height as f32);
                     let same = match &c.content {
                         ClipContent::Media { media, .. } => self.project.media(*media).is_some_and(|m| ((m.width as f32 / m.height.max(1) as f32) - w / h).abs() < 0.02),
                         _ => true,
                     };
                     if same {
-                        self.toast_err("Das Format passt schon – erst ein anderes Seitenverhältnis wählen (z. B. 9:16)");
+                        self.toast_err("The format already fits – choose a different aspect ratio first (e.g. 9:16)");
                     } else {
                         let cc = c.clone();
                         self.start_simple_analysis(&ctx, &cc, "reframe");
                     }
                 }
-                if ui.add(theme::secondary(format!("{}  Szenen teilen", icon::FILM_STRIP))).on_hover_text(crate::tr("Szenenwechsel erkennen und den Clip dort teilen")).clicked() {
+                if ui.add(theme::secondary(format!("{}  Split scenes", icon::FILM_STRIP))).on_hover_text(crate::tr("Detect scene changes and split the clip there")).clicked() {
                     let cc = c.clone();
                     self.start_simple_analysis(&ctx, &cc, "scenes");
                 }
@@ -949,18 +949,18 @@ impl App {
             self.censor_ui(ui, c, e);
         }
         if !on_main {
-            theme::section(ui, "Bewegung verfolgen");
+            theme::section(ui, "Motion tracking");
             let picking = matches!(self.pick, Some(Pick::Track { clip, .. }) if clip == c.id);
             if task_bar(ui, self, &format!("track:{}", c.id)) {
             } else if picking {
-                ui.label(RichText::new(crate::tr("Ziehe im Player einen Rahmen um das Objekt, dem dieser Clip folgen soll (Esc bricht ab)")).small().color(theme::TEXT()));
+                ui.label(RichText::new(crate::tr("Drag a box in the player around the object this clip should follow (Esc cancels)")).small().color(theme::TEXT()));
             } else if ui
                 .add(theme::secondary(format!(
-                    "{}  Objekt verfolgen",
+                    "{}  Track object",
                     icon::CROSSHAIR
                 )))
                 .on_hover_text(crate::tr(
-                    "Clip folgt einem Objekt im Video darunter (ab Playhead)",
+                    "Clip follows an object in the video below (from the playhead)",
                 ))
                 .clicked()
             {
@@ -971,7 +971,7 @@ impl App {
                             target: t,
                         })
                     }
-                    None => self.toast_err("Unter diesem Clip liegt am Playhead kein Video"),
+                    None => self.toast_err("There is no video below this clip at the playhead"),
                 }
             }
         }
@@ -987,11 +987,11 @@ impl App {
             ui.horizontal(|ui| {
                 if ui
                     .add(theme::secondary(format!(
-                        "{}  Beats erkennen",
+                        "{}  Detect beats",
                         icon::METRONOME
                     )))
                     .on_hover_text(crate::tr(
-                        "Markiert die Schläge auf dem Clip; Clips und Playhead rasten daran ein",
+                        "Marks the beats on the clip; clips and the playhead snap to them",
                     ))
                     .clicked()
                 {
@@ -1000,11 +1000,11 @@ impl App {
                 }
                 if !c.beats.is_empty() {
                     ui.label(
-                        RichText::new(crate::tr(format!("{} Beats", c.beats.len())))
+                        RichText::new(crate::tr(format!("{} beats", c.beats.len())))
                             .small()
                             .color(theme::TEXT_DIM()),
                     );
-                    if theme::icon_button(ui, icon::X, "Beat-Markierungen entfernen", true, false)
+                    if theme::icon_button(ui, icon::X, "Remove beat markers", true, false)
                         .clicked()
                     {
                         c.beats.clear();
@@ -1038,28 +1038,28 @@ impl App {
                 ui.set_width(ui.available_width());
                 ui.label(
                     RichText::new(crate::tr(format!(
-                        "{}  Automatische Untertitel",
+                        "{}  Auto captions",
                         icon::WAVEFORM
                     )))
                     .strong(),
                 );
                 ui.label(
                     RichText::new(crate::tr(match &engine {
-                        Some(e) => format!("Lokal mit {e} – nichts verlässt deinen Rechner"),
-                        None => "Noch kein Spracherkennungsmodell installiert".into(),
+                        Some(e) => format!("Runs locally with {e} – nothing leaves your computer"),
+                        None => "No speech recognition model installed yet".into(),
                     }))
                     .small()
                     .color(theme::TEXT_DIM()),
                 );
                 ui.add_space(6.0);
                 if engine.is_none() {
-                    if ui.add(theme::primary("Modell laden …")).clicked() {
+                    if ui.add(theme::primary("Download model …")).clicked() {
                         self.settings_section = crate::settings::Section::Models;
                         self.settings_open = true;
                     }
                     return;
                 }
-                theme::row(ui, "Spracherkennung", |ui| {
+                theme::row(ui, "Speech recognition", |ui| {
                     let name = |id: &str| choices.iter().find(|c| c.0 == id).map_or("", |c| c.1.as_str());
                     egui::ComboBox::from_id_salt("cap-engine")
                         .selected_text(crate::tr(name(cur)))
@@ -1073,12 +1073,12 @@ impl App {
                             }
                         });
                 });
-                theme::row(ui, "Sprache", |ui| {
+                theme::row(ui, "Language", |ui| {
                     let cur = LANGS
                         .iter()
                         .find(|l| l.0 == self.caption_lang)
                         .map(|l| l.1)
-                        .unwrap_or("Automatisch");
+                        .unwrap_or("Automatic");
                     egui::ComboBox::from_id_salt("cap-lang")
                         .selected_text(crate::tr(cur))
                         .width((ui.available_width() - 12.0).max(60.0))
@@ -1111,24 +1111,24 @@ impl App {
                 } else {
                     0
                 };
-                theme::row(ui, "Quelle", |ui| {
-                    if widgets::segmented(ui, &["Ganzes Projekt", "Ausgewählter Clip"], &mut src) {
+                theme::row(ui, "Source", |ui| {
+                    if widgets::segmented(ui, &["Whole project", "Selected clip"], &mut src) {
                         self.caption_from_clip = src == 1;
                     }
                 });
                 ui.add_space(6.0);
-                ui.label(RichText::new(crate::tr("Stil")).small().color(theme::TEXT_DIM()));
+                ui.label(RichText::new(crate::tr("Style")).small().color(theme::TEXT_DIM()));
                 self.caption_preset_picker(ui);
                 if !task_bar(ui, self, "captions") {
                     if ui
                         .add_sized(
                             [ui.available_width(), 28.0],
-                            theme::primary(format!("{}  Untertitel erzeugen", icon::SUBTITLES)),
+                            theme::primary(format!("{}  Generate captions", icon::SUBTITLES)),
                         )
                         .clicked()
                     {
                         if src == 1 && sel_audio.is_none() {
-                            self.toast_err("Wähle einen Video- oder Audioclip");
+                            self.toast_err("Select a video or audio clip");
                         } else {
                             self.start_captions(&ctx, if src == 1 { sel_audio } else { None });
                         }
@@ -1139,13 +1139,13 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             if ui
                 .add(theme::secondary(format!(
-                    "{}  SRT importieren",
+                    "{}  Import SRT",
                     icon::FILE_ARROW_DOWN
                 )))
                 .clicked()
             {
                 if let Some(f) = crate::dialog()
-                    .add_filter("Untertitel", &["srt", "vtt"])
+                    .add_filter("Captions", &["srt", "vtt"])
                     .pick_file()
                 {
                     self.import_srt(&f);
@@ -1153,7 +1153,7 @@ impl App {
             }
             if ui
                 .add(theme::secondary(format!(
-                    "{}  SRT exportieren",
+                    "{}  Export SRT",
                     icon::EXPORT
                 )))
                 .clicked()
@@ -1165,7 +1165,7 @@ impl App {
                     .save_file()
                 {
                     match std::fs::write(&f, cl_export::subtitles_for(&self.project, &f)) {
-                        Ok(()) => self.toast("Untertitel gespeichert"),
+                        Ok(()) => self.toast("Captions saved"),
                         Err(e) => self.toast_err(e.to_string()),
                     }
                 }
@@ -1194,9 +1194,9 @@ impl App {
         }
         let painter = ui.painter_at(resp.rect);
         let hint = match pick {
-            Pick::Chroma(_) => "Klicke auf die Farbe, die verschwinden soll",
-            Pick::Track { .. } | Pick::Censor(_) => "Ziehe einen Rahmen um das Objekt",
-            Pick::Roto(_) => &crate::tr("Objekt markieren"),
+            Pick::Chroma(_) => "Click the color that should disappear",
+            Pick::Track { .. } | Pick::Censor(_) => "Drag a box around the object",
+            Pick::Roto(_) => &crate::tr("Mark object"),
         };
         let g = painter.layout_no_wrap(
             format!(
@@ -1246,7 +1246,7 @@ impl App {
                                 self.live = None;
                                 self.apply(EditOp::ReplaceClip { clip: c });
                                 self.toast(format!(
-                                    "Farbe #{:02X}{:02X}{:02X} freigestellt",
+                                    "Color #{:02X}{:02X}{:02X} keyed out",
                                     col[0], col[1], col[2]
                                 ));
                             }
@@ -1295,9 +1295,9 @@ impl App {
                             }
                         } else {
                             self.toast_err(if matches!(pick, Pick::Censor(_)) {
-                                "Der Clip ist am Playhead nicht sichtbar"
+                                "The clip isn't visible at the playhead"
                             } else {
-                                "Das Video darunter ist am Playhead nicht sichtbar"
+                                "The video below isn't visible at the playhead"
                             });
                         }
                         self.pick = None;
@@ -1334,7 +1334,7 @@ impl App {
         self.tasks.spawn(
             ctx,
             format!("track:{clip}"),
-            "Bewegung wird verfolgt …",
+            "Tracking motion …",
             move |p, cancel| match cl_analyze::track::track(
                 &m.path, m.width, m.height, src_start, src_dur, bx, p, cancel,
             ) {
@@ -1352,7 +1352,7 @@ impl App {
     // ------------------------------------------------------------ censoring
 
     /// Create a censor area from the drawn frame (`bx` in display position, i.e. mirrored as in the
-    /// player): kind, shape, strength and „Verfolgen“ like the last created area.
+    /// player): kind, shape, strength and „Track“ like the last created area.
     /// The area is `CENSOR_PAD` larger than the frame; for videos the subject is tracked.
     fn add_censor(&mut self, ctx: &egui::Context, clip: ClipId, bx: cl_analyze::track::BoxN) {
         let Some(mut c) = self.clip_view(clip) else { return };
@@ -1383,7 +1383,7 @@ impl App {
         let init = cl_analyze::track::BoxN { cx: k.cx, cy: k.cy, w: k.w / CENSOR_PAD, h: k.h / CENSOR_PAD };
         let (a, b) = (c.source_time(c.start), c.source_time(c.end()));
         let (s0, s1) = (a.min(b).as_secs_f64(), a.max(b).as_secs_f64());
-        self.tasks.spawn(ctx, censor_task(clip, id), "Zensur wird verfolgt …", move |p, cancel| {
+        self.tasks.spawn(ctx, censor_task(clip, id), "Tracking censor area …", move |p, cancel| {
             match cl_analyze::track::track_box(&m.path, m.width, m.height, s0, s1 - s0, at.as_secs_f64(), init, p, cancel) {
                 Ok(_) if cancel.load(std::sync::atomic::Ordering::Relaxed) => TaskDone::Run(Box::new(|_| {})),
                 Ok(boxes) => {
@@ -1402,7 +1402,7 @@ impl App {
     /// Enter the tracking result of area `id` – in every clip of this medium that (still) has it
     /// and tracks it: after a split it belongs to both halves, the path lies in
     /// source time. If the area no longer exists (removed, undone, clip deleted) or
-    /// „Verfolgen“ is off, the result is discarded.
+    /// „Track“ is off, the result is discarded.
     fn censor_tracked(&mut self, media: MediaId, id: CensorId, path: Vec<CensorKey>) {
         if path.is_empty() {
             return;
@@ -1429,13 +1429,13 @@ impl App {
             return;
         }
         self.live = None;
-        self.apply(EditOp::Batch { label: "Zensur verfolgt".into(), ops });
-        self.toast(format!("Zensur verfolgt ({} Keyframes)", path.len()));
+        self.apply(EditOp::Batch { label: "Censor area tracked".into(), ops });
+        self.toast(format!("Censor area tracked ({} keyframes)", path.len()));
     }
 
-    /// „Zensur“ section in the „Smart“ tab: settings per area and „Zensieren …“.
+    /// „Censor“ section in the „Smart“ tab: settings per area and „Censor …“.
     fn censor_ui(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
-        theme::section(ui, "Zensur");
+        theme::section(ui, "Censor");
         let video = is_video(c);
         let now = c.source_time(self.playhead.clamp(c.start, c.end()));
         let (mut remove, mut track) = (None, None);
@@ -1445,25 +1445,25 @@ impl App {
                 ui.add_space(8.0);
             }
             let mut kind = cs.blur as usize;
-            theme::row(ui, "Art", |ui| {
-                if widgets::segmented(ui, &["Verpixeln", "Weichzeichnen"], &mut kind) {
+            theme::row(ui, "Type", |ui| {
+                if widgets::segmented(ui, &["Pixelate", "Blur~soften"], &mut kind) {
                     cs.blur = kind == 1;
                     e.commit = true;
                 }
             });
             let mut shape = cs.ellipse as usize;
-            theme::row(ui, "Form", |ui| {
-                if widgets::segmented(ui, &["Rechteck", "Ellipse"], &mut shape) {
+            theme::row(ui, "Shape", |ui| {
+                if widgets::segmented(ui, &["Rectangle", "Ellipse"], &mut shape) {
                     cs.ellipse = shape == 1;
                     e.commit = true;
                 }
             });
-            *e |= theme::row(ui, "Stärke", |ui| {
+            *e |= theme::row(ui, "Strength", |ui| {
                 Slider::new(&mut cs.strength, 0.0..=1.0).percent().default(0.0).show(ui)
             });
             if video {
                 let mut on = cs.track;
-                if widgets::toggle_row(ui, "Verfolgen", &mut on) {
+                if widgets::toggle_row(ui, "Track~verb", &mut on) {
                     cs.track = on;
                     if on {
                         track = Some(cs.id);
@@ -1479,7 +1479,7 @@ impl App {
             }
             ui.horizontal(|ui| {
                 ui.add_space(theme::LABEL_W + 6.0);
-                if ui.add(theme::ghost(format!("{}  Entfernen", icon::X))).clicked() {
+                if ui.add(theme::ghost(format!("{}  Remove", icon::X))).clicked() {
                     remove = Some(i);
                 }
             });
@@ -1492,13 +1492,13 @@ impl App {
             e.commit = true;
         }
         if let Some(id) = track {
-            // reads the area from the project; the result only applies if „Verfolgen“ is on then
+            // reads the area from the project; the result only applies if „Track“ is on then
             let ctx = ui.ctx().clone();
             self.start_censor_tracking(&ctx, c.id, id);
         }
         ui.add_space(4.0);
         let picking = self.pick == Some(Pick::Censor(c.id));
-        if ui.add(theme::secondary(format!("{}  Zensieren …", icon::EYE_SLASH))).clicked() {
+        if ui.add(theme::secondary(format!("{}  Censor …", icon::EYE_SLASH))).clicked() {
             self.pick = if picking { None } else { Some(Pick::Censor(c.id)) };
         }
     }
@@ -1642,7 +1642,7 @@ impl App {
                             if installed {
                                 ui.label(
                                     RichText::new(crate::tr(format!(
-                                        "{}  installiert",
+                                        "{}  installed",
                                         icon::CHECK_CIRCLE
                                     )))
                                     .small()
@@ -1650,12 +1650,12 @@ impl App {
                                 );
                             } else if info.id == "onnxruntime" && !cfg!(windows) {
                                 ui.label(
-                                    RichText::new(crate::tr("Im Programmpaket enthalten"))
+                                    RichText::new(crate::tr("Included with the app"))
                                         .small()
                                         .color(theme::TEXT_DIM()),
                                 );
                             } else if ui
-                                .add(theme::primary(format!("Laden · {} MB", info.size_mb)))
+                                .add(theme::primary(format!("Download · {} MB", info.size_mb)))
                                 .clicked()
                             {
                                 self.download_model(&ctx, info.id);
@@ -1669,7 +1669,7 @@ impl App {
         ui.horizontal(|ui| {
             if ui
                 .add(theme::ghost(format!(
-                    "{}  Modellordner öffnen",
+                    "{}  Open model folder",
                     icon::FOLDER_OPEN
                 )))
                 .clicked()
@@ -1694,7 +1694,7 @@ impl App {
         self.tasks.spawn(
             ctx,
             format!("model:{id}"),
-            format!("{} wird geladen …", info.name),
+            format!("Downloading {} …", info.name),
             move |p, cancel| {
                 let n = files.len() as f32;
                 for (i, (rel, url)) in files.iter().enumerate() {
@@ -1728,12 +1728,12 @@ impl App {
 /// Audio tools for clips and voiceover: noise, sound, audio filters, voice filters.
 pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
     let mut e = Edit::default();
-    theme::row(ui, "Kanäle", |ui| {
-        let label = a.channels.map(|c| c.name()).unwrap_or("Projekt-Standard");
+    theme::row(ui, "Channels", |ui| {
+        let label = a.channels.map(|c| c.name()).unwrap_or("Project default");
         egui::ComboBox::from_id_salt("clip-channels")
             .selected_text(crate::tr(label))
             .show_ui(ui, |ui| {
-                if ui.selectable_label(a.channels.is_none(), crate::tr("Projekt-Standard")).clicked() {
+                if ui.selectable_label(a.channels.is_none(), crate::tr("Project default")).clicked() {
                     a.channels = None;
                     e.commit = true;
                 }
@@ -1745,17 +1745,17 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
                 }
             })
             .response
-            .on_hover_text(crate::tr("„Automatisch“ legt Ton, der nur links oder rechts aufgenommen wurde, auf beide Ohren"));
+            .on_hover_text(crate::tr("“Automatic” puts sound recorded only on the left or right on both ears"));
     });
-    theme::section(ui, "Störgeräusche");
-    e |= theme::row(ui, "Entrauschen", |ui| {
+    theme::section(ui, "Noise");
+    e |= theme::row(ui, "Reduce noise", |ui| {
         Slider::new(&mut a.denoise, 0.0..=1.0).percent().default(0.0).show(ui)
     });
     let toggles: [(&str, &str, &mut bool, &mut f32); 4] = [
-        ("Brummen", "Netzbrummen (50/60 Hz) entfernen", &mut a.hum, &mut a.hum_amount),
-        ("Rumpeln & Wind", "Tiefe Störgeräusche unter 90 Hz entfernen", &mut a.rumble, &mut a.rumble_amount),
-        ("Klicks", "Klicks und Knackser entfernen", &mut a.declick, &mut a.declick_amount),
-        ("Stimme hervorheben", "Sprache betonen, Hintergrund absenken", &mut a.voice_isolate, &mut a.voice_isolate_amount),
+        ("Hum", "Remove mains hum (50/60 Hz)", &mut a.hum, &mut a.hum_amount),
+        ("Rumble & wind", "Remove low noise below 90 Hz", &mut a.rumble, &mut a.rumble_amount),
+        ("Clicks", "Remove clicks and crackle", &mut a.declick, &mut a.declick_amount),
+        ("Enhance voice", "Bring out speech, lower the background", &mut a.voice_isolate, &mut a.voice_isolate_amount),
     ];
     for (label, tip, v, amount) in toggles {
         let r = ui.scope(|ui| widgets::toggle_row(ui, label, v));
@@ -1767,33 +1767,33 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
             e |= strength_row(ui, amount);
         }
     }
-    theme::section(ui, "Klang");
-    e |= theme::row(ui, "Kompressor", |ui| {
+    theme::section(ui, "Sound");
+    e |= theme::row(ui, "Compressor", |ui| {
         Slider::new(&mut a.compress, 0.0..=1.0).percent().default(0.0).show(ui)
     });
     e |= theme::row(ui, "Bass", |ui| {
         Slider::new(&mut a.bass, -12.0..=12.0).suffix(" dB").default(0.0).show(ui)
     });
-    e |= theme::row(ui, "Höhen", |ui| {
+    e |= theme::row(ui, "Treble", |ui| {
         Slider::new(&mut a.treble, -12.0..=12.0).suffix(" dB").default(0.0).show(ui)
     });
-    e |= theme::row(ui, "Hall", |ui| {
+    e |= theme::row(ui, "Reverb", |ui| {
         Slider::new(&mut a.reverb, 0.0..=1.0).percent().default(0.0).show(ui)
     });
     if a.reverb > 0.0 {
-        e |= theme::row(ui, "Raumgröße", |ui| {
+        e |= theme::row(ui, "Room size", |ui| {
             Slider::new(&mut a.reverb_size, 0.0..=1.0).percent().default(0.5).show(ui)
         });
     }
-    if widgets::toggle_row(ui, "Lautheit angleichen (−14 LUFS)", &mut a.normalize) {
+    if widgets::toggle_row(ui, "Normalize loudness (−14 LUFS)", &mut a.normalize) {
         e.commit = true;
     }
     for (title, list, slot, salt, amount) in [
-        ("Audiofilter", cl_fx::audio::FILTERS, &mut a.filter, "afilter", &mut a.filter_amount),
-        ("Stimmfilter", cl_fx::audio::VOICES, &mut a.voice, "voice", &mut a.voice_amount),
+        ("Audio filters", cl_fx::audio::FILTERS, &mut a.filter, "afilter", &mut a.filter_amount),
+        ("Voice changer", cl_fx::audio::VOICES, &mut a.voice, "voice", &mut a.voice_amount),
     ] {
         theme::section(ui, title);
-        let mut items: Vec<(&str, &str)> = vec![("", "Kein")];
+        let mut items: Vec<(&str, &str)> = vec![("", "None~m")];
         items.extend(list.iter().map(|v| (v.0, v.1)));
         let cur = slot.clone().unwrap_or_default();
         let mut chosen = None;
@@ -1824,7 +1824,7 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
 
 /// Strength of a switched-on audio effect (100 % = full effect).
 fn strength_row(ui: &mut egui::Ui, amount: &mut f32) -> Edit {
-    theme::row(ui, "Stärke", |ui| Slider::new(amount, 0.0..=1.0).percent().default(1.0).show(ui))
+    theme::row(ui, "Strength", |ui| Slider::new(amount, 0.0..=1.0).percent().default(1.0).show(ui))
 }
 
 #[cfg(test)]
@@ -1856,7 +1856,7 @@ mod tests {
     /// Each choice is one clip replacement (one undo step) with the fields of the other ways gone.
     #[test]
     fn cut_mode_choice_is_one_undo_step() {
-        let mut p = Project::new("Freistellen");
+        let mut p = Project::new("Cutout");
         let mut t = Track::new(TrackKind::Video);
         // fields only: the content does not matter for the choice
         let mut c = Clip::new(ClipContent::Text(Default::default()), Time::ZERO, Time::from_secs_f64(1.0));
@@ -1920,12 +1920,12 @@ mod tests {
         assert_eq!(mask_status(&c, false), None);
         let f = dir.path().join("m.mkv");
         c.fx.cutout = Some(f.to_string_lossy().into_owned());
-        assert_eq!(mask_status(&c, false), Some("Maske fehlt"));
+        assert_eq!(mask_status(&c, false), Some("Mask missing"));
         assert_eq!(mask_status(&c, true), None);
         // an object mask that is not there yet: not tracked yet
         let mut obj = c.clone();
         obj.roto = Some(Roto::default());
-        assert_eq!(mask_status(&obj, false), Some("Noch nicht verfolgt"));
+        assert_eq!(mask_status(&obj, false), Some("Not tracked yet"));
         let before = crate::player::fx_hash_of(&c);
         std::fs::write(&f, b"x").unwrap();
         assert_eq!(mask_status(&c, false), None);
@@ -1935,9 +1935,9 @@ mod tests {
         assert_eq!(mask_status(&c, false), None);
         // trimmed longer than the range, in either direction
         c.duration = s(2.5);
-        assert_eq!(mask_status(&c, false), Some("Bereich nicht verfolgt"));
+        assert_eq!(mask_status(&c, false), Some("Range not tracked"));
         (c.duration, c.source_in, c.fx.cutout_span) = (s(1.0), s(0.5), Some(MatteSpan { start: s(1.0), end: s(3.0) }));
-        assert_eq!(mask_status(&c, false), Some("Bereich nicht verfolgt"));
+        assert_eq!(mask_status(&c, false), Some("Range not tracked"));
     }
 
     #[test]
@@ -1959,7 +1959,7 @@ mod tests {
         let (_, cur) = asr_offer(true, None, true, "parakeet");
         assert_eq!(asr_force(cur), Some(Engine::Parakeet));
         // unknown value
-        assert_eq!(asr_offer(true, None, true, "gibts-nicht").1, "auto");
+        assert_eq!(asr_offer(true, None, true, "does-not-exist").1, "auto");
     }
 
     fn video(dir: &std::path::Path, name: &str, args: &[&str]) -> MediaRef {
@@ -1969,7 +1969,7 @@ mod tests {
         cl_media::probe(&path).unwrap()
     }
 
-    /// „Zensieren …“ only with a selected video/image clip; the frame from the player becomes
+    /// „Censor …“ only with a selected video/image clip; the frame from the player becomes
     /// (mirrored back into the source frame) the area, 15 % larger; further ones take over the kind.
     #[test]
     fn censor_action_and_area_from_the_player_box() {
@@ -1977,7 +1977,7 @@ mod tests {
         let ctx = egui::Context::default();
         let img = MediaRef {
             id: MediaId::new(),
-            path: "bild.png".into(),
+            path: "frame.png".into(),
             kind: MediaKind::Image,
             duration: Time::ZERO,
             width: 640,
@@ -1989,7 +1989,7 @@ mod tests {
             audio_codec: None,
             has_alpha: false,
         };
-        let mut p = Project::new("Zensur");
+        let mut p = Project::new("Censor");
         let mut t = Track::new(TrackKind::Video);
         let mut c = Clip::new(ClipContent::Media { media: img.id, kind: MediaKind::Image }, Time::ZERO, Time::from_secs_f64(3.0));
         c.fx.flip_h = true;
@@ -2055,7 +2055,7 @@ mod tests {
         let media = m.id;
         let c = Clip::new(ClipContent::Media { media, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(4.0));
         let clip = c.id;
-        let mut p = Project::new("Zensur");
+        let mut p = Project::new("Censor");
         let mut t = Track::new(TrackKind::Video);
         t.clips.push(c);
         p.media.push(m);
@@ -2101,7 +2101,7 @@ mod tests {
         app.sync_project();
         app.censor_tracked(media, ids[1], tracked.clone());
         assert_eq!(xs(&app, clip), vec![(1, 0.1), (2, 0.9), (1, 0.3)]);
-        // „Verfolgen“ off: discarded
+        // „Track“ off: discarded
         let ids = fresh(&mut app);
         let mut c = app.clip_view(clip).unwrap();
         c.fx.censor[1].track = false;
@@ -2140,7 +2140,7 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let m = video(dir.path(), "kurve.mp4", &[
+        let m = video(dir.path(), "curve.mp4", &[
             "-f", "lavfi", "-i", "color=0x203040:s=640x360:r=30:d=4",
             "-f", "lavfi", "-i", "testsrc2=s=64x64:r=30:d=4",
             "-filter_complex", "[0][1]overlay=x='60+110*t':y='150+70*sin(1.5*t)'",
@@ -2158,7 +2158,7 @@ mod tests {
         let keys: Vec<CensorKey> = boxes.iter().map(|(t, b)| CensorKey { t: Time::from_secs_f64(*t), cx: b.cx, cy: b.cy, w: b.w, h: b.h }).collect();
         let cs = Censor { path: censor_simplify(&keys), ..Default::default() };
         eprintln!(
-            "Verfolgung: {} Rahmen, {} Keyframes, {:.2} s Rechenzeit je Sekunde Video",
+            "Tracking: {} frames, {} keyframes, {:.2} s compute per second of video",
             boxes.len(),
             cs.path.len(),
             secs / 4.0

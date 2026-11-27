@@ -1,0 +1,9 @@
+# Filler words of spoken English, lowercase without punctuation (one per line)
+hm
+hmm
+mhm
+uh
+um
+uhm
+erm
+eh

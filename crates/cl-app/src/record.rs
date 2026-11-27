@@ -83,7 +83,7 @@ impl Recorder {
                 .find(|d| d.name().ok().as_deref() == Some(n)),
             None => host.default_input_device(),
         }
-        .ok_or("Kein Mikrofon gefunden")?;
+        .ok_or("No microphone found")?;
         let config = dev.default_input_config().map_err(|e| e.to_string())?;
         let (rate, channels) = (config.sample_rate().0, config.channels());
         if let Some(d) = path.parent() {
@@ -95,7 +95,7 @@ impl Recorder {
         let bucket =
             ((rate as usize * channels as usize) / crate::preview::WAVE_PER_SEC as usize).max(1);
         let cfg: cpal::StreamConfig = config.clone().into();
-        let err = |e| log::warn!("Mikrofon: {e}");
+        let err = |e| log::warn!("Microphone: {e}");
         macro_rules! build {
             ($t:ty, $conv:expr) => {{
                 let (tx, level, peaks) = (tx.clone(), level.clone(), peaks.clone());
@@ -136,7 +136,7 @@ impl Recorder {
             cpal::SampleFormat::F32 => build!(f32, |s: f32| s),
             cpal::SampleFormat::I16 => build!(i16, |s: i16| s as f32 / i16::MAX as f32),
             cpal::SampleFormat::U16 => build!(u16, |s: u16| s as f32 / u16::MAX as f32 * 2.0 - 1.0),
-            f => return Err(format!("Sample-Format {f:?} nicht unterstützt")),
+            f => return Err(format!("Sample format {f:?} not supported")),
         }
         .map_err(|e| e.to_string())?;
         stream.play().map_err(|e| e.to_string())?;
@@ -172,7 +172,7 @@ impl Recorder {
         drop(self.tx.take());
         if let Some(w) = self.writer.take() {
             w.join()
-                .map_err(|_| "Schreib-Thread abgestürzt".to_string())??;
+                .map_err(|_| "writer thread crashed".to_string())??;
         }
         Ok(self.path.clone())
     }

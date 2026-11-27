@@ -22,7 +22,7 @@ fn clip_plays_chosen_audio_stream() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    let v = dir.path().join("zwei spuren.mp4");
+    let v = dir.path().join("two tracks.mp4");
     let ok = cl_media::ffmpeg_command()
         .unwrap()
         .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=30:d=3", "-f", "lavfi", "-i", "sine=f=300:d=3"])
@@ -52,14 +52,14 @@ fn clip_plays_chosen_audio_stream() {
         (amp(&x, 300.0), amp(&x, 900.0))
     };
     let (lo, hi) = play(Some(1));
-    assert!(hi > 0.05 && lo < hi / 10.0, "Spur 2 = 900 Hz: {lo} {hi}");
+    assert!(hi > 0.05 && lo < hi / 10.0, "track 2 = 900 Hz: {lo} {hi}");
     for s in [None, Some(0), Some(7)] {
         let (lo, hi) = play(s);
-        assert!(lo > 0.05 && hi < lo / 10.0, "{s:?} → erste Spur (300 Hz): {lo} {hi}");
+        assert!(lo > 0.05 && hi < lo / 10.0, "{s:?} → first track (300 Hz): {lo} {hi}");
     }
 }
 
-/// „Ton extrahieren“ twice on a file with two streams (300 Hz / 900 Hz): the WAV export holds each
+/// „Extract audio“ twice on a file with two streams (300 Hz / 900 Hz): the WAV export holds each
 /// stream once, the stream extracted from the video is not doubled and the video's other stream
 /// stays audible.
 #[test]
@@ -68,7 +68,7 @@ fn extracted_streams_export_once_each() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    let v = dir.path().join("zwei spuren.mp4");
+    let v = dir.path().join("two tracks.mp4");
     let ok = cl_media::ffmpeg_command()
         .unwrap()
         .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=30:d=3", "-f", "lavfi", "-i", "sine=f=300:d=3"])
@@ -111,11 +111,11 @@ fn extracted_streams_export_once_each() {
         let x: Vec<f32> = o.stdout.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
         (amp(&x, 300.0), amp(&x, 900.0))
     };
-    let (lo, hi) = export("vorher", video(None, &[]), vec![]);
+    let (lo, hi) = export("before", video(None, &[]), vec![]);
     assert!(lo > 0.02 && hi < lo / 10.0, "original: stream 1 only: {lo} {hi}");
     let near = |a: f64| (a / lo - 1.0).abs() < 0.2;
     // stream 1 extracted: once, not doubled by the video
-    let (l1, h1) = export("eins", video(None, &[0]), vec![audio(None)]);
+    let (l1, h1) = export("one", video(None, &[0]), vec![audio(None)]);
     assert!(near(l1) && h1 < lo / 10.0, "stream 1 once: {l1} {h1} (original {lo})");
     // video switched to stream 2: audible next to the extracted stream 1
     let (l2, h2) = export("umgestellt", video(Some(1), &[0]), vec![audio(None)]);

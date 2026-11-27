@@ -61,7 +61,7 @@ fn capcut_big_export() {
     let dir = std::env::var_os("CUTLINE_CAPCUT_DRAFT").map(PathBuf::from).expect("set CUTLINE_CAPCUT_DRAFT=<draft folder>");
     let (p, rep) = cl_import::capcut::import(&dir).unwrap();
     println!(
-        "Import: {} Clips, {} Medien, {} fehlend",
+        "Import: {} clips, {} media, {} missing",
         rep.clips,
         p.media.len(),
         rep.missing.len()
@@ -73,11 +73,11 @@ fn capcut_big_export() {
         .unwrap_or(320);
     let h = (w as u64 * p.settings.height as u64 / p.settings.width.max(1) as u64) as u32 & !1;
     let out_dir = tempfile::tempdir().unwrap();
-    let out = out_dir.path().join("gross.mp4");
+    let out = out_dir.path().join("large.mp4");
     let mut s = ExportSettings::from_project(&p);
     (s.width, s.height) = (w, h);
     s.quality = cl_export::Quality::Lower;
-    let only_audio = std::env::var_os("CUTLINE_NUR_TON").is_some();
+    let only_audio = std::env::var_os("CUTLINE_AUDIO_ONLY").is_some();
     let t0 = Instant::now();
     let job = build(&p, &s, &no_fonts, &out).unwrap();
     let longest = job
@@ -155,7 +155,7 @@ fn capcut_big_export() {
     // compare audio without encoding (AAC frames would lie differently with short samples): WAV whole and per sample
     let mut wav = s.clone();
     wav.format = cl_export::Format::Wav;
-    let whole = out_dir.path().join("ganz.wav");
+    let whole = out_dir.path().join("whole.wav");
     let t0 = Instant::now();
     let j = build(&p, &wav, &no_fonts, &whole).unwrap();
     run(&j, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
@@ -205,5 +205,5 @@ fn capcut_big_export() {
     println!(
         "samples: picture mean deviation at most {vd:.2} (0–255), audio at most {ad:.4}"
     );
-    assert!(ad < 1e-3, "Ton weicht ab: {ad}");
+    assert!(ad < 1e-3, "audio deviates: {ad}");
 }

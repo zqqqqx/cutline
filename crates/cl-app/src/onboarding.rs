@@ -1,8 +1,8 @@
 //! Introduction on first start (skippable at any time) and a tour of the editor.
 //!
-//! Introduction: welcome → „Wofür nutzt du Cutline?“ → matching plugins, models and tips.
+//! Introduction: welcome → „What do you use Cutline for?“ → matching plugins, models and tips.
 //! Tour: highlights the editor's panels one after another and explains them.
-//! Both can be started again via menu → „Rundgang“ / „Einführung wiederholen“.
+//! Both can be started again via menu → „Tour“ / „Repeat introduction“.
 
 use std::collections::BTreeSet;
 
@@ -28,7 +28,7 @@ pub struct Onboard {
     /// Checked recommendations (plugins, models)
     pub picked: BTreeSet<&'static str>,
     picks_for: Option<BTreeSet<&'static str>>,
-    /// „Fehlerberichte senden“: off until the user switches it on
+    /// „Send error reports“: off until the user switches it on
     pub reports: bool,
 }
 
@@ -55,44 +55,44 @@ pub const USES: &[(&str, &str, &str, &str)] = &[
     (
         "gaming",
         icon::GAME_CONTROLLER,
-        "Gaming & Let's Plays",
-        "Lange Aufnahmen, Highlights, Facecam",
+        "Gaming & let's plays",
+        "Long recordings, highlights, facecam",
     ),
     (
         "shorts",
         icon::DEVICE_MOBILE,
         "Shorts, TikTok & Reels",
-        "Hochformat, Untertitel, schnelle Schnitte",
+        "Vertical, captions, fast cuts",
     ),
     (
         "talk",
         icon::MICROPHONE,
-        "Podcasts & Interviews",
-        "Mehrere Sprecher, Pausen und Füllwörter",
+        "Podcasts & interviews",
+        "Several speakers, pauses and filler words",
     ),
     (
         "vlog",
         icon::CAMERA,
-        "Vlogs & Lifestyle",
-        "Looks, Musik, Stock-Material",
+        "Vlogs & lifestyle",
+        "Looks, music, stock footage",
     ),
     (
         "story",
         icon::FILM_SLATE,
-        "Story-Serien & Hörspiele",
-        "Figuren, Dialoge, mehrere Blickwinkel",
+        "Story series & audio dramas",
+        "Characters, dialogue, several angles",
     ),
     (
         "music",
         icon::MUSIC_NOTES,
-        "Musikvideos & Edits",
-        "Beats, Übergänge, Effekte",
+        "Music videos & edits",
+        "Beats, transitions, effects",
     ),
     (
         "work",
         icon::CHALKBOARD_TEACHER,
-        "Schule, Arbeit & Tutorials",
-        "Untertitel, Sprachaufnahme, Kapitel",
+        "School, work & tutorials",
+        "Captions, voiceover, chapters",
     ),
 ];
 
@@ -120,18 +120,18 @@ const SUGGESTIONS: &[Sug] = &[
     Sug {
         id: "asr",
         icon: icon::CLOSED_CAPTIONING,
-        title: "Spracherkennung laden",
-        text: "Automatische Untertitel und Füllwörter entfernen. Läuft lokal.",
-        note: "ca. 690 MB",
+        title: "Download speech recognition",
+        text: "Automatic captions and filler word removal. Runs locally.",
+        note: "approx. 690 MB",
         act: Act::Models(&["onnxruntime", "parakeet"]),
         uses: &["shorts", "talk", "work", "vlog", "gaming", "story"],
     },
     Sug {
         id: "rvm",
         icon: icon::USER_FOCUS,
-        title: "Freistellen ohne Greenscreen",
-        text: "Person vom Hintergrund trennen, z. B. Facecam über Gameplay.",
-        note: "ca. 32 MB",
+        title: "Background removal without a green screen",
+        text: "Separate a person from the background, e.g. facecam over gameplay.",
+        note: "approx. 32 MB",
         act: Act::Models(&["onnxruntime", "rvm"]),
         uses: &["gaming", "shorts", "vlog"],
     },
@@ -139,8 +139,8 @@ const SUGGESTIONS: &[Sug] = &[
         id: "epidemic",
         icon: icon::MUSIC_NOTE,
         title: "Epidemic Sound",
-        text: "Musik und Soundeffekte direkt im Audio-Reiter.",
-        note: "eigenes Konto",
+        text: "Music and sound effects right in the Audio tab.",
+        note: "own account",
         act: Act::Plugin("cutline.epidemic-sound"),
         uses: &["gaming", "shorts", "vlog", "music", "talk"],
     },
@@ -148,8 +148,8 @@ const SUGGESTIONS: &[Sug] = &[
         id: "freesound",
         icon: icon::WAVEFORM,
         title: "Freesound",
-        text: "Hunderttausende freie Soundeffekte im Audio-Reiter.",
-        note: "kostenloser Schlüssel",
+        text: "Hundreds of thousands of free sound effects in the Audio tab.",
+        note: "free key",
         act: Act::Plugin("cutline.freesound"),
         uses: &["gaming", "story", "vlog", "music"],
     },
@@ -157,16 +157,16 @@ const SUGGESTIONS: &[Sug] = &[
         id: "pexels",
         icon: icon::IMAGES,
         title: "Pexels",
-        text: "Kostenlose Stock-Videos und Fotos im Medien-Reiter.",
-        note: "kostenloser Schlüssel",
+        text: "Free stock videos and photos in the Media tab.",
+        note: "free key",
         act: Act::Plugin("cutline.pexels"),
         uses: &["vlog", "work", "shorts"],
     },
     Sug {
         id: "story",
         icon: icon::USERS,
-        title: "Story-Werkzeuge",
-        text: "Figuren, Dialogboxen und Namensschilder mit einem Klick.",
+        title: "Story tools",
+        text: "Characters, dialogue boxes and name tags in one click.",
         note: "",
         act: Act::Plugin("cutline.story-tools"),
         uses: &["story"],
@@ -174,8 +174,8 @@ const SUGGESTIONS: &[Sug] = &[
     Sug {
         id: "t_jump",
         icon: icon::SCISSORS,
-        title: "Pausen entfernen",
-        text: "Schnellaktionen → Pausen entfernen schneidet Stille aus Sprechpassagen.",
+        title: "Remove pauses",
+        text: "Quick Actions → Remove pauses cuts silence out of spoken parts.",
         note: "",
         act: Act::Tip,
         uses: &["talk", "vlog", "work", "gaming"],
@@ -183,8 +183,8 @@ const SUGGESTIONS: &[Sug] = &[
     Sug {
         id: "t_high",
         icon: icon::STAR,
-        title: "Highlights finden",
-        text: "Schnellaktionen → Highlights setzt Marker an lauten Momenten langer Aufnahmen.",
+        title: "Find highlights",
+        text: "Quick Actions → Highlights adds markers at loud moments of long recordings.",
         note: "",
         act: Act::Tip,
         uses: &["gaming"],
@@ -192,8 +192,8 @@ const SUGGESTIONS: &[Sug] = &[
     Sug {
         id: "t_vert",
         icon: icon::DEVICE_MOBILE,
-        title: "Hochkant-Layout",
-        text: "Schnellaktionen → Hochkant-Layout macht aus 16:9 ein 9:16-Video mit Facecam oben.",
+        title: "Vertical layout",
+        text: "Quick Actions → Vertical layout turns 16:9 into a 9:16 video with the facecam on top.",
         note: "",
         act: Act::Tip,
         uses: &["shorts", "gaming"],
@@ -203,7 +203,7 @@ const SUGGESTIONS: &[Sug] = &[
         icon: icon::VIDEO_CAMERA,
         title: "Multicam",
         text:
-            "Mehrere Aufnahmen per Ton synchronisieren und mit 1–9 live zwischen ihnen schneiden.",
+            "Sync several recordings by audio and cut between them live with 1–9.",
         note: "",
         act: Act::Tip,
         uses: &["talk", "story", "gaming"],
@@ -211,8 +211,8 @@ const SUGGESTIONS: &[Sug] = &[
     Sug {
         id: "t_duck",
         icon: icon::SPEAKER_LOW,
-        title: "Auto-Ducking",
-        text: "Schnellaktionen → Musik unter Sprache absenken, ohne Keyframes von Hand.",
+        title: "Auto ducking",
+        text: "Quick Actions → Lower music under speech, no manual keyframes.",
         note: "",
         act: Act::Tip,
         uses: &["talk", "vlog", "work"],
@@ -220,8 +220,8 @@ const SUGGESTIONS: &[Sug] = &[
     Sug {
         id: "t_beats",
         icon: icon::METRONOME,
-        title: "Beat-Erkennung",
-        text: "Beats eines Songs erkennen lassen, Clips rasten darauf ein.",
+        title: "Beat detection",
+        text: "Detect the beats of a song, clips snap to them.",
         note: "",
         act: Act::Tip,
         uses: &["music", "shorts"],
@@ -229,8 +229,8 @@ const SUGGESTIONS: &[Sug] = &[
     Sug {
         id: "t_chap",
         icon: icon::LIST_NUMBERS,
-        title: "Kapitel aus Markern",
-        text: "M setzt Marker, im Projekt-Reiter werden daraus YouTube-Kapitel.",
+        title: "Chapters from markers",
+        text: "M adds markers, the Project tab turns them into YouTube chapters.",
         note: "",
         act: Act::Tip,
         uses: &["talk", "work", "gaming"],
@@ -238,8 +238,8 @@ const SUGGESTIONS: &[Sug] = &[
     Sug {
         id: "t_recap",
         icon: icon::FILM_SLATE,
-        title: "Rückblick aus Markern",
-        text: "Schnellaktionen → Rückblick schneidet markierte Momente zu einem „Was bisher geschah“.",
+        title: "Recap from markers",
+        text: "Quick Actions → Recap cuts marked moments into a “previously on”.",
         note: "",
         act: Act::Tip,
         uses: &["story"],
@@ -261,22 +261,22 @@ fn suggestions(uses: &BTreeSet<&'static str>) -> Vec<&'static Sug> {
 
 /// Tour: (panel, title, text)
 pub const TOUR: &[(&str, &str, &str)] = &[
-    ("assets", "Medien", "Medien importieren oder einfach hierher ziehen. In der Symbolleiste des Medien-Menüs findest du Audio, Text, Elemente, Effekte, Übergänge, Filter und Untertitel. Mit dem Stern merkst du dir Favoriten, eigene Ordner legst du selbst an."),
-    ("player", "Vorschau", "Zeigt das Bild am Playhead. Clips verschiebst, skalierst und drehst du direkt hier. Leertaste spielt ab, J/K/L spult."),
-    ("inspector", "Inspektor", "Alles zum ausgewählten Clip: Bild, Ton, Tempo, Animationen und Keyframes. Ohne Auswahl siehst du hier das Projekt und seine Marker."),
+    ("assets", "Media", "Import media or simply drag it here. The toolbar of the media panel holds audio, text, elements, effects, transitions, filters and captions. Star items as favorites and create your own folders."),
+    ("player", "Preview", "Shows the frame at the playhead. Move, scale and rotate clips right here. Space plays, J/K/L shuttles."),
+    ("inspector", "Inspector", "Everything about the selected clip: picture, audio, speed, animations and keyframes. Without a selection you see the project and its markers here."),
     // `tour_overlay` appends the shortcuts with the real bindings
-    ("timeline", "Zeitleiste", "Hier entsteht dein Video. Der Magnet hält die Hauptspur lückenlos."),
-    ("tools", "Schnellaktionen", "Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Multicam, Hochkant-Layout und Thumbnail mit einem Klick."),
-    ("export", "Exportieren", "Vorlagen für YouTube, Shorts, TikTok, Instagram und Twitch. Ohne Wasserzeichen, bis 4K."),
-    ("menu", "Menü", "Projekte, Vorlagen, Sicherungen, Einstellungen und Tastenkürzel. Den Rundgang findest du hier jederzeit wieder."),
+    ("timeline", "Timeline", "This is where your video comes together. The magnet keeps the main track gap-free."),
+    ("tools", "Quick Actions", "Remove pauses, filler words, auto ducking, highlights, multicam, vertical layout and thumbnail in one click."),
+    ("export", "Export", "Presets for YouTube, Shorts, TikTok, Instagram and Twitch. No watermark, up to 4K."),
+    ("menu", "Menu", "Projects, templates, backups, settings and shortcuts. You can restart the tour here at any time."),
 ];
 
 /// Shortcuts in the tour text for the timeline: (action, phrase)
 const TOUR_KEYS: &[(&str, &str)] = &[
-    ("split", "{} teilt"),
-    ("del_left", "{} löscht links vom Playhead"),
-    ("del_right", "{} löscht rechts vom Playhead"),
-    ("marker", "{} setzt einen Marker"),
+    ("split", "{} splits"),
+    ("del_left", "{} deletes left of the playhead"),
+    ("del_right", "{} deletes right of the playhead"),
+    ("marker", "{} adds a marker"),
 ];
 
 /// Width of the frame around the shown panel in the tour
@@ -408,7 +408,7 @@ impl App {
             }
         }
         if need_key {
-            self.toast("Schlüssel bzw. Anmeldung unter Einstellungen → Plugins und Konten eintragen");
+            self.toast("Enter keys or sign in under Settings → Plugins and accounts");
         }
     }
 
@@ -471,29 +471,29 @@ impl App {
                     }
                     ui.horizontal(|ui| {
                         ui.set_min_height(30.0);
-                        if idx > 0 && ui.add(theme::secondary(format!("{}  Zurück", icon::ARROW_LEFT))).clicked() {
+                        if idx > 0 && ui.add(theme::secondary(format!("{}  Back", icon::ARROW_LEFT))).clicked() {
                             ob.step = if idx == 2 { Step::Uses } else { Step::Welcome };
                         }
-                        if ui.add(theme::ghost("Überspringen")).on_hover_text(crate::tr("Die Einführung findest du später unter Menü → Einführung wiederholen")).clicked() {
+                        if ui.add(theme::ghost("Skip")).on_hover_text(crate::tr("You can find the introduction later under Menu → Repeat introduction")).clicked() {
                             end = 1;
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             match ob.step {
                                 Step::Welcome => {
-                                    if ui.add(theme::primary(format!("Los geht's  {}", icon::ARROW_RIGHT)).min_size(vec2(130.0, 30.0))).clicked() {
+                                    if ui.add(theme::primary(format!("Let's go  {}", icon::ARROW_RIGHT)).min_size(vec2(130.0, 30.0))).clicked() {
                                         ob.step = Step::Uses;
                                     }
                                 }
                                 Step::Uses => {
-                                    if ui.add(theme::primary(format!("Weiter  {}", icon::ARROW_RIGHT)).min_size(vec2(110.0, 30.0))).clicked() {
+                                    if ui.add(theme::primary(format!("Next  {}", icon::ARROW_RIGHT)).min_size(vec2(110.0, 30.0))).clicked() {
                                         ob.step = Step::Suggest;
                                     }
                                 }
                                 Step::Suggest => {
-                                    if ui.add(theme::primary(format!("{}  Rundgang starten", icon::COMPASS)).min_size(vec2(150.0, 30.0))).on_hover_text(crate::tr("Übernimmt die Auswahl und zeigt dir die Bereiche des Editors")).clicked() {
+                                    if ui.add(theme::primary(format!("{}  Start tour", icon::COMPASS)).min_size(vec2(150.0, 30.0))).on_hover_text(crate::tr("Applies your choices and shows you around the editor")).clicked() {
                                         end = 3;
                                     }
-                                    if ui.add(theme::secondary("Ohne Rundgang fertig").min_size(vec2(0.0, 30.0))).clicked() {
+                                    if ui.add(theme::secondary("Finish without tour").min_size(vec2(0.0, 30.0))).clicked() {
                                         end = 2;
                                     }
                                 }
@@ -543,11 +543,11 @@ impl App {
             ob.picks_for = Some(ob.uses.clone());
         }
         ui.label(
-            RichText::new(crate::tr("Passend für dich"))
+            RichText::new(crate::tr("Picked for you"))
                 .size(theme::FS_HERO)
                 .strong(),
         );
-        ui.label(RichText::new(crate::tr("Alles ist optional und jederzeit in den Einstellungen änderbar.")).color(theme::TEXT_DIM()));
+        ui.label(RichText::new(crate::tr("Everything is optional and can be changed in Settings at any time.")).color(theme::TEXT_DIM()));
         ui.add_space(12.0);
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
@@ -556,7 +556,7 @@ impl App {
                 let actions: Vec<_> = list.iter().filter(|s| !matches!(s.act, Act::Tip)).collect();
                 if !actions.is_empty() {
                     ui.label(
-                        RichText::new(crate::tr("Einschalten und laden"))
+                        RichText::new(crate::tr("Turn on and download"))
                             .small()
                             .strong()
                             .color(theme::TEXT_DIM()),
@@ -618,7 +618,7 @@ impl App {
                             p.text(
                                 c,
                                 Align2::RIGHT_CENTER,
-                                crate::tr("bereits aktiv"),
+                                crate::tr("already active"),
                                 FontId::proportional(theme::FS_HINT),
                                 theme::TEXT_DIM(),
                             );
@@ -662,7 +662,7 @@ impl App {
                 let tips: Vec<_> = list.iter().filter(|s| matches!(s.act, Act::Tip)).collect();
                 if !tips.is_empty() {
                     ui.label(
-                        RichText::new(crate::tr("Schon eingebaut"))
+                        RichText::new(crate::tr("Already built in"))
                             .small()
                             .strong()
                             .color(theme::TEXT_DIM()),
@@ -688,7 +688,7 @@ impl App {
                 }
                 if crate::report::available() {
                     ui.add_space(10.0);
-                    crate::widgets::toggle_row(ui, "Fehlerberichte senden", &mut ob.reports);
+                    crate::widgets::toggle_row(ui, "Send error reports", &mut ob.reports);
                 }
             });
     }
@@ -810,7 +810,7 @@ impl App {
                         ui.set_width(size.x - 32.0);
                         ui.label(
                             RichText::new(crate::tr(format!(
-                                "Rundgang · {} von {}",
+                                "Tour · {} of {}",
                                 i + 1,
                                 TOUR.len()
                             )))
@@ -823,7 +823,7 @@ impl App {
                         ui.label(RichText::new(body).color(theme::TEXT_DIM()));
                         ui.add_space(10.0);
                         ui.horizontal(|ui| {
-                            if ui.add(theme::ghost("Beenden")).clicked() {
+                            if ui.add(theme::ghost("End~quit")).clicked() {
                                 quit = true;
                             }
                             ui.with_layout(
@@ -832,9 +832,9 @@ impl App {
                                     let last = i + 1 == TOUR.len();
                                     if ui
                                         .add(theme::primary(if last {
-                                            "Fertig".to_string()
+                                            "Done".to_string()
                                         } else {
-                                            format!("Weiter  {}", icon::ARROW_RIGHT)
+                                            format!("Next  {}", icon::ARROW_RIGHT)
                                         }))
                                         .clicked()
                                     {
@@ -862,7 +862,7 @@ impl App {
         });
         if quit || (go == 1 && i + 1 == TOUR.len()) {
             self.tour = None;
-            self.toast("Rundgang und Einführung findest du jederzeit im Menü");
+            self.toast("You can find the tour and introduction in the menu at any time");
         } else if go != 0 {
             self.tour = Some((i as i32 + go).max(0) as usize);
         }
@@ -876,14 +876,14 @@ fn welcome(ui: &mut egui::Ui) {
         theme::logo(ui.painter(), r);
         ui.add_space(16.0);
         ui.label(
-            RichText::new(crate::tr("Willkommen bei Cutline"))
+            RichText::new(crate::tr("Welcome to Cutline"))
                 .size(theme::FS_HERO)
                 .strong(),
         );
         ui.add_space(4.0);
         ui.label(
             RichText::new(crate::tr(
-                "Einfach zu bedienen, schnell, komplett auf deinem Rechner.",
+                "Easy to use, fast, and entirely on your machine.",
             ))
             .size(theme::FS_TEXT)
             .color(theme::TEXT_DIM()),
@@ -895,9 +895,9 @@ fn welcome(ui: &mut egui::Ui) {
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 12.0;
         for (g, t, d) in [
-            (icon::CPU, "Einfach schneiden", "Vertraute Bedienung: reinziehen, schneiden, exportieren. Jede Funktion ist ab dem ersten Start freigeschaltet."),
-            (icon::SHIELD_CHECK, "Schnell arbeiten", "In Rust geschrieben. Flüssige Vorschau mit Proxys, schnelle Exporte mit Hardware-Encodern."),
-            (icon::PUZZLE_PIECE, "Offen", "Open Source, läuft lokal, ohne Konto, ohne Abo, ohne Wasserzeichen. Projekte sind offenes JSON."),
+            (icon::CPU, "Simple", "Familiar layout: drag in, cut, export. Every function is unlocked from the first start."),
+            (icon::SHIELD_CHECK, "Fast", "Written in Rust. Smooth preview with proxies, quick exports with hardware encoders."),
+            (icon::PUZZLE_PIECE, "Open~state", "Open source, runs locally, no account, no subscription, no watermark. Projects are open JSON."),
         ] {
             egui::Frame::default().fill(theme::BG_INPUT()).corner_radius(theme::R_WIN).inner_margin(theme::PAD_CARD_L).show(ui, |ui| {
                 ui.set_width(cw - 2.0 * theme::PAD_CARD_L as f32);
@@ -915,7 +915,7 @@ fn welcome(ui: &mut egui::Ui) {
     ui.vertical_centered(|ui| {
         ui.label(
             RichText::new(crate::tr(
-                "In drei kurzen Schritten richtest du Cutline für deine Videos ein.",
+                "Set up Cutline for your videos in three short steps.",
             ))
             .small()
             .color(theme::TEXT_DIM()),
@@ -925,13 +925,13 @@ fn welcome(ui: &mut egui::Ui) {
 
 fn uses_page(ui: &mut egui::Ui, ob: &mut Onboard) {
     ui.label(
-        RichText::new(crate::tr("Wofür nutzt du Cutline?"))
+        RichText::new(crate::tr("What do you use Cutline for?"))
             .size(theme::FS_HERO)
             .strong(),
     );
     ui.label(
         RichText::new(crate::tr(
-            "Mehrfachauswahl. Danach schlagen wir passende Schnellaktionen und Plugins vor.",
+            "Pick as many as you like. We'll suggest matching Quick Actions and plugins next.",
         ))
         .color(theme::TEXT_DIM()),
     );
@@ -960,7 +960,7 @@ fn uses_page(ui: &mut egui::Ui, ob: &mut Onboard) {
             RichText::new(format!(
                 "{}  {}",
                 icon::KEYBOARD,
-                crate::tr("Tastenkürzel wie in")
+                crate::tr("Shortcuts like in")
             ))
             .color(theme::TEXT_DIM()),
         );

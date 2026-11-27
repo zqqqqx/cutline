@@ -215,7 +215,7 @@ impl Sam {
     /// Load the graphs: on the graphics card when the runtime has DirectML (falls back to the
     /// CPU if a session cannot be built there), else on the CPU with `threads`.
     pub fn load(models: &Models, threads: usize) -> R<Sam> {
-        let dir = models.sam2().ok_or("Objekt-Modell fehlt (Einstellungen → Modelle)")?;
+        let dir = models.sam2().ok_or("Object model missing (Settings → Models)")?;
         let consts = std::fs::read_to_string(dir.join("constants.json")).map_err(oe)?;
         let s = json_number(&consts, "image_size").ok_or("constants.json: image_size")? as usize;
         let tpos = json_table(&consts, "memory_temporal_positional_encoding").filter(|t| t.len() == MEM_BLOCKS * 64).ok_or("constants.json: memory table")?;
@@ -608,7 +608,7 @@ pub fn track(
     pause: &dyn Fn() -> bool,
 ) -> R<()> {
     if !job.prompt.usable() {
-        return Err("Nichts markiert".into());
+        return Err("Nothing marked".into());
     }
     std::fs::create_dir_all(&job.work).map_err(oe)?;
     let sections = plan(&job.grid, job.key);
@@ -643,7 +643,7 @@ pub fn track(
                 first = Some(sam.step(rgb, &mut bank, &prompt)?);
                 Ok(())
             })?;
-            let m = first.ok_or("Bild nicht lesbar")?;
+            let m = first.ok_or("Frame not readable")?;
             if !sec.back {
                 file.write_all(&m).map_err(oe)?;
                 done = 1;
@@ -675,7 +675,7 @@ pub fn track(
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
                 if cancel.load(Ordering::Relaxed) {
-                    return Err("Abgebrochen".into());
+                    return Err("Canceled".into());
                 }
                 // the source ended early (rounding at its end): the last mask holds
                 let m = match block.get(i) {
@@ -684,7 +684,7 @@ pub fn track(
                 };
                 // cancelled during the step: write nothing more (a new run may own the files already)
                 if cancel.load(Ordering::Relaxed) {
-                    return Err("Abgebrochen".into());
+                    return Err("Canceled".into());
                 }
                 file.write_all(&m).map_err(oe)?;
                 last = Some(m);
@@ -696,7 +696,7 @@ pub fn track(
         }
         counted += sec.len;
     }
-    let s = model.as_ref().map(|m| m.s).ok_or("Modell nicht geladen")?;
+    let s = model.as_ref().map(|m| m.s).ok_or("Model not loaded")?;
     join(&job.work, &job.grid, job.key, s, job.size, &job.rate, &job.out)?;
     progress(1.0);
     Ok(())
@@ -728,7 +728,7 @@ pub fn join(work: &Path, grid: &Grid, key: usize, s: usize, size: (u32, u32), ra
     let result = (|| -> R<()> {
         for i in 0..grid.n {
             let (data, j) = if i < key { (&back, key - 1 - i) } else { (&fwd, i - key) };
-            let q = data.get(j * frame..(j + 1) * frame).ok_or("Abschnitt unvollständig")?;
+            let q = data.get(j * frame..(j + 1) * frame).ok_or("Section incomplete")?;
             writer.write_all(&upscale(q, s, w as usize, h as usize)).map_err(oe)?;
         }
         Ok(())
@@ -1017,7 +1017,7 @@ mod tests {
         let stop = AtomicBool::new(false);
         // cancel inside the second block (frames 31–49)
         let r = track(&models, &parts, threads, &|p| stop.store(p > 0.7, Ordering::Relaxed), &stop, &|| false);
-        assert_eq!(r, Err("Abgebrochen".into()));
+        assert_eq!(r, Err("Canceled".into()));
         assert!(!parts.out.exists());
         let saved = load_state(&parts.work.join("fwd.state")).expect("state saved").0;
         assert!(saved >= SAVE_EVERY, "resumes after the first block: {saved}");

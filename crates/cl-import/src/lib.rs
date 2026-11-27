@@ -47,7 +47,7 @@ impl Report {
 pub type Result<T> = std::result::Result<T, String>;
 
 /// Error text of a cancelled import
-pub const CANCELLED: &str = "Abgebrochen";
+pub const CANCELLED: &str = "Canceled";
 
 /// Steps of an import in their order. The app takes care of `Save` (creating the project).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -193,11 +193,11 @@ pub fn probe_all(
     progress.check()?;
     Ok(out
         .into_iter()
-        .map(|m| m.into_inner().unwrap_or_else(|e| e.into_inner()).unwrap_or_else(|| Err("nicht geprüft".into())))
+        .map(|m| m.into_inner().unwrap_or_else(|e| e.into_inner()).unwrap_or_else(|| Err("not checked".into())))
         .collect())
 }
 
-/// Media for a file missing at import: the clip is kept, „Medien neu verknüpfen“
+/// Media for a file missing at import: the clip is kept, „Relink media“
 /// inserts the file later (details from the foreign project, not from the file).
 pub(crate) fn placeholder(path: PathBuf, kind: cl_core::MediaKind, duration: cl_core::Time, width: u32, height: u32) -> cl_core::MediaRef {
     let sound = kind != cl_core::MediaKind::Image;
@@ -266,7 +266,7 @@ fn import_any(path: &Path, progress: &Progress) -> Result<(Project, Report)> {
     match name.as_str() {
         "fcpxml" | "xml" => fcpxml::import_with(path, progress),
         "json" => capcut::import_with(path, progress),
-        _ => Err("Unbekanntes Projektformat".into()),
+        _ => Err("Unknown project format".into()),
     }
 }
 

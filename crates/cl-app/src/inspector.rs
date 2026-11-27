@@ -12,46 +12,46 @@ use crate::widgets::{self, Edit, Kf, Slider};
 fn tabs_for(c: &Clip) -> Vec<(ClipTab, &'static str)> {
     match &c.content {
         ClipContent::Effect(_) | ClipContent::Filter(_) => {
-            vec![(ClipTab::Effects, "Effekt"), (ClipTab::Basic, "Maske")]
+            vec![(ClipTab::Effects, "Effect"), (ClipTab::Basic, "Mask")]
         }
         ClipContent::Text(_) => vec![
             (ClipTab::Text, "Text"),
-            (ClipTab::Basic, "Basis"),
+            (ClipTab::Basic, "Basic"),
             (ClipTab::Animation, "Animation"),
         ],
         ClipContent::Media {
             kind: MediaKind::Audio,
             ..
-        } => vec![(ClipTab::Audio, "Audio"), (ClipTab::Speed, "Tempo")],
+        } => vec![(ClipTab::Audio, "Audio"), (ClipTab::Speed, "Speed")],
         ClipContent::Media {
             kind: MediaKind::Image,
             ..
         } => vec![
-            (ClipTab::Basic, "Basis"),
-            (ClipTab::Effects, "Effekte"),
-            (ClipTab::Adjust, "Anpassen"),
+            (ClipTab::Basic, "Basic"),
+            (ClipTab::Effects, "Effects"),
+            (ClipTab::Adjust, "Adjust"),
             (ClipTab::Smart, "Smart"),
             (ClipTab::Animation, "Animation"),
         ],
-        // Volume is among the most frequent settings: „Audio“ right after „Basis“
+        // Volume is among the most frequent settings: „Audio“ right after „Basic“
         ClipContent::Media { .. } => vec![
-            (ClipTab::Basic, "Basis"),
+            (ClipTab::Basic, "Basic"),
             (ClipTab::Audio, "Audio"),
-            (ClipTab::Effects, "Effekte"),
-            (ClipTab::Adjust, "Anpassen"),
+            (ClipTab::Effects, "Effects"),
+            (ClipTab::Adjust, "Adjust"),
             (ClipTab::Smart, "Smart"),
             (ClipTab::Animation, "Animation"),
-            (ClipTab::Speed, "Tempo"),
+            (ClipTab::Speed, "Speed"),
         ],
     }
 }
 
 /// Crop: four edges; per direction at least `Crop::MIN_REST` remains.
 fn crop_ui(ui: &mut egui::Ui, k: &mut Crop) -> Edit {
-    theme::section(ui, "Zuschnitt");
+    theme::section(ui, "Crop");
     let mut e = Edit::default();
     let max = 1.0 - Crop::MIN_REST;
-    let pairs = [("Links", 0, 1), ("Rechts", 1, 0), ("Oben", 2, 3), ("Unten", 3, 2)];
+    let pairs = [("Left", 0, 1), ("Right", 1, 0), ("Top", 2, 3), ("Bottom", 3, 2)];
     let mut v = [k.left, k.right, k.top, k.bottom];
     for (label, i, other) in pairs {
         let hi = (max - v[other]).max(0.0);
@@ -60,7 +60,7 @@ fn crop_ui(ui: &mut egui::Ui, k: &mut Crop) -> Edit {
     [k.left, k.right, k.top, k.bottom] = v;
     ui.horizontal(|ui| {
         ui.add_space(theme::LABEL_W + 6.0);
-        if ui.add(theme::ghost(format!("{}  Zurücksetzen", icon::ARROW_COUNTER_CLOCKWISE))).clicked() {
+        if ui.add(theme::ghost(format!("{}  Reset", icon::ARROW_COUNTER_CLOCKWISE))).clicked() {
             *k = Crop::default();
             e.commit = true;
         }
@@ -84,7 +84,7 @@ fn mask_ui(ui: &mut egui::Ui, mask: &mut Option<Mask>) -> Edit {
         .unwrap_or(0);
     if widgets::segmented(
         ui,
-        &["Keine", "Linear", "Spiegel", "Kreis", "Rechteck"],
+        &["None", "Linear", "Mirror", "Circle", "Rectangle"],
         &mut i,
     ) {
         *mask = shapes[i].map(|s| {
@@ -98,7 +98,7 @@ fn mask_ui(ui: &mut egui::Ui, mask: &mut Option<Mask>) -> Edit {
         ui.add_space(4.0);
         let mut r = Edit::default();
         if matches!(m.shape, MaskShape::Circle | MaskShape::Rect) {
-            r |= theme::row(ui, "Breite", |ui| {
+            r |= theme::row(ui, "Width", |ui| {
                 Slider::new(&mut m.w, 0.02..=2.0)
                     .percent()
                     .default(0.6)
@@ -106,38 +106,38 @@ fn mask_ui(ui: &mut egui::Ui, mask: &mut Option<Mask>) -> Edit {
             });
         }
         if m.shape != MaskShape::Linear {
-            r |= theme::row(ui, "Höhe", |ui| {
+            r |= theme::row(ui, "Height", |ui| {
                 Slider::new(&mut m.h, 0.02..=2.0)
                     .percent()
                     .default(0.6)
                     .show(ui)
             });
         }
-        r |= theme::row(ui, "Mitte X", |ui| {
+        r |= theme::row(ui, "Center X", |ui| {
             Slider::new(&mut m.cx, 0.0..=1.0)
                 .percent()
                 .default(0.5)
                 .show(ui)
         });
-        r |= theme::row(ui, "Mitte Y", |ui| {
+        r |= theme::row(ui, "Center Y", |ui| {
             Slider::new(&mut m.cy, 0.0..=1.0)
                 .percent()
                 .default(0.5)
                 .show(ui)
         });
-        r |= theme::row(ui, "Drehung", |ui| {
+        r |= theme::row(ui, "Rotation", |ui| {
             Slider::new(&mut m.rotation_deg, -180.0..=180.0)
                 .suffix("°")
                 .default(0.0)
                 .show(ui)
         });
-        r |= theme::row(ui, "Weiche Kante", |ui| {
+        r |= theme::row(ui, "Feather", |ui| {
             Slider::new(&mut m.feather, 0.0..=0.5)
                 .percent()
                 .default(0.05)
                 .show(ui)
         });
-        if widgets::toggle_row(ui, "Umkehren", &mut m.invert) {
+        if widgets::toggle_row(ui, "Invert", &mut m.invert) {
             r.commit = true;
         }
         e |= r;
@@ -342,9 +342,9 @@ impl App {
                 tab_bar(
                     ui,
                     &[
-                        (InspectorTab::Project, "Projekt"),
-                        (InspectorTab::History, "Verlauf"),
-                        (InspectorTab::Markers, "Marker"),
+                        (InspectorTab::Project, "Project"),
+                        (InspectorTab::History, "History"),
+                        (InspectorTab::Markers, "Markers"),
                     ],
                     &mut t,
                 );
@@ -362,22 +362,22 @@ impl App {
     }
 
     fn multi_inspector(&mut self, ui: &mut egui::Ui, n: usize) {
-        theme::card_header(ui, &format!("{n} Clips ausgewählt"), |ui| {
-            if theme::icon_button(ui, icon::X, "Auswahl aufheben (Esc)", true, false).clicked() {
+        theme::card_header(ui, &format!("{n} clips selected"), |ui| {
+            if theme::icon_button(ui, icon::X, "Clear selection (Esc)", true, false).clicked() {
                 self.select_only(None);
             }
         });
         ui.horizontal(|ui| {
-            if theme::icon_button(ui, icon::COPY, "Kopieren", true, false).clicked() {
+            if theme::icon_button(ui, icon::COPY, "Copy", true, false).clicked() {
                 self.copy_selection();
             }
-            if theme::icon_button(ui, icon::COPY_SIMPLE, "Duplizieren", true, false).clicked() {
+            if theme::icon_button(ui, icon::COPY_SIMPLE, "Duplicate", true, false).clicked() {
                 self.duplicate_selection();
             }
             if theme::icon_button(
                 ui,
                 icon::EYE_SLASH,
-                "Deaktivieren / Aktivieren",
+                "Disable / enable",
                 true,
                 false,
             )
@@ -385,29 +385,29 @@ impl App {
             {
                 self.toggle_disabled();
             }
-            if theme::icon_button(ui, icon::TRASH, "Löschen", true, false).clicked() {
+            if theme::icon_button(ui, icon::TRASH, "Delete", true, false).clicked() {
                 self.delete_selected();
             }
         });
-        ui.label(RichText::new(crate::tr("Gilt für alle ausgewählten Clips")).small().color(theme::TEXT_DIM()));
+        ui.label(RichText::new(crate::tr("Applies to all selected clips")).small().color(theme::TEXT_DIM()));
         ui.add_space(6.0);
     }
 
     fn transition_inspector(&mut self, ui: &mut egui::Ui, c: &Clip, tr: &TransitionRef) {
-        theme::card_header(ui, "Übergang", |ui| {
-            if theme::icon_button(ui, icon::X, "Schließen", true, false).clicked() {
+        theme::card_header(ui, "Transition", |ui| {
+            if theme::icon_button(ui, icon::X, "Close", true, false).clicked() {
                 self.selected_transition = None;
             }
         });
-        theme::row(ui, "Art", |ui| {
+        theme::row(ui, "Type", |ui| {
             ui.label(RichText::new(crate::tr(cl_fx::transition_name(&tr.id))).strong())
         });
         // Pack transition without the pack switched on: the substitute is rendered
         let plan = cl_fx::catalog::transition_plan(&tr.id);
         if plan.shader.is_none() && !cl_fx::TRANSITIONS.iter().any(|t| t.0 == tr.id) {
             let alt = crate::tr(cl_fx::transition_name(plan.xfade));
-            let why = if cl_fx::catalog::name_any(&tr.id).is_some() { "Paket ausgeschaltet" } else { "Paket fehlt" };
-            ui.label(RichText::new(crate::tr(format!("{}  {why} – wird als „{alt}“ gerechnet", icon::WARNING))).small().color(theme::WARN_TEXT()));
+            let why = if cl_fx::catalog::name_any(&tr.id).is_some() { "Pack switched off" } else { "Pack missing" };
+            ui.label(RichText::new(crate::tr(format!("{}  {why} – rendered as “{alt}”", icon::WARNING))).small().color(theme::WARN_TEXT()));
         }
         let next_len = self
             .next_adjacent(c.id)
@@ -416,7 +416,7 @@ impl App {
             .unwrap_or(1.0);
         let max = (c.duration.as_secs_f64().min(next_len)).clamp(0.1, 5.0) as f32;
         let mut d = tr.duration.as_secs_f64() as f32;
-        let e = theme::row(ui, "Dauer", |ui| {
+        let e = theme::row(ui, "Duration", |ui| {
             Slider::new(&mut d, 0.1..=max)
                 .suffix(" s")
                 .decimals(1)
@@ -435,13 +435,13 @@ impl App {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if ui
-                .add(theme::secondary(format!("{}  Übergänge", icon::INTERSECT)))
+                .add(theme::secondary(format!("{}  Transitions", icon::INTERSECT)))
                 .clicked()
             {
                 self.tab = LeftTab::Transitions;
             }
             if ui
-                .add(theme::secondary(format!("{}  Entfernen", icon::TRASH)))
+                .add(theme::secondary(format!("{}  Remove", icon::TRASH)))
                 .clicked()
             {
                 self.set_transition(c.id, None);
@@ -545,7 +545,7 @@ impl App {
                     ClipTab::Basic
                         if matches!(c.content, ClipContent::Effect(_) | ClipContent::Filter(_)) =>
                     {
-                        theme::section(ui, "Maske");
+                        theme::section(ui, "Mask");
                         e |= mask_ui(ui, &mut c.fx.mask);
                     }
                     ClipTab::Basic => {
@@ -594,7 +594,7 @@ impl App {
                             _ => crate::contents::clip_title(&c, &self.project),
                         },
                         theme::secs(c.duration.as_secs_f64(), 2),
-                        crate::tr(format!("ab {}", c.start.timecode(fps)))
+                        crate::tr(format!("from {}", c.start.timecode(fps)))
                     ))
                     .small()
                     .color(theme::TEXT_DIM()),
@@ -627,14 +627,14 @@ impl App {
             ClipContent::Effect(r) | ClipContent::Filter(r) => r.id.clone(),
             _ => return,
         };
-        theme::section(ui, "Einzelheiten");
+        theme::section(ui, "Details~more");
         theme::row(ui, "Name", |ui| {
             ui.label(RichText::new(crate::tr(cl_fx::fx_name(&id))).strong())
         });
         *e |= self.prop_slider(
             ui,
             c,
-            "Stärke",
+            "Strength",
             Prop::Strength,
             0.0..=1.0,
             1.0,
@@ -654,11 +654,11 @@ impl App {
         if !visual {
             return;
         }
-        theme::section(ui, "Transformieren");
+        theme::section(ui, "Transform");
         *e |= self.prop_slider(
             ui,
             c,
-            "Größe",
+            "Size",
             Prop::Scale,
             0.05..=5.0,
             1.0,
@@ -674,7 +674,7 @@ impl App {
         *e |= self.prop_slider(
             ui,
             c,
-            "Drehung",
+            "Rotation",
             Prop::Rotation,
             -180.0..=180.0,
             0.0,
@@ -685,7 +685,7 @@ impl App {
             ui.add_space(theme::LABEL_W + 6.0);
             if ui
                 .add(theme::ghost(format!(
-                    "{}  Zurücksetzen",
+                    "{}  Reset",
                     icon::ARROW_COUNTER_CLOCKWISE
                 )))
                 .clicked()
@@ -701,11 +701,11 @@ impl App {
                 .any(|p| !c.keyframes.get(*p).is_empty());
             if ui
                 .add(theme::ghost(format!(
-                    "{}  Keyframe alle",
+                    "{}  Keyframe all",
                     if any { "◆" } else { "◇" }
                 )))
                 .on_hover_text(crate::tr(
-                    "Position, Größe und Drehung am Playhead festhalten",
+                    "Keyframe position, size and rotation at the playhead",
                 ))
                 .clicked()
             {
@@ -715,11 +715,11 @@ impl App {
         if matches!(c.content, ClipContent::Media { .. }) {
             *e |= crop_ui(ui, &mut c.crop);
         }
-        theme::section(ui, "Mischen");
+        theme::section(ui, "Blend");
         *e |= self.prop_slider(
             ui,
             c,
-            "Deckkraft",
+            "Opacity",
             Prop::Opacity,
             0.0..=1.0,
             1.0,
@@ -727,12 +727,12 @@ impl App {
             kf,
         );
         if matches!(c.content, ClipContent::Media { .. }) {
-            theme::row(ui, "Spiegeln", |ui| {
+            theme::row(ui, "Flip", |ui| {
                 if theme::icon_button(ui, icon::FLIP_HORIZONTAL, "Horizontal", true, c.fx.flip_h).clicked() {
                     c.fx.flip_h = !c.fx.flip_h;
                     e.commit = true;
                 }
-                if theme::icon_button(ui, icon::FLIP_VERTICAL, "Vertikal", true, c.fx.flip_v).clicked() {
+                if theme::icon_button(ui, icon::FLIP_VERTICAL, "Vertical", true, c.fx.flip_v).clicked() {
                     c.fx.flip_v = !c.fx.flip_v;
                     e.commit = true;
                 }
@@ -740,10 +740,10 @@ impl App {
         }
         disabled_toggle(ui, c, e, &self.key_of("disable"));
         if matches!(c.content, ClipContent::Media { .. }) {
-            theme::section(ui, "Maske");
+            theme::section(ui, "Mask");
             *e |= mask_ui(ui, &mut c.fx.mask);
         } else {
-            // Text: only „Bewegung verfolgen“; video/image have the „Smart“ tab for that
+            // Text: only „Motion tracking“; video/image have the „Smart“ tab for that
             self.pro_visual(ui, c, e);
         }
     }
@@ -763,7 +763,7 @@ impl App {
     }
 
     /// Font picker with a search field (inspector text tab and brand kit). `none` names the entry for
-    /// "no font" ("System" / "Keine"). Returns the picked entry, `Some(None)` for the no-font entry.
+    /// "no font" ("System" / "None"). Returns the picked entry, `Some(None)` for the no-font entry.
     pub fn font_picker(
         &mut self,
         ui: &mut egui::Ui,
@@ -794,7 +794,7 @@ impl App {
                 });
                 let field = ui.add(
                     egui::TextEdit::singleline(&mut q)
-                        .hint_text(crate::tr(format!("{}  Suchen", icon::MAGNIFYING_GLASS)))
+                        .hint_text(crate::tr(format!("{}  Search", icon::MAGNIFYING_GLASS)))
                         .desired_width(f32::INFINITY),
                 );
                 field.request_focus();
@@ -850,7 +850,7 @@ impl App {
                         }
                     }
                     ui.separator();
-                    if ui.button(crate::tr(format!("{}  Schrift importieren …", icon::UPLOAD_SIMPLE))).clicked() {
+                    if ui.button(crate::tr(format!("{}  Import font …", icon::UPLOAD_SIMPLE))).clicked() {
                         let ctx = ui.ctx().clone();
                         self.pick_fonts(&ctx);
                     }
@@ -891,7 +891,7 @@ impl App {
                 .id_salt(("clip-text", c.id))
                 .desired_rows(3)
                 .desired_width(f32::INFINITY)
-                .hint_text(crate::tr("Text eingeben")),
+                .hint_text(crate::tr("Enter text")),
         );
         if self.focus_text {
             r.request_focus();
@@ -903,28 +903,28 @@ impl App {
         if r.lost_focus() {
             e.commit = true;
         }
-        theme::section(ui, "Schrift");
-        theme::row(ui, "Schriftart", |ui| {
+        theme::section(ui, "Font");
+        theme::row(ui, "Typeface", |ui| {
             let w = (ui.available_width() - 12.0).max(60.0);
             if let Some(f) = self.font_picker(ui, "font", st.font_family.as_deref(), &crate::tr("System"), &brand, w) {
                 st.font_family = f;
                 e.commit = true;
             }
         });
-        *e |= theme::row(ui, "Größe", |ui| {
+        *e |= theme::row(ui, "Size", |ui| {
             Slider::new(&mut st.size, 8.0..=400.0)
                 .default(64.0)
                 .show(ui)
         });
-        theme::row(ui, "Stil", |ui| {
+        theme::row(ui, "Style", |ui| {
             for (on, g, tip) in [
-                (&mut st.bold, icon::TEXT_B, "Fett"),
-                (&mut st.italic, icon::TEXT_ITALIC, "Kursiv"),
-                (&mut st.uppercase, icon::TEXT_AA, "Großbuchstaben"),
+                (&mut st.bold, icon::TEXT_B, "Bold"),
+                (&mut st.italic, icon::TEXT_ITALIC, "Italic"),
+                (&mut st.uppercase, icon::TEXT_AA, "Uppercase"),
                 (
                     &mut st.auto_wrap,
                     icon::ARROW_ELBOW_DOWN_LEFT,
-                    "Automatischer Umbruch",
+                    "Auto wrap",
                 ),
             ] {
                 if theme::icon_button(ui, g, tip, true, *on).clicked() {
@@ -933,7 +933,7 @@ impl App {
                 }
             }
         });
-        theme::row(ui, "Ausrichtung", |ui| {
+        theme::row(ui, "Alignment", |ui| {
             for (v, g) in [
                 (-1i8, icon::TEXT_ALIGN_LEFT),
                 (0, icon::TEXT_ALIGN_CENTER),
@@ -945,14 +945,14 @@ impl App {
                 }
             }
         });
-        *e |= theme::row(ui, "Zeilenabstand", |ui| {
+        *e |= theme::row(ui, "Line spacing", |ui| {
             Slider::new(&mut st.line_spacing, 0.6..=3.0)
                 .decimals(1)
                 .suffix("×")
                 .default(1.0)
                 .show(ui)
         });
-        theme::row(ui, "Farbe", |ui| {
+        theme::row(ui, "Color", |ui| {
             if widgets::color_button(ui, &mut st.color) {
                 e.commit = true;
             }
@@ -963,18 +963,18 @@ impl App {
             e.commit = true;
         }
         if let Some(k) = &mut st.karaoke {
-            theme::row(ui, "Hervorhebung", |ui| {
+            theme::row(ui, "Highlight", |ui| {
                 if widgets::color_button(ui, &mut k.color) {
                     e.commit = true;
                 }
             });
-            if widgets::toggle_row(ui, "Füllen", &mut k.fill) {
+            if widgets::toggle_row(ui, "Fill", &mut k.fill) {
                 e.commit = true;
             }
         }
-        theme::section(ui, "Kontur");
+        theme::section(ui, "Outline");
         let mut on = st.outline.is_some();
-        if widgets::toggle_row(ui, "Kontur", &mut on) {
+        if widgets::toggle_row(ui, "Outline", &mut on) {
             st.outline = if on {
                 Some((4.0, [0, 0, 0, 255]))
             } else {
@@ -983,53 +983,53 @@ impl App {
             e.commit = true;
         }
         if let Some((w, col)) = &mut st.outline {
-            *e |= theme::row(ui, "Stärke", |ui| {
+            *e |= theme::row(ui, "Strength", |ui| {
                 Slider::new(w, 0.5..=20.0).decimals(1).default(4.0).show(ui)
             });
-            theme::row(ui, "Farbe", |ui| {
+            theme::row(ui, "Color", |ui| {
                 if widgets::color_button(ui, col) {
                     e.commit = true;
                 }
             });
         }
-        theme::section(ui, "Fläche und Schatten");
+        theme::section(ui, "Background and shadow");
         let mut on = st.background.is_some();
-        if widgets::toggle_row(ui, "Hintergrundfläche", &mut on) {
+        if widgets::toggle_row(ui, "Background box", &mut on) {
             st.background = if on { Some([0, 0, 0, 170]) } else { None };
             e.commit = true;
         }
         if let Some(bg) = &mut st.background {
-            theme::row(ui, "Flächenfarbe", |ui| {
+            theme::row(ui, "Box color", |ui| {
                 if widgets::color_button(ui, bg) {
                     e.commit = true;
                 }
             });
         }
-        if widgets::toggle_row(ui, "Schatten", &mut st.shadow) {
+        if widgets::toggle_row(ui, "Shadow", &mut st.shadow) {
             e.commit = true;
         }
         if st.shadow {
             // any change turns the default look into an own style
             let mut sh = st.shadow_style.unwrap_or_default();
             let mut ed = Edit::default();
-            theme::row(ui, "Farbe", |ui| ed.commit |= widgets::color_button(ui, &mut sh.color));
+            theme::row(ui, "Color", |ui| ed.commit |= widgets::color_button(ui, &mut sh.color));
             let mut op = sh.color[3] as f32 / 255.0;
-            ed |= theme::row(ui, "Deckkraft", |ui| Slider::new(&mut op, 0.0..=1.0).percent().default(0.6).show(ui));
+            ed |= theme::row(ui, "Opacity", |ui| Slider::new(&mut op, 0.0..=1.0).percent().default(0.6).show(ui));
             sh.color[3] = (op * 255.0).round() as u8;
             let (mut dist, mut deg) = sh.polar();
-            let mut geo = theme::row(ui, "Abstand", |ui| Slider::new(&mut dist, 0.0..=40.0).decimals(1).suffix(" px").default(18f32.sqrt()).show(ui));
-            geo |= theme::row(ui, "Winkel", |ui| Slider::new(&mut deg, 0.0..=360.0).suffix("°").default(135.0).show(ui));
+            let mut geo = theme::row(ui, "Distance", |ui| Slider::new(&mut dist, 0.0..=40.0).decimals(1).suffix(" px").default(18f32.sqrt()).show(ui));
+            geo |= theme::row(ui, "Angle", |ui| Slider::new(&mut deg, 0.0..=360.0).suffix("°").default(135.0).show(ui));
             if geo.changed || geo.commit {
                 sh.set_polar(dist, deg);
             }
             ed |= geo;
-            ed |= theme::row(ui, "Weichheit", |ui| Slider::new(&mut sh.blur, 0.0..=40.0).decimals(1).suffix(" px").default(0.0).show(ui));
+            ed |= theme::row(ui, "Softness", |ui| Slider::new(&mut sh.blur, 0.0..=40.0).decimals(1).suffix(" px").default(0.0).show(ui));
             if ed.changed || ed.commit {
                 st.shadow_style = Some(sh);
             }
             *e |= ed;
         }
-        theme::section(ui, "Texteffekte");
+        theme::section(ui, "Text effects");
         let mut chosen = None;
         widgets::grid(
             ui,
@@ -1069,7 +1069,7 @@ impl App {
     }
 
     fn effects_props(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
-        theme::section(ui, "Filter");
+        theme::section(ui, "Filters");
         match &mut c.fx.filter {
             Some(f) => {
                 let name = cl_fx::fx_name(&f.id);
@@ -1079,11 +1079,11 @@ impl App {
                         RichText::new(crate::tr(format!("{}  {name}", icon::CIRCLE_HALF))).strong(),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        remove = theme::icon_button(ui, icon::X, "Filter entfernen", true, false)
+                        remove = theme::icon_button(ui, icon::X, "Remove filter", true, false)
                             .clicked();
                     });
                 });
-                *e |= theme::row(ui, "Stärke", |ui| {
+                *e |= theme::row(ui, "Strength", |ui| {
                     Slider::new(&mut f.intensity, 0.0..=1.0)
                         .percent()
                         .default(1.0)
@@ -1097,7 +1097,7 @@ impl App {
             None => {
                 if ui
                     .add(theme::secondary(format!(
-                        "{}  Filter wählen",
+                        "{}  Choose filter",
                         icon::CIRCLE_HALF
                     )))
                     .clicked()
@@ -1106,7 +1106,7 @@ impl App {
                 }
             }
         }
-        theme::section(ui, "Effekte");
+        theme::section(ui, "Effects");
         let mut remove = None;
         for (i, fx) in c.fx.effects.iter_mut().enumerate() {
             ui.horizontal(|ui| {
@@ -1119,12 +1119,12 @@ impl App {
                     .strong(),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if theme::icon_button(ui, icon::X, "Effekt entfernen", true, false).clicked() {
+                    if theme::icon_button(ui, icon::X, "Remove effect", true, false).clicked() {
                         remove = Some(i);
                     }
                 });
             });
-            *e |= theme::row(ui, "Stärke", |ui| {
+            *e |= theme::row(ui, "Strength", |ui| {
                 Slider::new(&mut fx.intensity, 0.0..=1.0)
                     .percent()
                     .default(1.0)
@@ -1138,7 +1138,7 @@ impl App {
         }
         if ui
             .add(theme::secondary(format!(
-                "{}  Effekt hinzufügen",
+                "{}  Add effect",
                 icon::PLUS
             )))
             .clicked()
@@ -1161,14 +1161,14 @@ impl App {
                     .on_hover_text(crate::tr(l));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         clear =
-                            theme::icon_button(ui, icon::X, "LUT entfernen", true, false).clicked()
+                            theme::icon_button(ui, icon::X, "Remove LUT", true, false).clicked()
                     });
                 });
             }
             None => {
                 if ui
                     .add(theme::secondary(format!(
-                        "{}  LUT laden (.cube)",
+                        "{}  Load LUT (.cube)",
                         icon::UPLOAD_SIMPLE
                     )))
                     .clicked()
@@ -1188,29 +1188,29 @@ impl App {
 
     fn adjust_props(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
         let a = &mut c.fx.adjust;
-        theme::section(ui, "Licht");
+        theme::section(ui, "Light");
         for (label, v) in [
-            ("Helligkeit", &mut a.brightness),
-            ("Kontrast", &mut a.contrast),
-            ("Lichter", &mut a.highlights),
-            ("Schatten", &mut a.shadows),
-            ("Verblassen", &mut a.fade),
+            ("Brightness", &mut a.brightness),
+            ("Contrast", &mut a.contrast),
+            ("Highlights~tones", &mut a.highlights),
+            ("Shadow", &mut a.shadows),
+            ("Fade", &mut a.fade),
         ] {
             *e |= theme::row(ui, label, |ui| {
                 Slider::new(v, -1.0..=1.0).percent().default(0.0).show(ui)
             });
         }
-        theme::section(ui, "Farbe");
+        theme::section(ui, "Color");
         for (label, v) in [
-            ("Sättigung", &mut a.saturation),
-            ("Temperatur", &mut a.temperature),
-            ("Tönung", &mut a.tint),
+            ("Saturation", &mut a.saturation),
+            ("Temperature", &mut a.temperature),
+            ("Tint", &mut a.tint),
         ] {
             *e |= theme::row(ui, label, |ui| {
                 Slider::new(v, -1.0..=1.0).percent().default(0.0).show(ui)
             });
         }
-        *e |= theme::row(ui, "Farbton", |ui| {
+        *e |= theme::row(ui, "Hue", |ui| {
             Slider::new(&mut a.hue, -180.0..=180.0)
                 .suffix("°")
                 .default(0.0)
@@ -1250,20 +1250,20 @@ impl App {
         });
         self.asset_cat.insert("hsl", k.to_string());
         let [h, s, l] = &mut a.hsl[k];
-        *e |= theme::row(ui, "Farbton", |ui| {
+        *e |= theme::row(ui, "Hue", |ui| {
             Slider::new(h, -1.0..=1.0).percent().default(0.0).show(ui)
         });
-        *e |= theme::row(ui, "Sättigung", |ui| {
+        *e |= theme::row(ui, "Saturation", |ui| {
             Slider::new(s, -1.0..=1.0).percent().default(0.0).show(ui)
         });
-        *e |= theme::row(ui, "Helligkeit", |ui| {
+        *e |= theme::row(ui, "Brightness", |ui| {
             Slider::new(l, -1.0..=1.0).percent().default(0.0).show(ui)
         });
         theme::section(ui, "Details");
         for (label, v, lo) in [
-            ("Schärfe", &mut a.sharpen, -1.0),
+            ("Sharpness", &mut a.sharpen, -1.0),
             ("Vignette", &mut a.vignette, 0.0),
-            ("Körnung", &mut a.grain, 0.0),
+            ("Grain", &mut a.grain, 0.0),
         ] {
             *e |= theme::row(ui, label, |ui| {
                 Slider::new(v, lo..=1.0).percent().default(0.0).show(ui)
@@ -1272,7 +1272,7 @@ impl App {
         ui.add_space(6.0);
         if ui
             .add(theme::secondary(format!(
-                "{}  Alles zurücksetzen",
+                "{}  Reset all",
                 icon::ARROW_COUNTER_CLOCKWISE
             )))
             .clicked()
@@ -1284,7 +1284,7 @@ impl App {
 
     fn anim_props(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
         let mut slot = self.anim_slot;
-        widgets::segmented(ui, &["Ein", "Aus", "Kombi"], &mut slot);
+        widgets::segmented(ui, &["On", "Off", "Combo"], &mut slot);
         self.anim_slot = slot;
         ui.add_space(8.0);
         let list: Vec<(&str, &str)> = if slot == 2 {
@@ -1292,7 +1292,7 @@ impl App {
         } else {
             cl_core::ANIMATIONS.to_vec()
         };
-        let mut items = vec![("", "Keine")];
+        let mut items = vec![("", "None")];
         items.extend(list);
         let cur = match slot {
             0 => c.anim.intro.as_ref(),
@@ -1394,7 +1394,7 @@ impl App {
         if let Some(a) = slot_ref {
             ui.add_space(6.0);
             let mut d = a.duration.as_secs_f64() as f32;
-            let r = theme::row(ui, if slot == 2 { "Tempo" } else { "Dauer" }, |ui| {
+            let r = theme::row(ui, if slot == 2 { "Speed" } else { "Duration" }, |ui| {
                 Slider::new(&mut d, 0.1..=max)
                     .suffix(" s")
                     .decimals(1)
@@ -1409,13 +1409,13 @@ impl App {
     }
 
     fn speed_props(&mut self, ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit) {
-        // The chosen „Kurve“ page applies even before a curve is chosen (otherwise „Normal“ stays highlighted)
+        // The chosen „Curve“ page applies even before a curve is chosen (otherwise „Normal“ stays highlighted)
         let mut mode = if c.fx.speed_curve.is_some() {
             1
         } else {
             self.asset_cat.get("speed-mode").and_then(|s| s.parse().ok()).unwrap_or(0)
         };
-        if widgets::segmented(ui, &["Normal", "Kurve"], &mut mode) {
+        if widgets::segmented(ui, &["Normal", "Curve"], &mut mode) {
             if mode == 0 {
                 c.fx.speed_curve = None;
                 e.commit = true;
@@ -1433,7 +1433,7 @@ impl App {
         ui.add_space(8.0);
         if mode == 0 {
             let mut s = c.speed;
-            let r = theme::row(ui, "Tempo", |ui| {
+            let r = theme::row(ui, "Speed", |ui| {
                 Slider::new(&mut s, 0.1..=10.0)
                     .log()
                     .decimals(2)
@@ -1456,7 +1456,7 @@ impl App {
                 }
             });
             let new_dur = c.source_span().as_secs_f64() / s.max(0.01) as f64;
-            theme::row(ui, "Neue Dauer", |ui| {
+            theme::row(ui, "New duration", |ui| {
                 ui.label(
                     RichText::new(theme::secs(new_dur, 2)).color(theme::TEXT_DIM()),
                 )
@@ -1470,7 +1470,7 @@ impl App {
                 return;
             }
         } else {
-            let mut items: Vec<(&str, &str)> = vec![("", "Keine")];
+            let mut items: Vec<(&str, &str)> = vec![("", "None")];
             items.extend(cl_core::SPEED_CURVES.iter().map(|c| (c.0, c.1)));
             let cur = c.fx.speed_curve.clone().unwrap_or_default();
             let mut chosen = None;
@@ -1530,12 +1530,12 @@ impl App {
             // Slow motion and direction belong to speed – no separate section for one toggle each
             ui.add_space(8.0);
             if c.speed < 0.999 || c.fx.speed_curve.is_some() {
-                if widgets::toggle_row(ui, "Flüssige Zeitlupe", &mut c.fx.smooth_slowmo) {
+                if widgets::toggle_row(ui, "Smooth slow motion", &mut c.fx.smooth_slowmo) {
                     e.commit = true;
                 }
-                ui.label(RichText::new(crate::tr("Vorschau angenähert, Export exakt")).small().color(theme::TEXT_DIM()));
+                ui.label(RichText::new(crate::tr("Preview approximated, export exact")).small().color(theme::TEXT_DIM()));
             }
-            if widgets::toggle_row(ui, "Rückwärts", &mut c.fx.reverse) {
+            if widgets::toggle_row(ui, "Reverse", &mut c.fx.reverse) {
                 e.commit = true;
             }
         }
@@ -1548,11 +1548,11 @@ impl App {
         e: &mut Edit,
         kf: &mut Option<Vec<Prop>>,
     ) {
-        theme::section(ui, "Lautstärke");
+        theme::section(ui, "Volume");
         *e |= self.prop_slider(
             ui,
             c,
-            "Lautstärke",
+            "Volume",
             Prop::Volume,
             -60.0..=crate::timeline::VOL_MAX,
             0.0,
@@ -1565,14 +1565,14 @@ impl App {
         let mut fo = c.fade_out.as_secs_f64() as f32;
         let max_in = crate::timeline::fade_max(dur, fo as f64) as f32;
         let max_out = crate::timeline::fade_max(dur, fi as f64) as f32;
-        let r1 = theme::row(ui, "Einblenden", |ui| {
+        let r1 = theme::row(ui, "Fade in", |ui| {
             Slider::new(&mut fi, 0.0..=max_in.max(0.01))
                 .suffix(" s")
                 .decimals(1)
                 .default(0.0)
                 .show(ui)
         });
-        let r2 = theme::row(ui, "Ausblenden", |ui| {
+        let r2 = theme::row(ui, "Fade out", |ui| {
             Slider::new(&mut fo, 0.0..=max_out.max(0.01))
                 .suffix(" s")
                 .decimals(1)
@@ -1590,13 +1590,13 @@ impl App {
         };
         if streams > 1 {
             let mut cur = c.audio_stream.unwrap_or(0).min(streams - 1);
-            theme::row(ui, "Tonspur der Datei", |ui| {
+            theme::row(ui, "Audio track of the file", |ui| {
                 egui::ComboBox::from_id_salt("clip-audio-stream")
-                    .selected_text(format!("{} {}", crate::tr("Spur"), cur + 1))
+                    .selected_text(format!("{} {}", crate::tr("Track"), cur + 1))
                     .width((ui.available_width() - 12.0).max(60.0))
                     .show_ui(ui, |ui| {
                         for n in 0..streams {
-                            if ui.selectable_value(&mut cur, n, format!("{} {}", crate::tr("Spur"), n + 1)).changed() {
+                            if ui.selectable_value(&mut cur, n, format!("{} {}", crate::tr("Track"), n + 1)).changed() {
                                 c.audio_stream = (cur > 0).then_some(cur);
                                 e.commit = true;
                             }
@@ -1614,7 +1614,7 @@ impl App {
         if let Some(n) = taken {
             // stream already has its own clip: bring it back into the video instead
             ui.add_space(8.0);
-            if ui.add(theme::secondary(format!("{}  Ton zurückholen", icon::WAVEFORM))).clicked() {
+            if ui.add(theme::secondary(format!("{}  Restore audio", icon::WAVEFORM))).clicked() {
                 c.extracted_streams.retain(|&s| s != n);
                 e.commit = true;
             }
@@ -1626,10 +1626,10 @@ impl App {
             ui.add_space(8.0);
             if ui
                 .add(theme::secondary(format!(
-                    "{}  Ton extrahieren",
+                    "{}  Extract audio",
                     icon::WAVEFORM
                 )))
-                .on_hover_text(crate::tr("Ton als eigenen Clip auf eine Audiospur legen"))
+                .on_hover_text(crate::tr("Put the audio on an audio track as its own clip"))
                 .clicked()
             {
                 let id = c.id;
@@ -1648,7 +1648,7 @@ impl App {
                     ui.add_space(6.0);
                     ui.label(
                         RichText::new(crate::tr(format!(
-                            "{}  Verlängert: {} Stille am Ende",
+                            "{}  Extended: {} of silence at the end",
                             icon::INFO,
                             theme::secs(c.duration.as_secs_f64() - src, 1)
                         )))
@@ -1701,7 +1701,7 @@ impl App {
             }
         }
         if let Some(p) = &self.project_path {
-            theme::row(ui, "Speicherort", |ui| {
+            theme::row(ui, "Location", |ui| {
                 ui.add(
                     egui::Label::new(
                         RichText::new(crate::paths::shown(p))
@@ -1715,19 +1715,19 @@ impl App {
         }
         theme::section(ui, "Format");
         let mut picked: Option<Option<&'static crate::export_ui::Platform>> = None;
-        theme::row(ui, "Plattform", |ui| {
+        theme::row(ui, "Platform", |ui| {
             let cur = settings
                 .platform
                 .as_deref()
                 .and_then(crate::export_ui::platform);
             egui::ComboBox::from_id_salt("proj-platform")
-                .selected_text(crate::tr(cur.map(|p| p.name).unwrap_or("Keine")))
+                .selected_text(crate::tr(cur.map(|p| p.name).unwrap_or("None")))
                 .width((ui.available_width() - 12.0).max(60.0))
                 // shorten long names instead of making the column wider
                 .truncate()
                 .show_ui(ui, |ui| {
                     if ui
-                        .selectable_label(cur.is_none(), crate::tr("Keine"))
+                        .selectable_label(cur.is_none(), crate::tr("None"))
                         .clicked()
                     {
                         picked = Some(None);
@@ -1746,7 +1746,7 @@ impl App {
                 })
                 .response
                 .on_hover_text(crate::tr(
-                    "Setzt Größe und Bildrate; der Export übernimmt die passende Vorlage",
+                    "Sets size and frame rate; export uses the matching preset",
                 ));
         });
         if let Some(pl) = picked {
@@ -1763,7 +1763,7 @@ impl App {
             .iter()
             .find(|(_, p)| *p == settings.aspect)
             .map(|(n, _)| n.to_string())
-            .unwrap_or_else(|| "Eigenes".into());
+            .unwrap_or_else(|| "Custom".into());
         let mut new_aspect = None;
         theme::row(ui, &self.t("aspect"), |ui| {
             egui::ComboBox::from_id_salt("aspect")
@@ -1823,7 +1823,7 @@ impl App {
                 });
         });
         // Channels of the project (the default for new projects is in Settings → Audio)
-        theme::row(ui, "Kanäle", |ui| {
+        theme::row(ui, "Channels", |ui| {
             egui::ComboBox::from_id_salt("proj-channels")
                 .selected_text(crate::tr(settings.channels.name()))
                 .width((ui.available_width() - 12.0).max(60.0))
@@ -1837,7 +1837,7 @@ impl App {
         if changed && settings != self.project.settings {
             self.apply(EditOp::SetSettings { settings });
         }
-        theme::section(ui, "Übersicht");
+        theme::section(ui, "Overview");
         let clips: usize = self
             .project
             .timeline
@@ -1845,22 +1845,22 @@ impl App {
             .iter()
             .map(|t| t.clips.len())
             .sum();
-        theme::row(ui, "Inhalt", |ui| {
+        theme::row(ui, "Content", |ui| {
             // wrap with a large UI instead of running out of the panel
             ui.add(
                 egui::Label::new(
                     RichText::new(format!(
                         "{} · {} · {}",
-                        crate::tr(theme::count_text(self.project.timeline.tracks.len(), "{} Spur", "{} Spuren")),
-                        crate::tr(theme::count_text(clips, "{} Clip", "{} Clips")),
-                        crate::tr(theme::count_text(self.project.media.len(), "{} Medium", "{} Medien"))
+                        crate::tr(theme::count_text(self.project.timeline.tracks.len(), "{} track", "{} tracks")),
+                        crate::tr(theme::count_text(clips, "{} clip", "{} clips")),
+                        crate::tr(theme::count_text(self.project.media.len(), "{} media item", "{} media"))
                     ))
                     .color(theme::TEXT_DIM()),
                 )
                 .wrap(),
             )
         });
-        theme::row(ui, "Länge", |ui| {
+        theme::row(ui, "Length", |ui| {
             ui.label(
                 RichText::new(crate::tr(
                     self.project.duration().timecode(self.project.settings.fps),
@@ -1871,7 +1871,7 @@ impl App {
         });
     }
 
-    /// History: undone steps at the top (faded), then „Jetzt“, below that the
+    /// History: undone steps at the top (faded), then „Now“, below that the
     /// changes so far. Clicking an entry jumps to the state after that step.
     fn history_inspector(&mut self, ui: &mut egui::Ui) {
         type Row = (String, OpSource, std::time::SystemTime);
@@ -1890,7 +1890,7 @@ impl App {
                 self.history_step(1);
             }
             ui.label(
-                RichText::new(crate::tr(if done.len() == 1 { "1 Schritt".to_string() } else { format!("{} Schritte", done.len()) }))
+                RichText::new(crate::tr(if done.len() == 1 { "1 step".to_string() } else { format!("{} steps", done.len()) }))
                     .small()
                     .color(theme::TEXT_DIM()),
             );
@@ -1907,7 +1907,7 @@ impl App {
         let mut q = self.asset_cat.get("hist-q").cloned().unwrap_or_default();
         ui.add(
             egui::TextEdit::singleline(&mut q)
-                .hint_text(crate::tr(format!("{}  Suchen", icon::MAGNIFYING_GLASS)))
+                .hint_text(crate::tr(format!("{}  Search", icon::MAGNIFYING_GLASS)))
                 .desired_width(f32::INFINITY),
         );
         self.asset_cat.insert("hist-q", q.clone());
@@ -1922,14 +1922,14 @@ impl App {
                 }
                 // distance from the current state: the next redo step is the last
                 let dist = (undone.len() - i) as isize;
-                if history_row(ui, label, src, *at, false).on_hover_text(crate::tr("Bis hier wiederholen")).clicked() {
+                if history_row(ui, label, src, *at, false).on_hover_text(crate::tr("Redo up to here")).clicked() {
                     jump = Some(dist);
                 }
             }
             // Now
             ui.horizontal(|ui| {
                 ui.label(RichText::new(icon::CARET_RIGHT).color(theme::ACCENT()));
-                ui.label(RichText::new(crate::tr("Jetzt")).strong().color(theme::TEXT()));
+                ui.label(RichText::new(crate::tr("Now")).strong().color(theme::TEXT()));
             });
             for (k, (label, src, at)) in done.iter().rev().enumerate() {
                 if !matches(label) {
@@ -1937,7 +1937,7 @@ impl App {
                 }
                 if k > 0
                     && history_row(ui, label, src, *at, true)
-                        .on_hover_text(crate::tr("Zu diesem Stand zurück"))
+                        .on_hover_text(crate::tr("Go back to this state"))
                         .clicked()
                 {
                     jump = Some(-(k as isize));
@@ -1948,8 +1948,8 @@ impl App {
             // Origin
             if !done.is_empty()
                 && ui
-                    .add(theme::menu_row(crate::tr(format!("{}   Projektbeginn", icon::FLAG))))
-                    .on_hover_text(crate::tr("Alle Schritte rückgängig"))
+                    .add(theme::menu_row(crate::tr(format!("{}   Project start", icon::FLAG))))
+                    .on_hover_text(crate::tr("Undo all steps"))
                     .clicked()
             {
                 jump = Some(-(done.len() as isize));
@@ -1965,33 +1965,33 @@ impl App {
 fn history_icon(label: &str) -> &'static str {
     let l = label.to_lowercase();
     let has = |w: &str| l.contains(w);
-    if has("lösch") || has("entfern") {
+    if has("delete") || has("remove") {
         icon::TRASH
-    } else if has("teilen") {
+    } else if has("split") {
         icon::SCISSORS
-    } else if has("verschieb") {
+    } else if has("move") {
         icon::ARROWS_OUT_CARDINAL
-    } else if has("trimm") || has("clip-zeit") || has("kürzen") {
+    } else if has("trim") || has("clip timing") || has("shorten") {
         icon::ARROWS_IN_LINE_HORIZONTAL
     } else if has("text") {
         icon::TEXT_T
-    } else if has("lautstärke") || has("blenden") || has("ton") {
+    } else if has("volume") || has("fade") || has("audio") {
         icon::SPEAKER_HIGH
-    } else if has("effekt") || has("filter") {
+    } else if has("effect") || has("filter") {
         icon::SPARKLE
-    } else if has("übergang") {
+    } else if has("transition") {
         icon::INTERSECT
     } else if has("keyframe") || has("animation") {
         icon::DIAMOND
-    } else if has("spur") {
+    } else if has("track") {
         icon::ROWS
-    } else if has("import") || has("einfügen") || has("hinzufügen") {
+    } else if has("import") || has("insert") || has("paste") || has("add") {
         icon::PLUS
-    } else if has("geschwindigkeit") || has("tempo") {
+    } else if has("speed") {
         icon::GAUGE
     } else if has("marker") {
         icon::BOOKMARK_SIMPLE
-    } else if has("projekt") {
+    } else if has("project") {
         icon::GEAR_SIX
     } else {
         icon::PENCIL_SIMPLE
@@ -2021,10 +2021,10 @@ fn history_row(
     r
 }
 
-/// „Deaktiviert  (Taste)“ – in the „Mischen“ (image) or „Lautstärke“ (audio) section.
+/// „Deaktiviert  (Taste)“ – in the „Blend“ (image) or „Volume“ (audio) section.
 fn disabled_toggle(ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit, key: &str) {
     let mut dis = c.disabled;
-    if widgets::toggle_row(ui, &crate::keymap::with_key("Deaktiviert", key), &mut dis) {
+    if widgets::toggle_row(ui, &crate::keymap::with_key("Disabled", key), &mut dis) {
 
         c.disabled = dis;
         e.commit = true;
@@ -2035,7 +2035,7 @@ fn disabled_toggle(ui: &mut egui::Ui, c: &mut Clip, e: &mut Edit, key: &str) {
 #[derive(Debug, Clone, PartialEq)]
 pub enum FontRow {
     Font(String),
-    /// "System" / "Keine"
+    /// "System" / "None"
     NoFont,
     Separator,
 }
@@ -2155,8 +2155,8 @@ fn renamed(typed: &str, current: &str) -> Option<String> {
 mod rename_tests {
     #[test]
     fn typed_project_name_is_taken_only_when_changed_and_not_empty() {
-        assert_eq!(super::renamed("Neu", "Alt").as_deref(), Some("Neu"));
-        assert_eq!(super::renamed("  Neu  ", "Alt").as_deref(), Some("Neu"));
+        assert_eq!(super::renamed("New", "Alt").as_deref(), Some("New"));
+        assert_eq!(super::renamed("  New  ", "Alt").as_deref(), Some("New"));
         assert_eq!(super::renamed("Alt", "Alt"), None);
         assert_eq!(super::renamed("   ", "Alt"), None);
     }

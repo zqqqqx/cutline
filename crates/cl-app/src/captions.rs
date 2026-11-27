@@ -8,10 +8,11 @@ use crate::app::{App, ClipTab};
 use crate::theme::{self, icon};
 
 /// Name of the track captions go to
-pub const TRACK_NAME: &str = "Untertitel";
+pub const TRACK_NAME: &str = cl_core::legacy::CAPTION_TRACK;
 
 /// Track name for display: the default name of the caption track in the UI language
-/// (it stays saved in German, the track is recognized by it), custom names as typed.
+/// (it is saved under this name and the track is recognized by it; projects of versions up to
+/// 0.19.3 saved the German name and are converted when opened), custom names as typed.
 pub fn shown_track_name(name: &str) -> String {
     if name == TRACK_NAME { crate::tr(name) } else { name.to_string() }
 }
@@ -40,8 +41,8 @@ fn st(f: impl FnOnce(&mut TextStyle)) -> TextStyle {
 pub static PRESETS: &[CapPreset] = &[
     CapPreset {
         id: "classic",
-        name: "Klassisch",
-        tip: "Ganze Sätze, ruhig unten im Bild",
+        name: "Classic",
+        tip: "Full sentences, calm at the bottom",
         max_chars: 42,
         max_dur: 5.0,
         y: 0.36,
@@ -58,7 +59,7 @@ pub static PRESETS: &[CapPreset] = &[
     CapPreset {
         id: "box",
         name: "Box",
-        tip: "Gut lesbar auf hellen Bildern",
+        tip: "Easy to read on bright images",
         max_chars: 42,
         max_dur: 5.0,
         y: 0.36,
@@ -74,8 +75,8 @@ pub static PRESETS: &[CapPreset] = &[
     },
     CapPreset {
         id: "punchy",
-        name: "Kurz & fett",
-        tip: "Wenige Wörter, groß in der Mitte – passt ins Hochformat",
+        name: "Short & bold",
+        tip: "A few words, big in the middle – fits vertical video",
         max_chars: 16,
         max_dur: 1.8,
         y: 0.12,
@@ -93,8 +94,8 @@ pub static PRESETS: &[CapPreset] = &[
     },
     CapPreset {
         id: "word",
-        name: "Wort für Wort",
-        tip: "Jedes Wort einzeln, schnell und auffällig",
+        name: "Word by word",
+        tip: "Every word on its own, fast and eye-catching",
         max_chars: 1,
         max_dur: 1.0,
         y: 0.05,
@@ -111,8 +112,8 @@ pub static PRESETS: &[CapPreset] = &[
     },
     CapPreset {
         id: "soft",
-        name: "Weich",
-        tip: "Kurze Zeilen, sanft eingeblendet",
+        name: "Soft",
+        tip: "Short lines, gently faded in",
         max_chars: 24,
         max_dur: 3.0,
         y: 0.22,
@@ -129,8 +130,8 @@ pub static PRESETS: &[CapPreset] = &[
     },
     CapPreset {
         id: "cinema",
-        name: "Kino",
-        tip: "Schmale Serifenschrift, elegant",
+        name: "Cinema",
+        tip: "Slim serif font, elegant",
         max_chars: 36,
         max_dur: 4.0,
         y: 0.40,
@@ -147,8 +148,8 @@ pub static PRESETS: &[CapPreset] = &[
     },
     CapPreset {
         id: "yellow-box",
-        name: "Gelb auf Schwarz",
-        tip: "Hoher Kontrast auf jedem Bild",
+        name: "Yellow on black",
+        tip: "High contrast on any picture",
         max_chars: 30,
         max_dur: 3.5,
         y: 0.30,
@@ -166,7 +167,7 @@ pub static PRESETS: &[CapPreset] = &[
     CapPreset {
         id: "pop",
         name: "Pop",
-        tip: "Ein bis drei Wörter, springen ins Bild",
+        tip: "One to three words that jump in",
         max_chars: 12,
         max_dur: 1.2,
         y: 0.10,
@@ -183,8 +184,8 @@ pub static PRESETS: &[CapPreset] = &[
     },
     CapPreset {
         id: "light-box",
-        name: "Helle Box",
-        tip: "Dunkle Schrift auf weißer Fläche",
+        name: "Light box~box",
+        tip: "Dark text on a white box",
         max_chars: 32,
         max_dur: 3.5,
         y: 0.28,
@@ -202,7 +203,7 @@ pub static PRESETS: &[CapPreset] = &[
     CapPreset {
         id: "neon",
         name: "Neon",
-        tip: "Leuchtfarbe mit dunkler Kontur",
+        tip: "Bright color with a dark outline",
         max_chars: 20,
         max_dur: 2.5,
         y: 0.18,
@@ -219,8 +220,8 @@ pub static PRESETS: &[CapPreset] = &[
     },
     CapPreset {
         id: "typewriter",
-        name: "Schreibmaschine",
-        tip: "Festbreitenschrift auf dunkler Fläche",
+        name: "Typewriter",
+        tip: "Monospaced type on a dark box",
         max_chars: 32,
         max_dur: 3.5,
         y: 0.32,
@@ -237,8 +238,8 @@ pub static PRESETS: &[CapPreset] = &[
     },
     CapPreset {
         id: "docu",
-        name: "Doku",
-        tip: "Klein und zurückhaltend",
+        name: "Documentary",
+        tip: "Small and subtle",
         max_chars: 48,
         max_dur: 5.0,
         y: 0.42,
@@ -256,7 +257,7 @@ pub static PRESETS: &[CapPreset] = &[
     CapPreset {
         id: "podcast",
         name: "Podcast",
-        tip: "Zwei ruhige Zeilen",
+        tip: "Two calm lines",
         max_chars: 64,
         max_dur: 6.0,
         y: 0.33,
@@ -275,7 +276,7 @@ pub static PRESETS: &[CapPreset] = &[
     CapPreset {
         id: "gaming",
         name: "Gaming",
-        tip: "Kantig und grell",
+        tip: "Angular and loud",
         max_chars: 18,
         max_dur: 2.0,
         y: 0.15,
@@ -294,7 +295,7 @@ pub static PRESETS: &[CapPreset] = &[
     CapPreset {
         id: "karaoke",
         name: "Karaoke",
-        tip: "Das gesprochene Wort leuchtet auf",
+        tip: "The spoken word lights up",
         max_chars: 30,
         max_dur: 3.5,
         y: 0.25,
@@ -303,8 +304,8 @@ pub static PRESETS: &[CapPreset] = &[
     },
     CapPreset {
         id: "karaoke-fill",
-        name: "Karaoke füllen",
-        tip: "Gesprochene Wörter bleiben hervorgehoben",
+        name: "Karaoke fill",
+        tip: "Spoken words stay highlighted",
         max_chars: 30,
         max_dur: 3.5,
         y: 0.25,
@@ -313,7 +314,7 @@ pub static PRESETS: &[CapPreset] = &[
     },
 ];
 
-/// Highlight like the „Gelb auf Schwarz“ style
+/// Highlight like the „Yellow on black“ style
 pub const KARAOKE_YELLOW: [u8; 4] = [255, 221, 0, 255];
 
 fn karaoke_style(fill: bool) -> TextStyle {
@@ -393,7 +394,7 @@ impl App {
         let p = self.caption_preset();
         let text = if p.id == "podcast" { two_lines(text) } else { text.to_string() };
         let mut st = TextStyle { text, ..(p.style)() };
-        // Brand font for captions only in the „Klassisch“ style (the others have their own fonts)
+        // Brand font for captions only in the „Classic“ style (the others have their own fonts)
         if p.id == "classic" {
             if let Some(f) = self.brand.font(crate::brand::CAPTION) {
                 st.font_family = Some(f.clone());
@@ -453,7 +454,7 @@ impl App {
                     let pt = ui.painter();
                     pt.rect_filled(r, theme::R_CARD, theme::STAGE);
                     let s = (p.style)();
-                    let sample = if p.id == "word" { crate::tr("Wort") } else if s.uppercase { crate::tr("So sieht es aus").to_uppercase() } else { crate::tr("So sieht es aus") };
+                    let sample = if p.id == "word" { crate::tr("Word") } else if s.uppercase { crate::tr("This is how it looks").to_uppercase() } else { crate::tr("This is how it looks") };
                     let fam = self.font_family(s.font_family.as_deref());
                     let base = (s.size * 0.24).clamp(11.0, 22.0);
                     // Room in the tile: margin per side, background box (+8) or outline (±1.2)
@@ -476,7 +477,7 @@ impl App {
                         }
                     }
                     match &s.karaoke {
-                        // Karaoke: second word highlighted („Füllen“: the first two)
+                        // Karaoke: second word highlighted („Fill“: the first two)
                         Some(k) => {
                             let hc = Color32::from_rgba_unmultiplied(k.color[0], k.color[1], k.color[2], k.color[3]);
                             let (a, b) = word_ranges(&sample).get(1).map(|r| (if k.fill { 0 } else { r.start }, r.end)).unwrap_or((0, 0));
@@ -519,15 +520,15 @@ impl App {
         let items = self.caption_list(ui.ctx(), self.asset_cat.get("cap-q").map_or("", |q| q.as_str())).items;
         let fps = self.project.settings.fps;
         ui.horizontal(|ui| {
-            ui.label(RichText::new(crate::tr(format!("Untertitel ({})", items.len()))).strong());
+            ui.label(RichText::new(crate::tr(format!("Captions ({})", items.len()))).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // too narrow for the label: only the icon
-                let full = format!("{}  {}", icon::PLUS, crate::tr("Hinzufügen"));
+                let full = format!("{}  {}", icon::PLUS, crate::tr("Add"));
                 let need = theme::text_width(ui.ctx(), &full, egui::FontId::proportional(theme::FS_UI)) + 2.0 * ui.spacing().button_padding.x;
                 let label = if need <= ui.available_width() { full } else { icon::PLUS.to_string() };
                 if ui
                     .add(theme::secondary(label))
-                    .on_hover_text(crate::tr("Neuer Untertitel am Playhead"))
+                    .on_hover_text(crate::tr("New caption at the playhead"))
                     .clicked()
                 {
                     self.add_caption_at_playhead();
@@ -536,7 +537,7 @@ impl App {
         });
         ui.add_space(4.0);
         if items.is_empty() {
-            theme::empty_state(ui, icon::SUBTITLES, "Noch keine Untertitel", "");
+            theme::empty_state(ui, icon::SUBTITLES, "No captions yet", "");
             return;
         }
         // Find & replace
@@ -548,10 +549,10 @@ impl App {
             let btn = (theme::text_width(ui.ctx(), icon::SWAP, egui::FontId::proportional(14.0)) + 2.0 * ui.spacing().button_padding.x).max(24.0);
             let w = ((ui.available_width() - btn - 2.0 * sp) / 2.0 - 8.0).max(30.0);
             let margin = egui::Margin::symmetric(4, 2);
-            ui.add(egui::TextEdit::singleline(&mut q).hint_text(crate::tr(format!("{}  Suchen", icon::MAGNIFYING_GLASS))).margin(margin).desired_width(w));
-            ui.add(egui::TextEdit::singleline(&mut rep).hint_text(crate::tr("Ersetzen durch")).margin(margin).desired_width(w));
+            ui.add(egui::TextEdit::singleline(&mut q).hint_text(crate::tr(format!("{}  Search", icon::MAGNIFYING_GLASS))).margin(margin).desired_width(w));
+            ui.add(egui::TextEdit::singleline(&mut rep).hint_text(crate::tr("Replace with")).margin(margin).desired_width(w));
             let hits = if q.is_empty() { 0 } else { self.caption_list(ui.ctx(), &q).shown.len() };
-            if theme::icon_button(ui, icon::SWAP, format!("{}  ({hits})", crate::tr("Alle ersetzen")), hits > 0, false).clicked() {
+            if theme::icon_button(ui, icon::SWAP, format!("{}  ({hits})", crate::tr("Replace all")), hits > 0, false).clicked() {
                 let ops: Vec<EditOp> = items
                     .iter()
                     .filter(|c| text_of(c).contains(&q))
@@ -564,7 +565,7 @@ impl App {
                     })
                     .collect();
                 self.apply_batch(ops);
-                self.toast(format!("{} {hits} {}", icon::CHECK, crate::tr("ersetzt")));
+                self.toast(format!("{} {hits} {}", icon::CHECK, crate::tr("replaced")));
             }
         });
         self.asset_cat.insert("cap-q", q.clone());
@@ -575,7 +576,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 let p = self.caption_preset();
                 if ui
-                    .add(theme::ghost(format!("{}  {}", icon::PAINT_BRUSH, crate::tr(format!("Stil „{}“ auf alle", crate::tr(p.name))))))
+                    .add(theme::ghost(format!("{}  {}", icon::PAINT_BRUSH, crate::tr(format!("Style “{}” for all", crate::tr(p.name))))))
                     .clicked()
                 {
                     let ops: Vec<EditOp> = items
@@ -592,8 +593,8 @@ impl App {
                     self.apply_batch(ops);
                 }
                 if ui
-                    .add(theme::ghost(format!("{}  {}", icon::SPLIT_HORIZONTAL, crate::tr("Neu aufteilen"))))
-                    .on_hover_text(crate::tr("Zeilen so lang wie in der gewählten Vorlage"))
+                    .add(theme::ghost(format!("{}  {}", icon::SPLIT_HORIZONTAL, crate::tr("Split again"))))
+                    .on_hover_text(crate::tr("Lines as long as in the selected style"))
                     .clicked()
                 {
                     self.resegment_captions(items);
@@ -624,7 +625,7 @@ impl App {
         let focus = self.caption_focus;
         let mut focused = false;
         // own scroll area down to the bottom edge: a new entry only scrolls the list,
-        // the header with „Hinzufügen“ stays put
+        // the header with „Add“ stays put
         let h = (ui.clip_rect().bottom() - ui.cursor().top() - 4.0).max(160.0);
         egui::ScrollArea::vertical().id_salt("cap-list").max_height(h).auto_shrink([false, true]).show_viewport(ui, |ui, vp| {
             ui.set_height((stride * shown.len() as f32 - gap).max(0.0));
@@ -655,7 +656,7 @@ impl App {
                                 let t = c.start.timecode(fps);
                                 if ui
                                     .add(theme::ghost(&t[3..8]))
-                                    .on_hover_text(crate::tr("Hinspringen"))
+                                    .on_hover_text(crate::tr("Jump there"))
                                     .clicked()
                                 {
                                     jump = Some(c.id);
@@ -664,11 +665,11 @@ impl App {
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     // Apply the text change before merge/duration (as before, in reading order)
                                     let at = ops.len();
-                                    if theme::icon_button(ui, icon::TRASH, "Löschen", true, false).clicked() {
+                                    if theme::icon_button(ui, icon::TRASH, "Delete", true, false).clicked() {
                                         ops.push(EditOp::RemoveClip { clip: c.id });
                                     }
                                     if let Some(n) = next {
-                                        if theme::icon_button(ui, icon::ARROWS_MERGE, "Mit dem nächsten zusammenführen", true, false).clicked() {
+                                        if theme::icon_button(ui, icon::ARROWS_MERGE, "Merge with the next one", true, false).clicked() {
                                             let mut m = c.clone();
                                             // Word times of both parts together (the second from its start)
                                             let mut words = karaoke_words(c);
@@ -688,11 +689,11 @@ impl App {
                                     let room = next.map(|n| (n.start - c.start).as_secs_f64()).unwrap_or(60.0);
                                     let mut d = c.duration.as_secs_f64();
                                     // the range must contain the current value: egui clamps it otherwise and
-                                    // reports a change every frame (short captions: "Ungültige Dauer" per frame)
+                                    // reports a change every frame (short captions: "Invalid duration" per frame)
                                     let range = 0.2f64.min(d)..=room.max(d);
                                     if ui
                                         .add(egui::DragValue::new(&mut d).range(range).speed(0.02).custom_formatter(|v, _| crate::theme::dec(v, 1)).custom_parser(crate::theme::parse_dec).suffix(" s").update_while_editing(false))
-                                        .on_hover_text(crate::tr("Dauer"))
+                                        .on_hover_text(crate::tr("Duration"))
                                         .changed()
                                     {
                                         ops.push(EditOp::SetClipTiming { clip: c.id, start: c.start, duration: Time::from_secs_f64(d), source_in: c.source_in });
@@ -705,7 +706,7 @@ impl App {
                                     }
                                     if focus == Some(c.id) {
                                         focused = true;
-                                        // only scroll if needed: otherwise the „Hinzufügen“ button moves with every click
+                                        // only scroll if needed: otherwise the „Add“ button moves with every click
                                         r.scroll_to_me(None);
                                         r.request_focus();
                                         // select the whole placeholder text: typing replaces it
@@ -777,13 +778,13 @@ impl App {
         let items = self.caption_clips();
         let at = self.playhead.snap_to_frame(self.project.settings.fps);
         if items.iter().any(|c| c.contains(at)) {
-            self.toast_err("Hier liegt schon ein Untertitel");
+            self.toast_err("There is already a caption here");
             return;
         }
         let next = items.iter().map(|c| c.start).filter(|s| *s > at).min();
         let dur = next.map(|n| n - at).unwrap_or(Time::from_secs_f64(2.0)).min(Time::from_secs_f64(2.0));
         if dur < Time::from_secs_f64(0.2) {
-            self.toast_err("Zu wenig Platz bis zum nächsten Untertitel");
+            self.toast_err("Not enough room before the next caption");
             return;
         }
         let track = self
@@ -794,7 +795,7 @@ impl App {
             .find(|t| t.kind == TrackKind::Text && t.name.as_deref() == Some(TRACK_NAME))
             .map(|t| t.id)
             .or_else(|| self.new_caption_track());
-        let clip = self.caption_clip(&crate::tr("Neuer Untertitel"), at, dur, Vec::new());
+        let clip = self.caption_clip(&crate::tr("New caption"), at, dur, Vec::new());
         if let Some(OpOutput::Clip(id)) = self.apply(EditOp::AddClip { track, clip }) {
             self.select_only(Some(id));
             self.caption_focus = Some(id);
@@ -817,7 +818,7 @@ impl App {
         let mut ops: Vec<EditOp> = items.iter().map(|c| EditOp::RemoveClip { clip: c.id }).collect();
         self.apply_batch(std::mem::take(&mut ops));
         let n = self.add_caption_segments(&new, Time::ZERO);
-        self.toast(format!("{} {n} {}", icon::CHECK, crate::tr("Zeilen")));
+        self.toast(format!("{} {n} {}", icon::CHECK, crate::tr("lines")));
     }
 }
 
@@ -859,7 +860,7 @@ fn active_row(items: &[Clip], shown: &[usize], at: Time) -> Option<usize> {
     shown.binary_search(&i).ok()
 }
 
-/// Clips that „Stil auf alle“ and „Neu aufteilen“ change: only on tracks named „Untertitel“.
+/// Clips that "Style for all" and "Split again" change: only on tracks named "Captions".
 fn is_caption_track(t: &cl_core::Track) -> bool {
     t.kind == TrackKind::Text && t.name.as_deref() == Some(TRACK_NAME)
 }
@@ -912,9 +913,9 @@ pub(crate) mod tests {
         assert!(bulk_targets(&p).is_empty(), "a normal text track is not a caption track");
         let mut caps = Track::new(TrackKind::Text);
         caps.name = Some(TRACK_NAME.into());
-        caps.clips.push(text("Hallo"));
+        caps.clips.push(text("Hello"));
         p.timeline.tracks.push(caps);
-        assert_eq!(bulk_targets(&p).iter().map(text_of).collect::<Vec<_>>(), ["Hallo"]);
+        assert_eq!(bulk_targets(&p).iter().map(text_of).collect::<Vec<_>>(), ["Hello"]);
         // the list in the captions tab uses the same selection: only the caption track
         assert_eq!(p.timeline.tracks.iter().filter(|t| is_caption_track(t)).count(), 1);
     }
@@ -928,7 +929,7 @@ pub(crate) mod tests {
             }
             assert!((p.style)().size > 10.0);
         }
-        assert_eq!(preset("gibt-es-nicht").id, "classic");
+        assert_eq!(preset("does-not-exist").id, "classic");
         let ids: std::collections::HashSet<_> = PRESETS.iter().map(|p| p.id).collect();
         assert_eq!(ids.len(), PRESETS.len());
         for (i, id) in ["classic", "box", "punchy", "word", "soft", "cinema"].iter().enumerate() {
@@ -947,7 +948,7 @@ pub(crate) mod tests {
     fn karaoke_captions_keep_the_word_times() {
         let mut app = crate::saving::tests::test_app();
         app.set_doc(Project::new("k"));
-        let seg = cl_analyze::asr::Segment { start: 1.0, end: 3.0, text: "Hallo Welt".into(), words: vec![1.0, 2.2] };
+        let seg = cl_analyze::asr::Segment { start: 1.0, end: 3.0, text: "Hello World".into(), words: vec![1.0, 2.2] };
         let words = |app: &App| -> Vec<Option<Vec<i64>>> {
             app.caption_clips()
                 .iter()
@@ -975,7 +976,7 @@ pub(crate) mod tests {
 
     /// Fast speech gives captions shorter than the duration field's 0.2 s minimum, ending where the
     /// next one starts. Showing the list clamped them to 0.2 s every frame: against the neighbour
-    /// that failed with "Ungültige Dauer" ~20× per second, otherwise it edited them silently.
+    /// that failed with "Invalid duration" ~20× per second, otherwise it edited them silently.
     #[test]
     fn captions_list_leaves_short_captions_alone() {
         let mut app = crate::saving::tests::test_app();
@@ -1004,7 +1005,7 @@ pub(crate) mod tests {
         let steps = app.doc.lock().unwrap().undo_entries().len();
         let before = app.doc.lock().unwrap().project().clone();
         let segs: Vec<cl_analyze::asr::Segment> = (0..2000)
-            .map(|i| cl_analyze::asr::Segment { start: i as f64 * 0.75, end: i as f64 * 0.75 + 0.75, text: format!("Wort{i}"), words: Vec::new() })
+            .map(|i| cl_analyze::asr::Segment { start: i as f64 * 0.75, end: i as f64 * 0.75 + 0.75, text: format!("Word{i}"), words: Vec::new() })
             .collect();
         assert_eq!(app.add_caption_segments(&segs, Time::ZERO), 2000);
         assert_eq!(app.caption_clips().len(), 2000);
@@ -1029,7 +1030,7 @@ pub(crate) mod tests {
         let mut app = crate::saving::tests::test_app();
         app.set_doc(Project::new("k"));
         let segs: Vec<cl_analyze::asr::Segment> = (0..n)
-            .map(|i| cl_analyze::asr::Segment { start: i as f64 * 0.75, end: i as f64 * 0.75 + 0.75, text: format!("Wort{i}"), words: Vec::new() })
+            .map(|i| cl_analyze::asr::Segment { start: i as f64 * 0.75, end: i as f64 * 0.75 + 0.75, text: format!("Word{i}"), words: Vec::new() })
             .collect();
         assert_eq!(app.add_caption_segments(&segs, Time::ZERO), n);
         app
@@ -1085,7 +1086,7 @@ pub(crate) mod tests {
         assert!(rows.len() <= 30 && rows.contains(&ids[4999]), "after scrolling down: {} rows, last caption shown: {}", rows.len(), rows.contains(&ids[4999]));
 
         // search: only the matches
-        app.asset_cat.insert("cap-q", "Wort123".into());
+        app.asset_cat.insert("cap-q", "Word123".into());
         let mut rows = Vec::new();
         for _ in 0..30 {
             rows = built(&mut app, &ctx, Vec::new());
@@ -1110,12 +1111,12 @@ pub(crate) mod tests {
         for _ in 0..30 {
             list_frame(&mut app, &ctx, Vec::new());
         }
-        list_frame(&mut app, &ctx, vec![egui::Event::Text("Neu".into())]);
+        list_frame(&mut app, &ctx, vec![egui::Event::Text("New".into())]);
         list_frame(&mut app, &ctx, vec![key(egui::Key::Enter)]);
         list_frame(&mut app, &ctx, Vec::new());
         let texts: Vec<String> = app.caption_clips().iter().map(text_of).collect();
-        assert_eq!(texts[3002], "Neu");
-        assert_eq!((texts[3001].as_str(), texts[3003].as_str()), ("Wort3001", "Wort3003"), "neighbours unchanged");
+        assert_eq!(texts[3002], "New");
+        assert_eq!((texts[3001].as_str(), texts[3003].as_str()), ("Word3001", "Word3003"), "neighbours unchanged");
         assert_eq!(app.doc.lock().unwrap().undo_entries().len(), steps + 1, "one undo step");
 
         // typing, then scrolling the row out of view keeps the text (egui drops the focus silently)
@@ -1123,12 +1124,12 @@ pub(crate) mod tests {
         for _ in 0..30 {
             list_frame(&mut app, &ctx, Vec::new());
         }
-        list_frame(&mut app, &ctx, vec![egui::Event::Text("Weg".into())]);
+        list_frame(&mut app, &ctx, vec![egui::Event::Text("Gone".into())]);
         list_frame(&mut app, &ctx, wheel(1.0e7));
         for _ in 0..60 {
             list_frame(&mut app, &ctx, Vec::new());
         }
-        assert_eq!(text_of(&app.caption_clips()[3003]), "Weg", "text typed before scrolling away is kept");
+        assert_eq!(text_of(&app.caption_clips()[3003]), "Gone", "text typed before scrolling away is kept");
         assert_eq!(app.doc.lock().unwrap().undo_entries().len(), steps + 2);
         assert!(!app.toasts.iter().any(|t| t.2), "no error");
     }
@@ -1155,12 +1156,12 @@ pub(crate) mod tests {
 
     #[test]
     fn podcast_splits_into_two_balanced_lines() {
-        assert_eq!(two_lines("kurz"), "kurz");
-        assert_eq!(two_lines("  zwei   Wörter "), "zwei Wörter");
-        let t = two_lines("Heute reden wir über\nSchnitt und Ton in langen Videos");
+        assert_eq!(two_lines("short"), "short");
+        assert_eq!(two_lines("  two   words "), "two words");
+        let t = two_lines("Today we talk about\ncutting and sound in long videos");
         let lines: Vec<&str> = t.lines().collect();
         assert_eq!(lines.len(), 2, "{t}");
         assert!(lines[0].len().abs_diff(lines[1].len()) <= 8, "{t}");
-        assert_eq!(t.replace('\n', " "), "Heute reden wir über Schnitt und Ton in langen Videos");
+        assert_eq!(t.replace('\n', " "), "Today we talk about cutting and sound in long videos");
     }
 }

@@ -178,7 +178,7 @@ impl App {
                 }
             }
         }
-        let label = if a == Arrange::Reset { "Layout zurücksetzen" } else { "Layout" };
+        let label = if a == Arrange::Reset { "Reset layout" } else { "Layout" };
         self.apply(EditOp::Batch { label: label.into(), ops });
     }
 }

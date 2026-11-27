@@ -1,7 +1,7 @@
 //! Opt-in error reports to the developer: one Sentry envelope per report, posted with the HTTP
 //! client the app already uses (ureq, rustls). Nothing leaves the machine unless the setting
-//! „Fehlerberichte senden“ is on or the user clicks „An Entwickler senden“ on the crash notice
-//! or „Senden“ under „Fehler melden“ in the settings (own words, optionally log and window image).
+//! „Send error reports“ is on or the user clicks „Send to developer“ on the crash notice
+//! or „Send“ under „Report a bug“ in the settings (own words, optionally log and window image).
 //! Without a DSN (build time `CUTLINE_SENTRY_DSN`, or the same variable at runtime) nothing of
 //! this is visible and no code path sends. Every string is scrubbed before it leaves.
 
@@ -24,7 +24,8 @@ const TAIL: usize = 60;
 /// Upper bound for one send; the panic hook waits at most this long
 const TIMEOUT: Duration = Duration::from_secs(2);
 /// Log marker: the crash of this session already went out (the next start does not send it again)
-pub const SENT: &str = "Fehlerbericht gesendet";
+pub const SENT: &str = "Error report sent";
+
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 /// 0 = unknown, 1 = start page, 2 = editor
@@ -122,7 +123,6 @@ impl Who {
     /// names in „…“, user and machine names (`<user>`)
     pub fn scrub(&self, s: &str) -> String {
         let s = crate::applog::anon(&crate::applog::tilde(&crate::applog::redact(s), &self.home));
-        let s = s.replace("<pfad>", "<path>").replace("<datei>", "<file>");
         self.names.iter().fold(s, |s, n| replace_ci(&s, n, "<user>"))
     }
 }
@@ -259,7 +259,7 @@ impl Report {
             location,
             thread: thread.map(String::from),
             backtrace: backtrace.to_string(),
-            area: "absturz".into(),
+            area: "crash".into(),
             ..Default::default()
         }
     }
@@ -302,7 +302,7 @@ fn system_info(lines: &[String]) -> (Option<String>, Option<String>, Option<Stri
         if let Some(v) = l.strip_prefix("System: ") {
             os = Some(v.to_string());
         }
-        if let Some(v) = l.strip_prefix("Grafik: ") {
+        if let Some(v) = l.strip_prefix("Graphics: ").or_else(|| l.strip_prefix(cl_core::legacy::old("log_graphics"))?.strip_prefix(": ")) {
             let end = [v.find(" ("), v.find(" · ")].into_iter().flatten().min().unwrap_or(v.len());
             gpu = Some(v[..end].to_string());
         }
@@ -396,7 +396,7 @@ fn now_secs() -> f64 {
 
 fn send_report(dsn: &Dsn, r: &Report, who: &Who) -> bool {
     // the reason goes to the log (a DNS blocker is a common one); a warning, so it is not reported itself
-    post(dsn, &envelope(&event(r, who, &event_id(), now_secs()))).map_err(|e| log::warn!(target: "bericht", "nicht gesendet: {e}")).is_ok()
+    post(dsn, &envelope(&event(r, who, &event_id(), now_secs()))).map_err(|e| log::warn!(target: "report", "not sent: {e}")).is_ok()
 }
 
 // ---------- automatic reports ----------
@@ -440,8 +440,8 @@ pub fn observe(level: Level, area: &str, msg: &str, own: bool) {
     if area == "system" {
         lock(&SYSTEM).push(msg.to_string());
     }
-    // „meldung“ errors are messages to the user (file unreadable …), not faults of the app
-    if level == Level::Error && own && area != "meldung" && ENABLED.load(Ordering::Relaxed) {
+    // "feedback" errors are messages to the user (file unreadable …), not faults of the app
+    if level == Level::Error && own && area != "feedback" && ENABLED.load(Ordering::Relaxed) {
         let _ = auto(dsn(), true, &AUTO, Report::error(area, msg).with_current("auto"), Who::current());
     }
 }
@@ -454,18 +454,19 @@ pub fn on_panic(info: &str, thread: Option<&str>, backtrace: &str) {
     }
     let r = Report::panic(info, thread, backtrace).with_current("auto");
     if auto(dsn(), true, &AUTO, r, Who::current()).and_then(|h| h.join().ok()) == Some(true) {
-        log::info!(target: "sitzung", "{SENT} pid={}", std::process::id());
+        log::info!(target: "session", "{SENT} pid={}", std::process::id());
         crate::applog::flush();
     }
 }
 
 // ---------- crash of the previous session ----------
 
-/// Previous session from the log text (last `beginnt` to the end): its last crash (or an
+/// Previous session from the log text (last session start to the end): its last crash (or an
 /// unexpected end without a panic) and whether that already went out.
 pub fn previous(text: &str) -> Option<(Report, bool)> {
-    let at = text.rfind(" sitzung: beginnt pid=")?;
-    let block = &text[text[..at].rfind('\n').map_or(0, |i| i + 1)..];
+    // the last session start, written by this version or an older one (German markers)
+    let at = text.lines().rev().find(|l| crate::applog::start_pid(l).is_some()).map(|l| l.as_ptr() as usize - text.as_ptr() as usize)?;
+    let block = &text[at..];
     let mut entries: Vec<String> = Vec::new();
     for line in block.lines() {
         match entries.last_mut() {
@@ -480,10 +481,13 @@ pub fn previous(text: &str) -> Option<(Report, bool)> {
     for e in &entries {
         // without the timestamp: `LEVEL area: message`
         let body = e.get(31..).unwrap_or_default();
-        if let Some(i) = body.find(" absturz: Absturz pid=") {
-            let rest = &body[i..];
-            let thread = rest.split_once('„').and_then(|x| x.1.split_once('“')).map(|x| x.0);
-            let info = rest.split_once("“: ").map_or("", |x| x.1);
+        if crate::applog::panic_pid(body.lines().next().unwrap_or_default()).is_some() {
+            let rest = body;
+            // `in thread “name”: info`, older logs `im Thread „name“: info`
+            let (thread, info) = match rest.split_once("”: ") {
+                Some((head, info)) => (head.rsplit_once('“').map(|x| x.1), info),
+                None => (rest.split_once('„').and_then(|x| x.1.split_once('“')).map(|x| x.0), rest.split_once("“: ").map_or("", |x| x.1)),
+            };
             // the backtrace starts at the first `N: ` line
             let lines: Vec<&str> = info.lines().collect();
             let k = lines
@@ -492,7 +496,7 @@ pub fn previous(text: &str) -> Option<(Report, bool)> {
                 .unwrap_or(lines.len());
             crash = Some(Report::panic(&lines[..k].join("\n"), thread, &lines[k..].join("\n")));
             sent = false;
-        } else if body.contains(&format!(" sitzung: {SENT} pid=")) {
+        } else if body.contains(&format!(" session: {SENT} pid=")) || body.contains(&format!(" {}: {} pid=", cl_core::legacy::old("log_session"), cl_core::legacy::old("log_sent"))) {
             sent = true;
         } else {
             if let Some(m) = body.split_once(" system: ").map(|x| x.1) {
@@ -504,7 +508,7 @@ pub fn previous(text: &str) -> Option<(Report, bool)> {
     let mut r = crash.unwrap_or_else(|| Report {
         panic: true,
         message: "unexpected exit without a recorded panic".into(),
-        area: "sitzung".into(),
+        area: "session".into(),
         ..Default::default()
     });
     r.log = log.split_off(log.len().saturating_sub(TAIL));
@@ -521,7 +525,7 @@ pub fn set_previous(text: &str) {
     }
 }
 
-/// State of „An Entwickler senden“: one send at a time, never twice after success
+/// State of „Send to developer“: one send at a time, never twice after success
 #[derive(Default)]
 pub struct CrashSend {
     busy: bool,
@@ -547,15 +551,15 @@ fn send_crash(app: &mut crate::app::App, ctx: &egui::Context, dsn: &'static Dsn,
     if !lock(&CRASH).start() {
         return;
     }
-    app.tasks.spawn(ctx, "crash-report", crate::tr("Bericht wird gesendet"), move |_, _| {
+    app.tasks.spawn(ctx, "crash-report", crate::tr("Sending report"), move |_, _| {
         let ok = send_report(dsn, &r, &Who::current());
         crate::tasks::TaskDone::Run(Box::new(move |app: &mut crate::app::App| {
             lock(&CRASH).finish(ok);
             if !loud {
             } else if ok {
-                app.toast(format!("{}  Bericht gesendet", icon::CHECK));
+                app.toast(format!("{}  Report sent", icon::CHECK));
             } else {
-                app.toast_err("Bericht konnte nicht gesendet werden");
+                app.toast_err("Report could not be sent");
             }
         }))
     });
@@ -579,7 +583,7 @@ pub fn frame(ctx: &egui::Context, app: &mut crate::app::App) {
     send_crash(app, ctx, dsn, r, false);
 }
 
-/// „An Entwickler senden“ next to „Protokoll exportieren“ (also with the setting off: the click
+/// „Send to developer“ next to „Export log“ (also with the setting off: the click
 /// is the consent for this one report)
 pub fn crash_button(ui: &mut egui::Ui, app: &mut crate::app::App) {
     let Some(dsn) = dsn() else { return };
@@ -590,7 +594,7 @@ pub fn crash_button(ui: &mut egui::Ui, app: &mut crate::app::App) {
         let c = lock(&CRASH);
         !c.busy && !c.sent
     };
-    if ui.add_enabled(can, theme::secondary("An Entwickler senden")).clicked() {
+    if ui.add_enabled(can, theme::secondary("Send to developer")).clicked() {
         if let Some(r) = lock(&PREV).clone() {
             send_crash(app, ui.ctx(), dsn, r, true);
         }
@@ -599,7 +603,7 @@ pub fn crash_button(ui: &mut egui::Ui, app: &mut crate::app::App) {
 
 // ---------- bug report written by the user ----------
 
-/// `source` of a report the user wrote („Fehler melden“)
+/// `source` of a report the user wrote („Report a bug“)
 const FEEDBACK: &str = "feedback";
 /// Upper bound for a send with attachments (log, window image)
 const TIMEOUT_FILES: Duration = Duration::from_secs(30);
@@ -610,7 +614,7 @@ const SHOT_FRAMES: u32 = 120;
 /// Frames between the click and asking for the image (the settings fade out first)
 const SHOT_DELAY: u32 = 15;
 
-/// „Fehler melden“ in the settings
+/// „Report a bug“ in the settings
 struct Form {
     open: bool,
     text: String,
@@ -642,9 +646,9 @@ fn shot_file(img: &egui::ColorImage) -> Option<Attachment> {
 
 /// The user's own words as an event (level info) with the files they chose to attach
 pub fn feedback(dsn: &Dsn, text: &str, files: &[Attachment], who: &Who) -> bool {
-    let r = Report::error("meldung", text).with_current(FEEDBACK);
+    let r = Report::error("feedback", text).with_current(FEEDBACK);
     let ev = event(&r, who, &event_id(), now_secs());
-    post_within(dsn, &envelope_with(&ev, files), TIMEOUT_FILES).map_err(|e| log::warn!(target: "bericht", "nicht gesendet: {e}")).is_ok()
+    post_within(dsn, &envelope_with(&ev, files), TIMEOUT_FILES).map_err(|e| log::warn!(target: "report", "not sent: {e}")).is_ok()
 }
 
 fn send_feedback(app: &mut crate::app::App, ctx: &egui::Context, dsn: &'static Dsn, shot: Option<std::sync::Arc<egui::ColorImage>>) {
@@ -653,7 +657,7 @@ fn send_feedback(app: &mut crate::app::App, ctx: &egui::Context, dsn: &'static D
         (f.text.clone(), f.log)
     };
     let log = with_log.then(|| app.log_text_job());
-    app.tasks.spawn(ctx, "bug-report", crate::tr("Bericht wird gesendet"), move |_, _| {
+    app.tasks.spawn(ctx, "bug-report", crate::tr("Sending report"), move |_, _| {
         let who = Who::current();
         let mut files: Vec<Attachment> = log.map(|job| log_file(&job(), &who)).into_iter().collect();
         files.extend(shot.and_then(|i| shot_file(&i)));
@@ -663,9 +667,9 @@ fn send_feedback(app: &mut crate::app::App, ctx: &egui::Context, dsn: &'static D
                 let mut f = lock(&FORM);
                 f.text.clear();
                 f.open = false;
-                app.toast(format!("{}  Bericht gesendet", icon::CHECK));
+                app.toast(format!("{}  Report sent", icon::CHECK));
             } else {
-                app.toast_err("Bericht konnte nicht gesendet werden");
+                app.toast_err("Report could not be sent");
             }
         }))
     });
@@ -693,14 +697,14 @@ fn feedback_frame(ctx: &egui::Context, app: &mut crate::app::App) {
     send_feedback(app, ctx, dsn, shot);
 }
 
-/// Settings → About Cutline: „Fehler melden“ with a free text; the click on „Senden“ is the
+/// Settings → About Cutline: „Report a bug“ with a free text; the click on „Send“ is the
 /// consent for this one report (also with the setting off)
 pub fn feedback_ui(ui: &mut egui::Ui, app: &mut crate::app::App) {
     if dsn().is_none() {
         return;
     }
     let mut f = lock(&FORM);
-    if ui.add(theme::secondary(format!("{}  Fehler melden", icon::BUG))).clicked() {
+    if ui.add(theme::secondary(format!("{}  Report a bug", icon::BUG))).clicked() {
         f.open = !f.open;
     }
     if !f.open {
@@ -708,10 +712,10 @@ pub fn feedback_ui(ui: &mut egui::Ui, app: &mut crate::app::App) {
     }
     let f = &mut *f;
     ui.add(egui::TextEdit::multiline(&mut f.text).id_salt("bug-report").desired_rows(4).desired_width(f32::INFINITY).char_limit(4000));
-    crate::widgets::toggle_row(ui, "Protokoll anhängen", &mut f.log);
-    crate::widgets::toggle_row(ui, "Bildschirmfoto anhängen", &mut f.shot);
+    crate::widgets::toggle_row(ui, "Attach log", &mut f.log);
+    crate::widgets::toggle_row(ui, "Attach screenshot", &mut f.shot);
     let busy = f.wait.is_some() || app.tasks.running("bug-report").is_some();
-    if ui.add_enabled(!busy && !f.text.trim().is_empty(), theme::primary("Senden")).clicked() {
+    if ui.add_enabled(!busy && !f.text.trim().is_empty(), theme::primary("Send")).clicked() {
         if f.shot {
             f.wait = Some(SHOT_FRAMES + SHOT_DELAY);
             app.settings_open = false;
@@ -786,8 +790,8 @@ mod tests {
         r.log = vec![
             r#"INFO  export: ffmpeg -y -i "C:\Users\Jörg Müller\Videos\Urlaub Mallorca\clip 1.mp4" -c:v libx264 /home/joerg/out.mp4"#.into(),
             r"WARN  import: \\NAS-01\Medien\Urlaub Mallorca\IMG_0001.MOV: Invalid data".into(),
-            "INFO  projekt: geöffnet in 12 ms: 3 Spuren · 9 Clips · 4 Medien · 61.0 s".into(),
-            "INFO  sitzung: Rechner JOERG-PC, Benutzer jörg müller".into(),
+            "INFO  project: opened in 12 ms: 3 tracks · 9 clips · 4 media · 61.0 s".into(),
+            "INFO  session: computer JOERG-PC, user jörg müller".into(),
         ];
         r.system = vec!["Grafik: NVIDIA GeForce GTX 1070 (Vulkan, DiscreteGpu, Treiber 566.36) · Skalierung: 1.00".into(), "Cutline 0.18.3 (Release, windows x86_64)\nSystem: Microsoft Windows [Version 10.0.26300.7171]\nFFmpeg: C:\\Users\\Jörg Müller\\ffmpeg\\ffmpeg.exe · ffmpeg version 8.0-full_build-www.gyan.dev Copyright".into()];
         r.source = "auto";
@@ -805,15 +809,15 @@ mod tests {
     fn scrubber_removes_paths_names_and_users() {
         let w = who();
         let cases = [
-            (r"Fehler in C:\Users\Jörg Müller\Videos\Urlaub Mallorca.cutline", "Fehler in <path>.cutline"),
+            (r"Error in C:\Users\Jörg Müller\Videos\Urlaub Mallorca.cutline", "Error in <path>.cutline"),
             ("open /home/joerg/Videos/Urlaub Mallorca/a b.mp4: denied", "open <path>.mp4: denied"),
-            (r"lesen: \\NAS-01\Medien\Ordner mit Leerzeichen\x.mov", "lesen: <path>.mov"),
+            (r"reading: \\NAS-01\Medien\Folder with spaces\x.mov", "reading: <path>.mov"),
             (r#"ffmpeg -i "C:\Users\Jörg Müller\Desktop\Ä Ö ü.wav" -f null -"#, r#"ffmpeg -i "<path>.wav" -f null -"#),
-            ("proxy: urlaub.mp4 fertig in 12 ms", "proxy: <file>.mp4 fertig in 12 ms"),
-            ("Projekt „Urlaub Mallorca“ gespeichert", "Projekt „***“ gespeichert"),
-            ("Rechner joerg-pc, Benutzer JÖRG MÜLLER", "Rechner <user>, Benutzer <user>"),
+            ("proxy: vacation.mp4 done in 12 ms", "proxy: <file>.mp4 done in 12 ms"),
+            ("Project “Urlaub Mallorca” saved", "Project “***” saved"),
+            ("computer joerg-pc, user JÖRG MÜLLER", "computer <user>, user <user>"),
             // bug (review of 0.19.0): a name inside a longer word garbled the text
-            ("joerg-pcs und Jörg Müllers Maximum", "joerg-pcs und Jörg Müllers Maximum"),
+            ("joerg-pcs and Jörg Müllers Maximum", "joerg-pcs and Jörg Müllers Maximum"),
             ("Authorization: Bearer abcdefghijklmnop", "Authorization: Bearer ***"),
         ];
         for (input, want) in cases {
@@ -877,7 +881,7 @@ mod tests {
         // same panic location again (render loop): not again
         assert_eq!(send(planted()), None);
         for i in 0..20 {
-            send(Report::error("export", &format!("Fehler {i}")));
+            send(Report::error("export", &format!("Error {i}")));
         }
         let got = f.got.lock().unwrap();
         assert_eq!(got.len(), MAX_AUTO);
@@ -893,26 +897,27 @@ mod tests {
     #[test]
     fn a_written_report_goes_out_scrubbed_with_its_files() {
         let f = fake(200);
-        let log = log_file("INFO  import: C:\\Users\\Jörg Müller\\Videos\\Urlaub Mallorca\\clip 1.mp4\nINFO  sitzung: Rechner JOERG-PC", &who());
+        let log = log_file("INFO  import: C:\\Users\\Jörg Müller\\Videos\\Urlaub Mallorca\\clip 1.mp4\nINFO  session: computer JOERG-PC", &who());
         let shot = Attachment { name: "window.png", mime: "image/png", data: vec![0x89, b'P', b'N', b'G', 0, 255, b'\n', 7] };
         let (log_len, shot_data) = (log.data.len(), shot.data.clone());
-        assert!(feedback(f.dsn, "Abspielen ruckelt bei C:\\Users\\Jörg Müller\\Videos\\Urlaub Mallorca.cutline", &[log, shot], &who()));
+        assert!(feedback(f.dsn, "Playback stutters at C:\\Users\\Jörg Müller\\Videos\\Urlaub Mallorca.cutline", &[log, shot], &who()));
         let got = f.got.lock().unwrap();
         assert_eq!(got.len(), 1);
         assert_clean(&got[0]);
         let raw = String::from_utf8_lossy(&got[0]);
         assert!(raw.contains(r#""level":"info""#) && raw.contains(r#""source":"feedback""#), "{raw}");
-        assert!(raw.contains("Abspielen ruckelt bei <path>.cutline"), "{raw}");
+        assert!(raw.contains("Playback stutters at <path>.cutline"), "{raw}");
         assert!(raw.contains(&format!(r#"{{"content_type":"text/plain","filename":"log.txt","length":{log_len},"type":"attachment"}}"#)), "{raw}");
         // the image bytes follow their item header unchanged
         let head = br#"{"content_type":"image/png","filename":"window.png","length":8,"type":"attachment"}"#;
         let at = got[0].windows(head.len()).position(|w| w == head).expect("image item") + head.len() + 1;
         assert_eq!(&got[0][at..at + 8], &shot_data[..]);
         // a long log keeps its newest part
-        let long = log_file(&format!("alt\n{}\nneu", "x".repeat(LOG_BYTES)), &who());
-        assert!(long.data.len() <= LOG_BYTES && long.data.ends_with(b"neu"));
+        let long = log_file(&format!("old\n{}\nnew", "x".repeat(LOG_BYTES)), &who());
+        assert!(long.data.len() <= LOG_BYTES && long.data.ends_with(b"new"));
     }
 
+    /// A log as version 0.18.x wrote it (old format on purpose: German targets and markers).
     const LOG: &str = "2026-11-25 10:00:00.000 +01:00 INFO  sitzung: beginnt pid=11 · Cutline 0.18.2 (Release)\n\
 2026-11-25 10:00:01.000 +01:00 INFO  sitzung: endet sauber pid=11\n\
 2026-11-26 09:00:00.000 +01:00 INFO  sitzung: beginnt pid=22 · Cutline 0.18.3 (Release)\n\
@@ -932,8 +937,17 @@ mod tests {
         assert_eq!(r.log.len(), 4, "{:?}", r.log);
         assert!(r.log[0].starts_with("INFO  sitzung: beginnt pid=22"));
         // a crash already sent at panic time is not sent again
-        let marked = format!("{LOG}2026-11-26 09:00:04.000 +01:00 INFO  sitzung: {SENT} pid=22\n");
+        let marked = format!("{LOG}2026-11-26 09:00:04.000 +01:00 INFO  sitzung: Fehlerbericht gesendet pid=22
+");
+        assert!(previous(&marked).unwrap().1, "marker of versions up to 0.19.3");
+        let marked = format!("{LOG}2026-11-26 09:00:04.000 +01:00 INFO  session: {SENT} pid=22
+");
         assert!(previous(&marked).unwrap().1);
+        // the same crash as this version writes it
+        let new = LOG.replace("sitzung: beginnt", "session: starts").replace("absturz: Absturz pid=22 im Thread „main“", "crash: Panic pid=22 in thread “main”");
+        let (r, sent) = previous(&new).unwrap();
+        assert!(!sent && r.panic && r.message == "index out of bounds" && r.thread.as_deref() == Some("main"), "{}", r.message);
+        assert!(r.backtrace.contains("cl_app::timeline::draw") && r.log.len() == 4);
         // killed without a panic: still a report, with the log tail
         let killed = LOG.split("2026-11-26 09:00:03").next().unwrap();
         let (r, _) = previous(killed).unwrap();

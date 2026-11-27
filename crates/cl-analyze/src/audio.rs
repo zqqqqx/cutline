@@ -129,10 +129,19 @@ pub fn offset(a: &[f32], b: &[f32], max_shift: f64) -> Option<(f64, f32)> {
     (best.1 > f32::MIN).then(|| (best.0 as f64 / ENV_RATE as f64, best.1))
 }
 
-/// Filler words (German/English), lowercase without punctuation
-pub const FILLERS: &[&str] = &[
-    "äh", "ähm", "öh", "öhm", "hm", "hmm", "mhm", "äähm", "uh", "um", "uhm", "erm", "ehm", "eh",
-];
+/// Filler words of the supported languages, lowercase without punctuation
+/// (`translations/<locale>/fillers.txt`)
+pub fn fillers() -> &'static [&'static str] {
+    static F: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    F.get_or_init(|| {
+        [include_str!("../../../translations/de_DE/fillers.txt"), include_str!("../../../translations/en_US/fillers.txt")]
+            .iter()
+            .flat_map(|s| s.lines())
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .collect()
+    })
+}
 
 pub fn is_filler(w: &str) -> bool {
     let w: String = w
@@ -140,7 +149,7 @@ pub fn is_filler(w: &str) -> bool {
         .filter(|c| c.is_alphabetic())
         .collect::<String>()
         .to_lowercase();
-    FILLERS.contains(&w.as_str())
+    fillers().contains(&w.as_str())
 }
 
 #[cfg(test)]
@@ -171,7 +180,7 @@ mod tests {
         let b = burst_track(1500, &[237, 487, 937, 1237]);
         let (o, _) = offset(&a, &b, 3.0).unwrap();
         assert!((o - 0.37).abs() < 0.02, "{o}");
-        assert!(is_filler("Ähm,") && is_filler("uh") && !is_filler("Hallo"));
+        assert!(is_filler("Ähm,") && is_filler("uh") && !is_filler("Hello"));
     }
 
     #[test]

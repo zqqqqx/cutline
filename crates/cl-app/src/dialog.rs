@@ -1,5 +1,5 @@
 //! One pattern for all dialogs: margin `PAD_DIALOG`, corners `R_WIN`, title on the left with a close cross,
-//! footer right-aligned `[Abbrechen] [main action]`.
+//! footer right-aligned `[Cancel] [main action]`.
 //! Question = [`modal`] (dims), tool window = [`window`] (stays open next to the work).
 
 use eframe::egui::{self, RichText};
@@ -79,7 +79,7 @@ pub fn title(ui: &mut egui::Ui, text: &str) -> bool {
     ui.horizontal(|ui| {
         ui.label(RichText::new(crate::tr(text)).strong().size(theme::FS_TITLE));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            close = theme::icon_button(ui, icon::X, "Schließen", true, false).clicked();
+            close = theme::icon_button(ui, icon::X, "Close", true, false).clicked();
         });
     });
     ui.add_space(8.0);
@@ -93,11 +93,11 @@ pub fn footer<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
         .inner
 }
 
-/// Standard footer `[Abbrechen] [main]`. Returns (main action, cancel).
+/// Standard footer `[Cancel] [main]`. Returns (main action, cancel).
 pub fn buttons(ui: &mut egui::Ui, main: theme::Btn, enabled: bool) -> (bool, bool) {
     footer(ui, |ui| {
         let m = ui.add_enabled(enabled, main).clicked();
-        (m, ui.add(theme::secondary("Abbrechen")).clicked())
+        (m, ui.add(theme::secondary("Cancel")).clicked())
     })
 }
 

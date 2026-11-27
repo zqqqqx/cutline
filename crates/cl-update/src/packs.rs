@@ -144,7 +144,7 @@ impl Source {
     /// Open a file: reader and – if known – length.
     pub fn open(&self, file: &str) -> Result<Stream, String> {
         if !valid_file(file) {
-            return Err(format!("Ungültiger Dateiname: {file}"));
+            return Err(format!("Invalid file name: {file}"));
         }
         match self {
             Source::Dir(d) => {
@@ -163,8 +163,8 @@ impl Source {
                         let len = r.header("Content-Length").and_then(|v| v.parse().ok());
                         Ok((Box::new(r.into_reader()), len))
                     }
-                    Err(ureq::Error::Status(code, _)) => Err(format!("GitHub antwortet mit {code}")),
-                    Err(e) => Err(format!("Keine Verbindung zu GitHub ({e})")),
+                    Err(ureq::Error::Status(code, _)) => Err(format!("GitHub responds with {code}")),
+                    Err(e) => Err(format!("Can't reach GitHub ({e})")),
                 }
             }
         }
@@ -177,7 +177,7 @@ pub fn fetch_index(src: &Source) -> Result<Vec<IndexPack>, IndexError> {
     let mut s = String::new();
     r.take(MAX_INDEX + 1).read_to_string(&mut s).map_err(|e| IndexError::Unreachable(e.to_string()))?;
     if s.len() as u64 > MAX_INDEX {
-        return Err(IndexError::Broken("Liste zu groß".into()));
+        return Err(IndexError::Broken("List too large".into()));
     }
     parse_index(&s)
 }
@@ -194,7 +194,7 @@ pub fn download_pack(
     let limit = byte_limit(p.size);
     let (mut r, len) = src.open(&p.file)?;
     if len.is_some_and(|l| l > limit) {
-        return Err("Paket ist größer als angegeben".into());
+        return Err("Pack is larger than stated".into());
     }
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let part = dir.join(format!("{}-{}.part", std::process::id(), p.file));
@@ -205,7 +205,7 @@ pub fn download_pack(
     let res = (|| -> Result<(), String> {
         loop {
             if cancel.load(Ordering::Relaxed) {
-                return Err("Abgebrochen".into());
+                return Err("Canceled".into());
             }
             let n = r.read(&mut buf).map_err(|e| e.to_string())?;
             if n == 0 {
@@ -213,7 +213,7 @@ pub fn download_pack(
             }
             done += n as u64;
             if done > limit {
-                return Err("Paket ist größer als angegeben".into());
+                return Err("Pack is larger than stated".into());
             }
             f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
             hasher.update(&buf[..n]);
@@ -222,7 +222,7 @@ pub fn download_pack(
         f.flush().map_err(|e| e.to_string())?;
         let got: String = hasher.finalize_reset().iter().map(|b| format!("{b:02x}")).collect();
         if !got.eq_ignore_ascii_case(&p.sha256) {
-            return Err("Prüfsumme stimmt nicht".into());
+            return Err("Checksum does not match".into());
         }
         Ok(())
     })();
@@ -266,7 +266,7 @@ mod tests {
     #[test]
     fn index_is_read_leniently_but_safely() {
         let mut extra = entry("a.b", "1.0.0");
-        extra["neu"] = "egal".into();
+        extra["new"] = "egal".into();
         let mut minimal = entry("c.d", "2.0");
         for k in ["name", "description", "counts", "license"] {
             minimal.as_object_mut().unwrap().remove(k);
@@ -274,7 +274,7 @@ mod tests {
         let mut no_sha = entry("e.f", "1.0.0");
         no_sha.as_object_mut().unwrap().remove("sha256");
         let mut bad = vec![no_sha];
-        for (k, v) in [("file", "../x.zip"), ("file", "https://x/y.zip"), ("file", "a/b.zip"), ("file", r"a\b.zip"), ("file", ""), ("sha256", "xyz"), ("version", "neu"), ("id", "../x")] {
+        for (k, v) in [("file", "../x.zip"), ("file", "https://x/y.zip"), ("file", "a/b.zip"), ("file", r"a\b.zip"), ("file", ""), ("sha256", "xyz"), ("version", "new"), ("id", "../x")] {
             let mut e = entry("g.h", "1.0.0");
             e[k] = v.into();
             bad.push(e);
@@ -312,9 +312,9 @@ mod tests {
     #[test]
     fn plan_lists_missing_and_updates_own_packs() {
         let mut list = parse_index(&index(vec![entry("z.z", "1.0.0"), entry("a.a", "1.2.0"), entry("m.m", "2.0.0"), entry("b.b", "1.0.0")])).unwrap();
-        list[0].name.insert("de".into(), "Anfang".into());
-        list.push(IndexPack { api: 2, id: "neu.api".into(), ..list[0].clone() });
-        list.push(IndexPack { api: 0, id: "alt.api".into(), ..list[0].clone() });
+        list[0].name.insert("de".into(), "Start".into());
+        list.push(IndexPack { api: 2, id: "new.api".into(), ..list[0].clone() });
+        list.push(IndexPack { api: 0, id: "old.api".into(), ..list[0].clone() });
         let inst = [
             Installed { id: "a.a", version: "1.1.9", own: true },
             Installed { id: "m.m", version: "2.0.0", own: true },
@@ -322,9 +322,9 @@ mod tests {
         ];
         let (avail, upd) = plan(&list, &inst, 1, "de");
         let ids: Vec<_> = avail.iter().map(|p| p.id.as_str()).collect();
-        assert_eq!(ids, ["z.z", "neu.api"], "by name; too old API missing");
+        assert_eq!(ids, ["z.z", "new.api"], "by name; too old API missing");
         assert_eq!(upd.keys().collect::<Vec<_>>(), ["a.a"], "equally new and bundled: nothing");
-        let (_, upd) = plan(&list, &[Installed { id: "a.a", version: "kaputt", own: true }], 1, "de");
+        let (_, upd) = plan(&list, &[Installed { id: "a.a", version: "broken", own: true }], 1, "de");
         assert!(upd.is_empty());
     }
 
@@ -360,35 +360,35 @@ mod tests {
         std::fs::remove_file(f).unwrap();
         // wrong checksum
         let mut p = pack("p.zip", &data);
-        p.sha256 = crate::sha256_hex(b"anders");
-        assert!(download_pack(&s, &p, tmp.path(), |_, _| {}, &no).unwrap_err().contains("Prüfsumme"));
+        p.sha256 = crate::sha256_hex(b"different");
+        assert!(download_pack(&s, &p, tmp.path(), |_, _| {}, &no).unwrap_err().contains("hecksum"));
         assert!(empty(tmp.path()));
         // larger than stated
         let p = pack("p.zip", &data[..1000]);
-        assert!(download_pack(&s, &p, tmp.path(), |_, _| {}, &no).unwrap_err().contains("größer"));
+        assert!(download_pack(&s, &p, tmp.path(), |_, _| {}, &no).unwrap_err().contains("larger"));
         assert!(empty(tmp.path()));
         // cancel in the middle of the download
         let cancel = AtomicBool::new(false);
         let r = download_pack(&s, &pack("p.zip", &data), tmp.path(), |_, _| cancel.store(true, Ordering::Relaxed), &cancel);
-        assert_eq!(r.unwrap_err(), "Abgebrochen");
+        assert_eq!(r.unwrap_err(), "Canceled");
         assert!(empty(tmp.path()));
         // a file name from the list must not lead out of the folder
         assert!(download_pack(&s, &pack("../p.zip", &data), tmp.path(), |_, _| {}, &no).is_err());
         // unreachable
-        assert!(matches!(fetch_index(&Source::Dir(src.path().join("fehlt"))), Err(IndexError::Unreachable(_))));
+        assert!(matches!(fetch_index(&Source::Dir(src.path().join("missing"))), Err(IndexError::Unreachable(_))));
     }
 
     #[test]
     fn leftover_parts_of_dead_instances_are_removed() {
         let d = tempfile::tempdir().unwrap();
-        for n in ["1-a.zip.part", "2-b.zip.part", "x-c.zip.part", "3-fremd.txt"] {
+        for n in ["1-a.zip.part", "2-b.zip.part", "x-c.zip.part", "3-other.txt"] {
             std::fs::write(d.path().join(n), b"x").unwrap();
         }
         cleanup_parts(d.path(), |pid| pid == 2);
         let mut left: Vec<_> = std::fs::read_dir(d.path()).unwrap().flatten().map(|e| e.file_name().into_string().unwrap()).collect();
         left.sort();
-        assert_eq!(left, ["2-b.zip.part", "3-fremd.txt"]);
-        cleanup_parts(&d.path().join("fehlt"), |_| false);
+        assert_eq!(left, ["2-b.zip.part", "3-other.txt"]);
+        cleanup_parts(&d.path().join("missing"), |_| false);
     }
 
     /// Ignored: the built package list matches its ZIPs (size, SHA-256).

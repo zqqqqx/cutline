@@ -1,26 +1,54 @@
 //! Runtime translation of the UI texts.
 //!
-//! The UI is written in German; `tr()` looks up every visible text in
-//! `locales/ui.en.tsv` (`german<TAB>english`). Placeholders `{}` stand for
+//! The UI is written in English; `tr()` looks up every visible text in
+//! `translations/<locale>/ui.tsv` (`english<TAB>translation`). Placeholders `{}` stand for
 //! arbitrary values (numbers, names) and are carried over in the same order;
-//! `{1}`, `{2}` … in the English text allow a different order.
+//! `{1}`, `{2}` … in the translation allow a different order.
 //! Icons from the Private Use Area at the start/end stay unchanged.
+//! Two texts that are the same in English but not in another language carry a context after
+//! `~` in the code („Track“ the noun, „Track~verb“); the context is never shown.
 
 use crate::Lang;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-const EN_TSV: &str = include_str!("../locales/ui.en.tsv");
+const DE_TSV: &str = include_str!("../../../translations/de_DE/ui.tsv");
+/// The dictionary of versions up to 0.19.3 (`german<TAB>english`), when the code was German:
+/// only for converting what those versions stored or what packs made for them say
+const OLD_TSV: &str = include_str!("../../../translations/legacy/ui.de-en.tsv");
 
+/// Key names in shortcuts (English, German), in the order of `translations/de_DE/keys.tsv`
+fn keys() -> &'static Vec<(&'static str, &'static str)> {
+    static K: OnceLock<Vec<(&'static str, &'static str)>> = OnceLock::new();
+    const TAB: char = 9 as char;
+    K.get_or_init(|| include_str!("../../../translations/de_DE/keys.tsv").lines().filter(|l| !l.starts_with('#')).filter_map(|l| l.split_once(TAB)).collect())
+}
+
+/// A key name as typed or stored in any interface language, in English („Strg“ → „Ctrl“);
+/// other names come back unchanged
+pub fn key_english(name: &str) -> String {
+    keys().iter().find(|(_, de)| de.eq_ignore_ascii_case(name)).map_or_else(|| name.to_string(), |(en, _)| en.to_string())
+}
+
+/// English for a whole German text of the interface up to version 0.19.3
+pub fn legacy_english(s: &str) -> Option<&'static str> {
+    static D: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+    const TAB: char = 9 as char;
+    D.get_or_init(|| OLD_TSV.lines().filter(|l| !l.starts_with('#')).filter_map(|l| l.split_once(TAB)).filter(|(de, _)| !de.contains("{}")).collect())
+        .get(s)
+        .copied()
+}
+
+/// 0 = English (the language of the code), 1 = German, 2 = pseudo
 static LANG: AtomicU8 = AtomicU8::new(0);
 
 /// Set the language for `tr()` (called by `I18n::new`/`set_lang`).
 pub fn set_ui_lang(lang: Lang) {
     LANG.store(
         match lang {
-            Lang::De => 0,
-            Lang::En => 1,
+            Lang::En => 0,
+            Lang::De => 1,
             Lang::Pseudo => 2,
         },
         Ordering::Relaxed,
@@ -32,21 +60,21 @@ pub fn set_ui_lang(lang: Lang) {
 
 pub fn ui_lang() -> Lang {
     match LANG.load(Ordering::Relaxed) {
-        1 => Lang::En,
+        1 => Lang::De,
         2 => Lang::Pseudo,
-        _ => Lang::De,
+        _ => Lang::En,
     }
 }
 
 struct Dict {
     exact: HashMap<&'static str, &'static str>,
-    /// (parts between the placeholders, English template)
+    /// (parts between the placeholders, translated template)
     templates: Vec<(Vec<&'static str>, &'static str)>,
 }
 
 fn dict() -> &'static Dict {
     static D: OnceLock<Dict> = OnceLock::new();
-    D.get_or_init(|| parse(EN_TSV))
+    D.get_or_init(|| parse(DE_TSV))
 }
 
 fn parse(src: &'static str) -> Dict {
@@ -56,13 +84,13 @@ fn parse(src: &'static str) -> Dict {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let Some((de, en)) = line.split_once('\t') else {
+        let Some((en, to)) = line.split_once('\t') else {
             continue;
         };
-        if de.contains("{}") {
-            templates.push((de.split("{}").collect(), en));
+        if en.contains("{}") {
+            templates.push((en.split("{}").collect(), to));
         } else {
-            exact.insert(de, en);
+            exact.insert(en, to);
         }
     }
     // longer (more specific) templates first
@@ -84,10 +112,33 @@ fn is_icon(c: char) -> bool {
 pub fn tr(s: impl AsRef<str>) -> String {
     let s = s.as_ref();
     match ui_lang() {
-        Lang::De => s.to_string(),
-        Lang::En => translate(s),
-        Lang::Pseudo => crate::pseudo(&translate(s)),
+        Lang::En => plain(s),
+        Lang::De => translate(s),
+        Lang::Pseudo => crate::pseudo(&plain(s)),
     }
+}
+
+/// A text in a given language, whatever the UI language is (search finds commands by both names)
+pub fn tr_in(lang: Lang, s: &str) -> String {
+    match lang {
+        Lang::De => lookup(s),
+        _ => plain(s),
+    }
+}
+
+/// English text as shown: without the contexts (`Track~verb` → `Track`)
+fn plain(s: &str) -> String {
+    if !s.contains('~') {
+        return s.to_string();
+    }
+    static CTX: OnceLock<Vec<(&'static str, &'static str)>> = OnceLock::new();
+    let ctx = CTX.get_or_init(|| {
+        let mut v: Vec<(&str, &str)> = entries().into_iter().filter_map(|(en, _)| Some((en, en.split_once('~')?.0))).collect();
+        // longer first, so a context that starts like another one is not cut apart
+        v.sort_by_key(|(k, _)| std::cmp::Reverse(k.len()));
+        v
+    });
+    ctx.iter().fold(s.to_string(), |s, (k, short)| s.replace(k, short))
 }
 
 fn translate(s: &str) -> String {
@@ -125,12 +176,12 @@ fn lookup(s: &str) -> String {
     }
     let (pre, core, post) = (&s[..start], &s[start..end], &s[end..]);
     let d = dict();
-    if let Some(en) = d.exact.get(core) {
-        return format!("{pre}{en}{post}");
+    if let Some(to) = d.exact.get(core) {
+        return format!("{pre}{to}{post}");
     }
-    for (parts, en) in &d.templates {
+    for (parts, to) in &d.templates {
         if let Some(vals) = match_template(core, parts) {
-            return format!("{pre}{}{post}", fill(en, &vals));
+            return format!("{pre}{}{post}", fill(to, &vals));
         }
     }
     // multi-line texts line by line
@@ -153,27 +204,18 @@ fn lookup(s: &str) -> String {
         }
     }
     // keyboard shortcuts
-    const KEYS: [(&str, &str); 8] = [
-        ("Strg", "Ctrl"),
-        ("Umschalt", "Shift"),
-        ("Entf", "Del"),
-        ("Leertaste", "Space"),
-        ("Pos1", "Home"),
-        ("Ende", "End"),
-        ("Mausrad", "wheel"),
-        ("Klick", "click"),
-    ];
-    if KEYS[..4].iter().any(|(de, _)| core.contains(de)) || core == "Pos1" {
+    let keys = keys();
+    if keys.iter().take(4).any(|(en, _)| core.contains(en)) || core == "Home" {
         let mut out = core.to_string();
-        for (de, en) in KEYS {
-            out = out.replace(de, en);
+        for (en, de) in keys {
+            out = out.replace(en, de);
         }
         return format!("{pre}{out}{post}");
     }
     if cfg!(debug_assertions) {
         report_missing(core);
     }
-    s.to_string()
+    plain(s)
 }
 
 /// Matches `s` against a template with placeholders; returns the inserted values.
@@ -208,10 +250,10 @@ fn match_template<'a>(s: &'a str, parts: &[&str]) -> Option<Vec<&'a str>> {
     Some(vals)
 }
 
-fn fill(en: &str, vals: &[&str]) -> String {
+fn fill(to: &str, vals: &[&str]) -> String {
     let mut out = String::new();
     let mut next = 0;
-    let mut rest = en;
+    let mut rest = to;
     while let Some(i) = rest.find('{') {
         out.push_str(&rest[..i]);
         let after = &rest[i + 1..];
@@ -255,9 +297,9 @@ fn report_missing(s: &str) {
     }
 }
 
-/// All German keys (for tests).
+/// All pairs (English text in the code, German) of the dictionary.
 pub fn entries() -> Vec<(&'static str, &'static str)> {
-    EN_TSV
+    DE_TSV
         .lines()
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .filter_map(|l| l.split_once('\t'))
@@ -270,47 +312,62 @@ mod tests {
 
     #[test]
     fn templates_and_icons() {
-        assert_eq!(translate("Abbrechen"), "Cancel");
-        assert_eq!(translate("\u{e0f0}  Abbrechen"), "\u{e0f0}  Cancel");
+        assert_eq!(translate("Cancel"), "Abbrechen");
+        assert_eq!(translate("\u{e0f0}  Cancel"), "\u{e0f0}  Abbrechen");
         assert_eq!(fill("{2} of {1}", &["a", "b"]), "b of a");
-        assert_eq!(
-            match_template("3 Clips gelöscht", &["", " Clips gelöscht"]),
-            Some(vec!["3"])
-        );
-        assert_eq!(translate("unbekannter Text"), "unbekannter Text");
+        assert_eq!(match_template("3 clips deleted", &["", " clips deleted"]), Some(vec!["3"]));
+        assert_eq!(translate("unknown text"), "unknown text");
+    }
+
+    /// The same English word with two German ones: the context picks the German, and is not shown
+    #[test]
+    fn contexts_pick_the_german_and_stay_hidden() {
+        assert_eq!((translate("Track"), translate("Track~verb")), ("Spur".to_string(), "Verfolgen".to_string()));
+        assert_eq!(plain("Track~verb"), "Track");
+        assert_eq!(plain("\u{e0f0}  Track~verb (T)"), "\u{e0f0}  Track (T)");
+        assert_eq!(plain("None~without · None~m"), "None · None");
+        // a tilde that is no context of the dictionary stays
+        assert_eq!(plain("a~b ~ Track~other"), "a~b ~ Track~other");
+        // every context of the dictionary is hidden, also on a text without a German line
+        for (en, _) in entries().into_iter().filter(|(en, _)| en.contains('~')) {
+            assert!(!plain(en).contains('~'), "{en}");
+            assert!(!translate(&format!("xyzzy {en}")).contains('~'), "{en}");
+        }
     }
 
     #[test]
     fn dictionary_is_clean() {
         let mut seen = std::collections::HashSet::new();
-        for (de, en) in entries() {
-            assert!(seen.insert(de), "doppelt: {de}");
-            assert!(!en.trim().is_empty(), "empty: {de}");
-            assert_eq!(
-                de.matches("{}").count(),
-                en.matches('{').count(),
-                "Platzhalter: {de}"
-            );
+        let mut german = std::collections::HashMap::new();
+        for (en, de) in entries() {
+            assert!(seen.insert(en), "twice: {en}");
+            assert!(!de.trim().is_empty(), "empty: {en}");
+            assert_eq!(en.matches("{}").count(), de.matches('{').count(), "placeholders: {en}");
             // one spelling: American (color, gray, canceled …)
             let low = en.to_lowercase();
             for brit in ["colour", "grey", "centre", "cancelled", "favourite", "behaviour", "licence"] {
-                assert!(!low.contains(brit), "britisch „{brit}“: {en}");
+                assert!(!low.contains(brit), "British „{brit}“: {en}");
+            }
+            // without its context an English text has one German wording only
+            let short = en.split_once('~').map_or(en, |p| p.0);
+            if !en.contains('~') {
+                assert!(german.insert(short, de).is_none(), "{en}");
             }
         }
     }
 
     #[test]
     fn singular_counts_translate() {
-        assert_eq!(translate("1 Spur"), "1 track");
-        assert_eq!(translate("1 Highlight als Marker gesetzt"), "1 highlight added as a marker");
-        assert_eq!(translate("1 Pause entfernt (2.5 s)"), "1 pause removed (2.5 s)");
-        assert_eq!(translate("vor 3 Min."), "3 min ago");
-        // status line: „Gespeichert “ + an already translated time
-        assert_eq!(translate(&format!("\u{e0f0} Gespeichert {}", translate("vor 1 Min."))), "\u{e0f0} Saved 1 min ago");
-        assert_eq!(translate(&format!("Gespeichert {}", translate("gerade eben"))), "Saved just now");
+        assert_eq!(translate("1 track"), "1 Spur");
+        assert_eq!(translate("1 highlight added as a marker"), "1 Highlight als Marker gesetzt");
+        assert_eq!(translate("1 pause removed (2.5 s)"), "1 Pause entfernt (2.5 s)");
+        assert_eq!(translate("3 min ago"), "vor 3 Min.");
+        // status line: „Saved “ + an already translated time
+        assert_eq!(translate(&format!("\u{e0f0} Saved {}", translate("1 min ago"))), "\u{e0f0} Gespeichert vor 1 Min.");
+        assert_eq!(translate(&format!("Saved {}", translate("just now"))), "Gespeichert gerade eben");
         assert_eq!(
-            translate("1 Inhalt fehlt: Würfel – Paket in Einstellungen → Inhalte einschalten"),
-            "1 item is missing: Würfel – turn on its pack in Settings → Content"
+            translate("1 item is missing: Würfel – turn on its pack in Settings → Content"),
+            "1 Inhalt fehlt: Würfel – Paket in Einstellungen → Inhalte einschalten"
         );
     }
 
@@ -320,7 +377,7 @@ mod tests {
         for s in ["", " ", "\u{e0f0}", "\u{e0f0}  ", "✓", "()", " ()", "a ()", "(", ")", " · ", "·", "\n", "🎬", "مرحبا", "Ä (", "x (y)", "{}", "{", "}", "{1}", "%s"] {
             assert_eq!(translate(s), s);
         }
-        for (s, want) in [("Abbrechen\n", "Cancel\n"), ("\nAbbrechen", "\nCancel"), ("Abbrechen · Abbrechen", "Cancel · Cancel"), ("Strg+Entf", "Ctrl+Del"), ("Pos1", "Home")] {
+        for (s, want) in [("Cancel\n", "Abbrechen\n"), ("\nCancel", "\nAbbrechen"), ("Cancel · Cancel", "Abbrechen · Abbrechen"), ("Ctrl+Del", "Strg+Entf"), ("Home", "Pos1")] {
             assert_eq!(translate(s), want, "{s:?}");
         }
         // leading/trailing icons and spaces come back unchanged; text without letters stays as it is
@@ -333,7 +390,7 @@ mod tests {
             assert!(s.chars().any(char::is_alphabetic) || out == s, "{s:?} → {out:?}");
         };
         // random strings from dictionary parts, multibyte characters and special characters
-        let parts: Vec<&str> = entries().iter().take(400).map(|(de, _)| *de).collect();
+        let parts: Vec<&str> = entries().iter().take(400).map(|(en, _)| *en).collect();
         let extra = ["🎬", "ä", " ", "  ", "\n", " · ", " (", ")", "{}", "\u{e0f0}", "3", "‰", "\u{202e}"];
         let mut x: u64 = 0x2545_f491_4f6c_dd1d;
         for _ in 0..3000 {
@@ -357,8 +414,8 @@ mod tests {
 
     #[test]
     fn templates_with_multibyte_values() {
-        assert_eq!(match_template("🎬 Clips gelöscht", &["", " Clips gelöscht"]), Some(vec!["🎬"]));
-        assert_eq!(match_template(" Clips gelöscht", &["", " Clips gelöscht"]), None, "empty value");
+        assert_eq!(match_template("🎬 clips deleted", &["", " clips deleted"]), Some(vec!["🎬"]));
+        assert_eq!(match_template(" clips deleted", &["", " clips deleted"]), None, "empty value");
         assert_eq!(match_template("x", &["xy", "z"]), None);
         assert_eq!(match_template("aXbYc", &["a", "b", "c"]), Some(vec!["X", "Y"]));
         assert_eq!(match_template("abc", &["a", "", "c"]), None);
@@ -366,7 +423,7 @@ mod tests {
         assert_eq!(fill("{0}", &["a"]), "a", "0 counts like 1");
         assert_eq!(fill("", &["a"]), "");
         assert_eq!(translate("\u{e0f0}"), "\u{e0f0}");
-        assert_eq!(translate("  Abbrechen  "), "  Cancel  ");
+        assert_eq!(translate("  Cancel  "), "  Abbrechen  ");
         assert_eq!(translate("12:30"), "12:30");
     }
 }

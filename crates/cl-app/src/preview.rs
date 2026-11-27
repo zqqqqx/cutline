@@ -28,7 +28,7 @@ pub enum Job {
         /// Source frame rate if the frame should come from a reverse window (see
         /// `player::reverse_window`); otherwise one FFmpeg per frame
         window: Option<Rational>,
-        /// Stand: source of the scrub window around the playhead (steps and drags from memory);
+        /// Stopped: source of the scrub window around the playhead (steps and drags from memory);
         /// the job's own file and size give the exact frame
         scrub: Option<ScrubSpec>,
     },
@@ -134,7 +134,7 @@ pub fn shader_strip(s: &ShaderTile, pair: &[u8], w: u32, h: u32, frames: u32) ->
     let src = std::fs::read_to_string(&s.file).map_err(|e| e.to_string())?;
     let row = (w * 4) as usize;
     if pair.len() < row * 2 * h as usize {
-        return Err("Bildpaar unvollständig".into());
+        return Err(crate::tr("frame pair incomplete"));
     }
     let (mut a, mut b) = (Vec::with_capacity(row * h as usize), Vec::with_capacity(row * h as usize));
     for line in pair.chunks_exact(row * 2).take(h as usize) {
@@ -644,7 +644,7 @@ fn scrub_next(idx: i64, dir: i64, held: Option<(i64, i64)>, n: i64, end: Option<
     }
 }
 
-/// Scrub window of a clip in Stand: consecutive frames around the playhead from one FFmpeg, answered
+/// Scrub window of a clip while stopped: consecutive frames around the playhead from one FFmpeg, answered
 /// by source frame index (like the reverse window). Holds one contiguous run of at most `cap` frames.
 struct ScrubWin {
     /// File, size, frame rate, effect graph: if one changes, nothing is valid any more
@@ -944,7 +944,7 @@ fn frame_dispatcher(
                         }
                         Some(Done::Frame { clip, key, frame, exact: true })
                     } else if let Some(sw) = scrub {
-                        // Stand with scrub window: steps and drags from memory, the exact frame (job's own
+                        // Stopped with scrub window: steps and drags from memory, the exact frame (job's own
                         // file and size) as a single decode beside it
                         let spec = (sw.path.clone(), sw.w, sw.h, sw.fps, sw.graph.clone());
                         let wn = scrubs.entry(clip).or_insert_with(|| ScrubWin::new(spec.clone()));
@@ -1019,7 +1019,7 @@ fn frame_dispatcher(
                     wn.took = ms / 1e3;
                     if crate::app::perf() {
                         let n = res.as_ref().map_or(0, Vec::len);
-                        crate::applog::perf_line!("perf: rückwärts-fenster {n} Bilder {ms:.0} ms");
+                        crate::applog::perf_line!("perf: reverse window {n} frames {ms:.0} ms");
                     }
                     for (k, f) in res.into_iter().flatten() {
                         wn.frames.insert(start + k as i64, f);
@@ -1098,11 +1098,11 @@ fn frame_dispatcher(
                     Ok((frame, info)) => {
                         if crate::app::perf() {
                             crate::applog::perf_line!(
-                                "perf: einzelbild {ms:.0} ms {} {}{}{}",
+                                "perf: single frame {ms:.0} ms {} {}{}{}",
                                 if proxy { "Proxy" } else { "Original" },
                                 if info.hw { "HW" } else { "SW" },
                                 info.cpu.map(|c| format!(" cpu {} ms", c.as_millis())).unwrap_or_default(),
-                                if current { "" } else { " (veraltet)" }
+                                if current { "" } else { " (stale)" }
                             );
                         }
                         cache.put(key, frame.clone());
@@ -1135,7 +1135,7 @@ fn perf_discarded() {
     #[cfg(test)]
     STILL_JOBS[1].fetch_add(1, Ordering::Relaxed);
     if crate::app::perf() {
-        crate::applog::perf_line!("perf: einzelbild verworfen (veraltet)");
+        crate::applog::perf_line!("perf: single frame dropped (stale)");
     }
 }
 
@@ -1438,7 +1438,7 @@ impl Decoder {
         }
     }
 
-    /// Stand: the UI asks for the same single frame again on a later tick (the playhead rests on it)
+    /// Stopped: the UI asks for the same single frame again on a later tick (the playhead rests on it)
     pub fn rest(&self, clip: ClipId, key: u64) {
         let _ = self.tx.send(Msg::Rest { clip, key });
     }
@@ -1524,7 +1524,7 @@ fn newest_per_layer(jobs: Vec<OpenJob>) -> Vec<OpenJob> {
 /// 200–300 ms. Single frames stay fully in software (click → frame 0.2–0.4 s slower with D3D11VA).
 /// Decoding of the stream: hardware per [`stream_hw`]; up to 1080p it starts in software (first
 /// frame 0.3–0.8 s sooner, the hardware takes over after about 1 s). Larger sources go straight to
-/// hardware: 4K in software alongside slowed both (measured PL_gross: 38–53 instead of 60 fps).
+/// hardware: 4K in software alongside slowed both (measured PL_large: 38–53 instead of 60 fps).
 pub fn stream_decode(m: &cl_core::MediaRef, path: &std::path::Path) -> cl_media::Hw {
     match stream_hw(m, path) {
         false => cl_media::Hw::Off,
@@ -1698,7 +1698,7 @@ mod tests {
         Still { key, path: PathBuf::from(path), at: Time::from_secs_f64(at), w: 4, h: 4, graph: None }
     }
 
-    /// Stand: a running job finishes, only the newest further job waits; a jump or another file
+    /// Stopped: a running job finishes, only the newest further job waits; a jump or another file
     /// kills the running one.
     #[test]
     fn newest_job_waits_and_jumps_replace() {
@@ -1944,7 +1944,7 @@ mod tests {
         }
     }
 
-    /// Stepping in Stand with the window at the still size: the first position (a jump) is a single
+    /// Stepping while stopped with the window at the still size: the first position (a jump) is a single
     /// exact decode; then 60 single steps forward come from ONE window decode, exact and in order,
     /// without any single decode; a reversal extends the window with one more decode; a far jump drops the window and
     /// answers with the single exact frame first.
@@ -2420,7 +2420,7 @@ mod tests {
                 times.push(done.duration_since(t).as_millis());
             }
             println!(
-                "{}: letztes Bild nach {:?} ms, veraltete gezeigt: {shown_stale}",
+                "{}: last frame after {:?} ms, stale shown: {shown_stale}",
                 path.file_name().unwrap().to_string_lossy(),
                 times
             );
@@ -2452,7 +2452,7 @@ mod tests {
             println!("{label}: Median {} ms, max {} ms ({ms:?})", ms[5], ms[9]);
             ms[5]
         };
-        let base = run("ohne Proxy-Bau");
+        let base = run("without proxy build");
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("p.mp4");
         let spec = crate::proxy::proxy_spec(&m, 540, Rational::new(30, 1));
@@ -2462,10 +2462,10 @@ mod tests {
             std::thread::spawn(move || crate::proxy::build(&m, &out, &spec, &|_| {}, &cancel))
         };
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let during = run("während Proxy-Bau");
+        let during = run("during proxy build");
         cancel.store(true, Ordering::Relaxed);
         let _ = builder.join();
-        println!("Verhältnis {:.2}", during as f64 / base.max(1) as f64);
+        println!("ratio {:.2}", during as f64 / base.max(1) as f64);
     }
 
     #[test]

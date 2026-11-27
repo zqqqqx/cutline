@@ -30,7 +30,7 @@ pub fn chapter_time(t: Time) -> String {
 
 /// Chapters (start, title) as embedded in the export.
 fn chapter_list(markers: &[Marker]) -> Vec<(Time, String)> {
-    cl_export::chapter_list(markers, Time::ZERO, Time(i64::MAX), &crate::tr("Kapitel"))
+    cl_export::chapter_list(markers, Time::ZERO, Time(i64::MAX), &crate::tr("Chapter"))
 }
 
 /// Chapter list for the video description.
@@ -44,21 +44,21 @@ pub fn chapters(markers: &[Marker]) -> String {
 
 /// Does the list break YouTube's rules (at least 3 chapters, each at least 10 s)?
 pub fn chapter_issue(markers: &[Marker], start: Time, end: Time) -> Option<String> {
-    let v = cl_export::chapter_list(markers, start, end, &crate::tr("Kapitel"));
+    let v = cl_export::chapter_list(markers, start, end, &crate::tr("Chapter"));
     v.iter().enumerate().find_map(|(i, (t, name))| {
         let stop = v.get(i + 1).map_or(end - start, |n| n.0);
         let secs = (stop - *t).as_secs_f64();
-        (secs < 10.0).then(|| format!("Kapitel „{name}“ ist nur {} s lang – YouTube zeigt Kapitel erst ab 10 s an", secs.max(0.0).floor()))
+        (secs < 10.0).then(|| format!("Chapter “{name}” is only {} s long – YouTube only shows chapters of 10 s or more", secs.max(0.0).floor()))
     })
 }
 
-/// Warning line from [`chapter_issue`] with „Nicht mehr anzeigen“; `true` if it was clicked.
+/// Warning line from [`chapter_issue`] with „Don't show again“; `true` if it was clicked.
 pub fn chapter_warning(ui: &mut egui::Ui, w: &str) -> bool {
     ui.horizontal_wrapped(|ui| {
         ui.label(RichText::new(format!("{}  {}", icon::WARNING, crate::tr(w))).small().color(theme::WARN_TEXT()));
         // small, dimmed link: hover highlights and underlines
         let g = ui.painter().layout_no_wrap(
-            crate::tr("Nicht mehr anzeigen"),
+            crate::tr("Don't show again"),
             egui::TextStyle::Small.resolve(ui.style()),
             Color32::PLACEHOLDER,
         );
@@ -144,7 +144,7 @@ impl App {
             color: 0,
         });
         self.apply(EditOp::SetMarkers { markers: ms });
-        // name it right away; if the name stays empty, it is called „Kapitel“ (list and export)
+        // name it right away; if the name stays empty, it is called „Chapter“ (list and export)
         self.marker_draft = None;
         self.marker_edit = Some(id);
     }
@@ -257,7 +257,7 @@ impl App {
         }
         .is_some();
         if ok && extra > 0 {
-            self.toast(theme::count_text(extra, "{} Clip auf anderen Spuren mit entfernt (Alles mitziehen)", "{} Clips auf anderen Spuren mit entfernt (Alles mitziehen)"));
+            self.toast(theme::count_text(extra, "{} clip on other tracks removed as well (move everything)", "{} clips on other tracks removed as well (move everything)"));
         }
         ok
     }
@@ -285,7 +285,7 @@ impl App {
                 .collect(),
         };
         if ranges.is_empty() {
-            self.toast("Keine Lücken");
+            self.toast("No gaps");
         } else {
             // a single track: only it closes up (otherwise content of other tracks would be lost)
             let all = track.is_none() && self.project.settings.ripple_all_tracks;
@@ -320,11 +320,11 @@ impl App {
             .show(ctx, |ui| {
                 ui.set_width(300.0);
                 // Cross like Esc: takes over the draft
-                close |= crate::dialog::title(ui, "Marker");
+                close |= crate::dialog::title(ui, "Markers");
                 theme::row(ui, "Name", |ui| {
                     let r = ui.add(
                         egui::TextEdit::singleline(&mut m.name)
-                            .hint_text(crate::tr("z. B. Intro, Szene 2"))
+                            .hint_text(crate::tr("e.g. Intro, Scene 2"))
                             .desired_width(ui.available_width() - 12.0),
                     );
                     if first {
@@ -335,7 +335,7 @@ impl App {
                     }
                     r
                 });
-                theme::row(ui, "Farbe", |ui| {
+                theme::row(ui, "Color", |ui| {
                     for (i, _) in MARKER_COLORS.iter().enumerate() {
                         let (r, resp) =
                             ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
@@ -354,7 +354,7 @@ impl App {
                     }
                 });
                 let mut dur = m.duration.as_secs_f64() as f32;
-                theme::row(ui, "Dauer", |ui| {
+                theme::row(ui, "Duration", |ui| {
                     ui.add(
                         egui::DragValue::new(&mut dur)
                             .range(0.0..=3600.0)
@@ -366,7 +366,7 @@ impl App {
                 });
                 m.duration = Time::from_secs_f64(dur as f64);
                 ui.label(
-                    RichText::new(crate::tr("Notiz"))
+                    RichText::new(crate::tr("Note~memo"))
                         .small()
                         .color(theme::TEXT_DIM()),
                 );
@@ -378,13 +378,13 @@ impl App {
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     if ui
-                        .add(theme::ghost(format!("{}  Löschen", icon::TRASH)))
+                        .add(theme::ghost(format!("{}  Delete", icon::TRASH)))
                         .clicked()
                     {
                         delete = true;
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(theme::primary("Fertig")).clicked() {
+                        if ui.add(theme::primary("Done")).clicked() {
                             close = true;
                         }
                     });
@@ -424,12 +424,12 @@ impl App {
         let mut done = None;
         let modal = crate::dialog::modal(ctx, "track-rename")
             .show(ctx, |ui| {
-                if crate::dialog::title(ui, "Spur umbenennen") {
+                if crate::dialog::title(ui, "Rename track") {
                     done = Some(false);
                 }
                 let r = ui.add(
                     egui::TextEdit::singleline(name)
-                        .hint_text(crate::tr("z. B. Sprecher 1, Musik, Kamera B"))
+                        .hint_text(crate::tr("e.g. Speaker 1, Music, Camera B"))
                         .desired_width(260.0),
                 );
                 r.request_focus();
@@ -460,15 +460,15 @@ impl App {
     /// YouTube chapters from the markers to the clipboard (markers tab, ruler menu).
     pub fn copy_chapters(&mut self, ctx: &egui::Context) {
         ctx.copy_text(chapters(&self.project.timeline.markers));
-        self.toast("Kapitel in die Zwischenablage kopiert");
+        self.toast("Chapters copied to the clipboard");
     }
 
-    /// Marker list (inspector tab „Marker“).
+    /// Marker list (inspector tab „Markers“).
     pub fn marker_list(&mut self, ui: &mut egui::Ui) {
         let ms = self.project.timeline.markers.clone();
         if ms.is_empty() {
             ui.label(
-                RichText::new(crate::tr("Setze Marker mit M (am Playhead)"))
+                RichText::new(crate::tr("Add markers with M (at the playhead)"))
                     .small()
                     .color(theme::TEXT_DIM()),
             );
@@ -487,7 +487,7 @@ impl App {
                     self.playhead = m.at;
                 }
                 let name = if m.name.is_empty() {
-                    crate::tr("Kapitel") // as in the export (cl_export::chapter_list)
+                    crate::tr("Chapter") // as in the export (cl_export::chapter_list)
                 } else {
                     m.name.clone()
                 };
@@ -517,10 +517,10 @@ impl App {
         }
         if ui
             .add(theme::secondary(format!(
-                "{}  Kapitel kopieren",
+                "{}  Copy chapters",
                 icon::COPY
             )))
-            .on_hover_text(crate::tr("Für die Videobeschreibung"))
+            .on_hover_text(crate::tr("For the video description"))
             .clicked()
         {
             self.copy_chapters(ui.ctx());
@@ -553,8 +553,8 @@ mod tests {
             color: 0,
         };
         assert_eq!(
-            chapters(&[m(75.0, "Boss"), m(3725.0, "Ende")]),
-            "0:00 Intro\n1:15 Boss\n1:02:05 Ende"
+            chapters(&[m(75.0, "Boss"), m(3725.0, "End")]),
+            "0:00 Intro\n1:15 Boss\n1:02:05 End"
         );
         assert_eq!(chapters(&[m(0.0, "Start")]), "0:00 Start");
         // A marker just after 0:00 (one frame) becomes the first chapter, no extra „Intro“
@@ -576,11 +576,11 @@ mod tests {
         // only report chapters under 10 s, with name and length; the number of chapters does not matter
         assert_eq!(issue(&[m(20.0)]), None);
         assert_eq!(issue(&[m(20.0), m(40.0)]), None);
-        assert!(issue(&[m(20.0), m(25.0)]).unwrap().contains("„Kapitel“ ist nur 5 s"));
-        assert!(issue(&[m(20.0), m(55.0)]).unwrap().contains("nur 5 s")); // last one up to the end
-        assert!(issue(&[m(4.0), m(30.0)]).unwrap().contains("„Intro“ ist nur 4 s"));
+        assert!(issue(&[m(20.0), m(25.0)]).unwrap().contains("“Chapter” is only 5 s"));
+        assert!(issue(&[m(20.0), m(55.0)]).unwrap().contains("only 5 s")); // last one up to the end
+        assert!(issue(&[m(4.0), m(30.0)]).unwrap().contains("“Intro” is only 4 s"));
         // in the export range the length counts up to the end of the range
         let s = Time::from_secs_f64;
-        assert!(chapter_issue(&[m(20.0)], s(0.0), s(26.0)).unwrap().contains("nur 6 s"));
+        assert!(chapter_issue(&[m(20.0)], s(0.0), s(26.0)).unwrap().contains("only 6 s"));
     }
 }

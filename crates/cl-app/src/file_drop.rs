@@ -363,7 +363,7 @@ impl App {
                 return;
             }
             if std::time::Instant::now() >= end {
-                log::warn!(target: "ablage", "Prüfung dauert zu lange, {} Ablage(n) verworfen", self.drops.list.len());
+                log::warn!(target: "drop", "Check takes too long, {} drop(s) discarded", self.drops.list.len());
                 self.drops.list.clear();
                 return;
             }
@@ -373,7 +373,7 @@ impl App {
 
     /// File unreadable: short message with the name; FFmpeg's raw text only into the log
     pub(crate) fn probe_failed(&mut self, file: &str, error: &str) {
-        log::warn!(target: "import", "„{file}“: {error}");
+        log::warn!(target: "import", "“{file}”: {error}");
         self.toast_err(probe_error(file));
     }
 
@@ -487,7 +487,7 @@ fn probe_all(
 /// Toast for an unreadable file. German with the name in „…“: the log gets the text before
 /// translation, and the log export redacts names with spaces only there.
 pub(crate) fn probe_error(file: &str) -> String {
-    format!("Datei kann nicht gelesen werden: „{file}“")
+    format!("Cannot read file: “{file}”")
 }
 
 #[cfg(test)]
@@ -636,8 +636,8 @@ mod tests {
     #[test]
     fn drop_is_one_undo_step_even_with_a_failure() {
         let mut app = test_app();
-        let mut p = Project::new("Ablegen");
-        let have = media(MediaKind::Video, 4.0, "schon.mp4");
+        let mut p = Project::new("Drop");
+        let have = media(MediaKind::Video, 4.0, "already.mp4");
         let mut main = Track::new(TrackKind::Video);
         main.main = true;
         main.clips.push(Clip::new(ClipContent::Media { media: have.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(4.0)));
@@ -646,7 +646,7 @@ mod tests {
         app.set_doc(p);
         let before = app.project.clone();
 
-        let mut again = media(MediaKind::Video, 4.0, "schon.mp4");
+        let mut again = media(MediaKind::Video, 4.0, "already.mp4");
         again.id = MediaId::new();
         let video = media(MediaKind::Video, 6.0, "b.mp4");
         let tone = media(MediaKind::Audio, 3.0, "c.wav");
@@ -707,7 +707,7 @@ mod tests {
     #[test]
     fn two_new_tracks_land_where_shown() {
         let mut app = test_app();
-        let mut p = Project::new("Zwei neue");
+        let mut p = Project::new("Two new");
         let mut main = Track::new(TrackKind::Video);
         main.main = true;
         let mut a1 = Track::new(TrackKind::Audio);
@@ -741,12 +741,12 @@ mod tests {
     #[test]
     fn results_after_going_home_do_not_touch_the_left_project() {
         let mut app = test_app();
-        app.set_doc(Project::new("Verlassen"));
+        app.set_doc(Project::new("Left"));
         let (go_tx, go_rx) = channel::<()>();
-        app.tasks.spawn(&egui::Context::default(), "spät", "Spät", move |_, _| {
+        app.tasks.spawn(&egui::Context::default(), "late", "Late", move |_, _| {
             let _ = go_rx.recv();
             TaskDone::Run(Box::new(|app: &mut App| {
-                app.apply(EditOp::ImportMedia { media: media(MediaKind::Image, 0.0, "aufgabe.png") });
+                app.apply(EditOp::ImportMedia { media: media(MediaKind::Image, 0.0, "task.png") });
             }))
         });
         app.go_home();
@@ -767,7 +767,7 @@ mod tests {
     #[test]
     fn files_still_probing_land_before_going_home() {
         let mut app = test_app();
-        app.set_doc(Project::new("Ablegen"));
+        app.set_doc(Project::new("Drop"));
         let file = app.dir().join("Ablegen.cutline");
         app.project_path = Some(file.clone());
         let (tx, rx) = channel();

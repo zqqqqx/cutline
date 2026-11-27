@@ -7,7 +7,7 @@ use eframe::egui::{self, RichText};
 use crate::app::App;
 use crate::theme;
 
-/// What „Attribute einfügen“ takes over
+/// What „Paste attributes“ takes over
 #[derive(Debug, Clone, Copy)]
 pub struct PasteAttrs {
     pub look: bool,
@@ -84,7 +84,7 @@ pub fn source_limit(app: &App, c: &Clip) -> Option<f64> {
     }
 }
 
-/// Input in the „Zeit“ section → new values, rounded to frames. `None` if nothing
+/// Input in the „Timing“ section → new values, rounded to frames. `None` if nothing
 /// changes or the duration drops below one frame (0, negative: input is discarded).
 fn timing_edit(c: &Clip, start: f64, dur: f64, src: f64, fps: f64) -> Option<(Time, Time, Time)> {
     let snap = |v: f64| Time::from_secs_f64((v.max(0.0) * fps).round() / fps);
@@ -93,9 +93,9 @@ fn timing_edit(c: &Clip, start: f64, dur: f64, src: f64, fps: f64) -> Option<(Ti
 }
 
 impl App {
-    /// „Zeit“ section in the inspector: start, duration and (for media) source start as numbers.
+    /// „Timing“ section in the inspector: start, duration and (for media) source start as numbers.
     pub fn timing_section(&mut self, ui: &mut egui::Ui, c: &Clip) {
-        theme::section(ui, "Zeit");
+        theme::section(ui, "Timing");
         let fps = self.project.settings.fps.as_f64();
         let mut start = c.start.as_secs_f64();
         let mut dur = c.duration.as_secs_f64();
@@ -119,10 +119,10 @@ impl App {
                         .clamp_existing_to_range(false)
                         .custom_formatter(fmt),
                 )
-                .on_hover_text(crate::tr("Ziehen oder tippen; Bilder als m:ss.ff"))
+                .on_hover_text(crate::tr("Drag or type; frames as m:ss.ff"))
                 .changed();
         });
-        theme::row(ui, "Dauer", |ui| {
+        theme::row(ui, "Duration", |ui| {
             changed |= ui
                 .add(
                     egui::DragValue::new(&mut dur)
@@ -136,8 +136,8 @@ impl App {
         });
         if let Some(max) = limit {
             let max = max + c.source_in.as_secs_f64() - c.source_in.as_secs_f64();
-            theme::row(ui, "Quelle ab", |ui| {
-                changed |= ui.add(egui::DragValue::new(&mut src).range(0.0..=max.max(0.0)).speed(step).update_while_editing(false).clamp_existing_to_range(false).custom_formatter(fmt)).on_hover_text(crate::tr("Slippen: anderer Ausschnitt der Quelle, Lage und Länge bleiben (Alt+Ziehen im Clip)")).changed();
+            theme::row(ui, "Source from", |ui| {
+                changed |= ui.add(egui::DragValue::new(&mut src).range(0.0..=max.max(0.0)).speed(step).update_while_editing(false).clamp_existing_to_range(false).custom_formatter(fmt)).on_hover_text(crate::tr("Slip: different part of the source, position and length stay (Alt+drag on the clip)")).changed();
             });
         }
         if changed {
@@ -203,14 +203,14 @@ impl App {
         let timed = matches!(r.content, ClipContent::Media { kind: MediaKind::Video | MediaKind::Audio, .. });
         let r_src = r.source_in.as_secs_f64() + if timed { delta * r.speed as f64 } else { 0.0 };
         if r_src < 0.0 {
-            self.toast_err("Am Anfang des rechten Clips gibt es keine weiteren Medien");
+            self.toast_err("No more media at the start of the right clip");
             return;
         }
         if let Some(lim) = source_limit(self, &l) {
             let need = l.source_in.as_secs_f64() + (to - l.start.as_secs_f64()) * l.speed as f64;
             let len = lim + l.duration.as_secs_f64() * l.speed as f64;
             if need > len + 1e-3 {
-                self.toast_err("Am Ende des linken Clips gibt es keine weiteren Medien");
+                self.toast_err("No more media at the end of the left clip");
                 return;
             }
         }
@@ -255,26 +255,26 @@ impl App {
         });
     }
 
-    /// „Attribute einfügen“ dialog (Ctrl+Alt+V).
+    /// „Paste attributes“ dialog (Ctrl+Alt+V).
     pub fn paste_attrs_dialog(&mut self, ctx: &egui::Context) {
         if !self.paste_attrs_open {
             return;
         }
         let Some(src) = self.clipboard.first().cloned() else {
             self.paste_attrs_open = false;
-            self.toast_err("Erst einen Clip kopieren (Strg+C)");
+            self.toast_err("Copy a clip first (Ctrl+C)");
             return;
         };
         let mut a = self.paste_attrs;
-        // Esc closes, Enter confirms like „Einfügen“
+        // Esc closes, Enter confirms like „Paste“
         let (mut close, mut ok) = crate::dialog::keys(ctx);
-        crate::dialog::window(ctx, crate::tr("Attribute einfügen"), "paste-attrs")
+        crate::dialog::window(ctx, crate::tr("Paste attributes"), "paste-attrs")
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -60.0))
             .show(ctx, |ui| {
-                close |= crate::dialog::title(ui, "Attribute einfügen");
+                close |= crate::dialog::title(ui, "Paste attributes");
                 ui.label(
                     RichText::new(crate::tr(format!(
-                        "Von „{}“ auf die Auswahl übertragen:",
+                        "Transfer from “{}” to the selection:",
                         src.label(&self.project)
                     )))
                     .small()
@@ -283,21 +283,21 @@ impl App {
                 ui.add_space(4.0);
                 crate::widgets::check(ui, 
                     &mut a.look,
-                    crate::tr("Look (Anpassen, Filter, Effekte, LUT, Maske, Freistellen-Farbe)"),
+                    crate::tr("Look (adjustments, filter, effects, LUT, mask, key color)"),
                 );
                 crate::widgets::check(ui, 
                     &mut a.transform,
-                    crate::tr("Position, Größe, Drehung und Keyframes"),
+                    crate::tr("Position, scale, rotation and keyframes"),
                 );
-                crate::widgets::check(ui, &mut a.opacity, crate::tr("Deckkraft"));
-                crate::widgets::check(ui, &mut a.anim, crate::tr("Animationen"));
+                crate::widgets::check(ui, &mut a.opacity, crate::tr("Opacity"));
+                crate::widgets::check(ui, &mut a.anim, crate::tr("Animations"));
                 crate::widgets::check(ui, 
                     &mut a.audio,
-                    crate::tr("Ton (Lautstärke, Bearbeitung, Ein-/Ausblenden)"),
+                    crate::tr("Audio (volume, processing, fades)"),
                 );
-                crate::widgets::check(ui, &mut a.speed, crate::tr("Tempokurve und Richtung"));
-                crate::widgets::check(ui, &mut a.text, crate::tr("Textstil (bei Texten)"));
-                let (m, c) = crate::dialog::buttons(ui, theme::primary("Einfügen"), true);
+                crate::widgets::check(ui, &mut a.speed, crate::tr("Speed curve and direction"));
+                crate::widgets::check(ui, &mut a.text, crate::tr("Text style (for texts)"));
+                let (m, c) = crate::dialog::buttons(ui, theme::primary("Paste"), true);
                 ok |= m;
                 close |= c;
             });
@@ -305,7 +305,7 @@ impl App {
         if ok {
             let src2 = src.clone();
             self.modify_selection(|c| a.apply(&src2, c));
-            self.toast("Attribute eingefügt");
+            self.toast("Attributes pasted");
             close = true;
         }
         if close {
@@ -317,7 +317,7 @@ impl App {
     pub fn group_selection(&mut self, on: bool) {
         let sel = self.selection();
         if on && sel.len() < 2 {
-            self.toast_err("Für eine Gruppe mindestens zwei Clips auswählen");
+            self.toast_err("Select at least two clips to group");
             return;
         }
         let gid = if on {
@@ -358,9 +358,9 @@ impl App {
         let n = ops.len();
         self.apply_batch(ops);
         self.toast(if on {
-            format!("{n} Clips gruppiert")
+            format!("{n} clips grouped")
         } else {
-            "Gruppe aufgelöst".to_string()
+            "Group removed".to_string()
         });
     }
 

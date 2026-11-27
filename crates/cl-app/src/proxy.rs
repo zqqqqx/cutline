@@ -144,12 +144,12 @@ pub fn wants_proxy(m: &MediaRef) -> bool {
 }
 
 /// Selectable proxy heights (Settings → Performance)
-pub const PROXY_HEIGHTS: [(u32, &str); 3] = [(540, "Schnell · 540p"), (720, "Ausgewogen · 720p"), (1080, "Hoch · 1080p")];
+pub const PROXY_HEIGHTS: [(u32, &str); 3] = [(540, "Fast · 540p"), (720, "Balanced · 720p"), (1080, "High · 1080p")];
 
 // ------------------------------------------------------------------ Encoders
 
 /// Order of the encoders as in the export ([`cl_export::encoder_chain`], `pref` = setting
-/// „Hardware-Kodierung“) without those that failed in this session, software always last.
+/// „Hardware encoding“) without those that failed in this session, software always last.
 pub fn encoder_chain(available: &[Encoder], broken: &[Encoder], pref: &str) -> Vec<Encoder> {
     cl_export::encoder_chain(available, pref)
         .into_iter()
@@ -159,7 +159,7 @@ pub fn encoder_chain(available: &[Encoder], broken: &[Encoder], pref: &str) -> V
 
 static ENCODER_PREF: Mutex<String> = Mutex::new(String::new());
 
-/// Setting „Hardware-Kodierung“ (set by the settings on load and change)
+/// Setting „Hardware encoding“ (set by the settings on load and change)
 pub fn set_encoder_pref(pref: &str) {
     *ENCODER_PREF.lock().unwrap_or_else(|e| e.into_inner()) = pref.to_string();
 }
@@ -343,7 +343,7 @@ pub fn build(
                     with_mine(&m.path, out, Entry::built);
                     return Ok(r);
                 }
-                Err(e) if e == "Abgebrochen" => return Err(e),
+                Err(e) if e == "Canceled" => return Err(e),
                 Err(e) => last = e,
             }
         }
@@ -373,12 +373,12 @@ fn build_with(
     let dur = m.duration.as_secs_f64().max(0.1);
     let (report, n) = run_encode(cmd, &tmp, out, dur, progress, cancel)?;
     if n == 0 {
-        return Err("Proxy konnte nicht erstellt werden".into());
+        return Err("Proxy could not be created".into());
     }
     if crate::app::perf() {
         let mb = std::fs::metadata(out).map_or(0.0, |x| x.len() as f64 / 1e6);
         crate::applog::perf_line!(
-            "perf: proxy {} enc={:?}{} {:.1}× echtzeit {:.1} MB/min pausiert {:.1} s",
+            "perf: proxy {} enc={:?}{} {:.1}× real time {:.1} MB/min paused {:.1} s",
             m.path.file_name().unwrap_or_default().to_string_lossy(),
             enc,
             hw.map(|h| format!("+{h}")).unwrap_or_default(),
@@ -441,7 +441,7 @@ fn run_encode(
             // wait until FFmpeg has released the file (Windows), otherwise `.part.mp4` stays
             let _ = child.wait();
             let _ = std::fs::remove_file(tmp);
-            return Err("Abgebrochen".into());
+            return Err("Canceled".into());
         }
         let want = pause_now(paused);
         if want != paused && cl_media::suspend(&child, want) {
@@ -472,7 +472,7 @@ fn run_encode(
     }
     if !status.success() {
         let _ = std::fs::remove_file(tmp);
-        return Err("Proxy konnte nicht erstellt werden".into());
+        return Err("Proxy could not be created".into());
     }
     let paused = (paused_total + paused_since.map_or(Duration::ZERO, |t| t.elapsed())).as_secs_f64();
     let report = BuildReport {
@@ -532,7 +532,7 @@ fn build_part(
                     broken_encoders().extend(failed.iter().filter(|e| **e != Encoder::Software));
                     return Ok(n);
                 }
-                Err(e) if e == "Abgebrochen" => return Err(e),
+                Err(e) if e == "Canceled" => return Err(e),
                 Err(e) => last = e,
             }
         }
@@ -576,7 +576,7 @@ fn merge(dir: &Path, pt: &Parting, out: &Path, cancel: &AtomicBool) -> Result<()
     cmd.args(["-f", "concat", "-i"]).arg(&list).args(["-map", "0:v:0", "-c", "copy", "-movflags", "+faststart"]);
     let dur = pt.start(pt.count);
     match run_encode(cmd, &tmp, out, dur, &|_| {}, cancel)? {
-        (_, 0) => Err("Proxy-Stücke ohne Bild".into()),
+        (_, 0) => Err("proxy parts without a frame".into()),
         _ => Ok(()),
     }
 }
@@ -800,13 +800,13 @@ fn fails_in_row(prev: u32, ok: bool) -> Option<u32> {
 fn build_parts(m: &MediaRef, out: &Path, spec: &ProxySpec, pt: &Parting, progress: &dyn Fn(f32), cancel: &AtomicBool) -> Result<bool, String> {
     let pdir = parts::parts_dir(out);
     std::fs::create_dir_all(&pdir).map_err(|e| e.to_string())?;
-    let _ = std::fs::write(pdir.join("quelle.txt"), m.path.to_string_lossy().as_bytes());
+    let _ = std::fs::write(pdir.join(parts::SOURCE_FILE), m.path.to_string_lossy().as_bytes());
     let st = probe_start(&m.path);
     let name = m.path.file_name().unwrap_or_default().to_string_lossy().into_owned();
     let (mut paused, mut in_row) = (false, 0);
     loop {
         if cancel.load(Ordering::Relaxed) {
-            return Err("Abgebrochen".into());
+            return Err("Canceled".into());
         }
         if other_media_first(&m.path) {
             return Ok(false);
@@ -828,7 +828,7 @@ fn build_parts(m: &MediaRef, out: &Path, spec: &ProxySpec, pt: &Parting, progres
         let n = pt.count.max(1) as f32;
         let base = done as f32 / n;
         let r = build_part(m, &pdir, pt, st, k, spec, &|v| progress(base + v / n), cancel);
-        in_row = fails_in_row(in_row, r.is_ok()).ok_or_else(|| format!("{MAX_FAILS_IN_ROW} Stücke nacheinander gescheitert"))?;
+        in_row = fails_in_row(in_row, r.is_ok()).ok_or_else(|| format!("{MAX_FAILS_IN_ROW} parts failed in a row"))?;
         match r {
             Ok(_) => {
                 with_mine(&m.path, out, |e| {
@@ -836,15 +836,15 @@ fn build_parts(m: &MediaRef, out: &Path, spec: &ProxySpec, pt: &Parting, progres
                     e.changed();
                 });
             }
-            Err(e) if e == "Abgebrochen" => return Err(e),
+            Err(e) if e == "Canceled" => return Err(e),
             Err(e) => {
-                log::warn!(target: "proxy", "Stück {k} von „{name}“ gescheitert: {e}");
+                log::warn!(target: "proxy", "part {k} of “{name}” failed: {e}");
                 with_mine(&m.path, out, |en| en.fails[k as usize] += 1);
             }
         }
     }
     if with_mine(&m.path, out, |e| e.ready.iter().all(|r| *r)) != Some(true) {
-        return Err("Proxy-Stücke fehlgeschlagen".into());
+        return Err("proxy parts failed".into());
     }
     merge(&pdir, pt, out, cancel)?;
     with_mine(&m.path, out, Entry::built);
@@ -1067,7 +1067,7 @@ impl App {
     /// Which are missing (and which parts are already there) is searched by a background thread; here only
     /// collect the result and start the next build.
     pub fn ensure_proxies(&mut self, ctx: &egui::Context) {
-        let _s = crate::app::section("Proxys");
+        let _s = crate::app::section("Proxies");
         set_play_state(self.playing, !self.settings.auto_quality || self.core.quality.level > 0);
         // keep in the pause: otherwise Play at the same place would choose the parts anew (other first
         // part = other key) and open a new stream instead of continuing
@@ -1151,11 +1151,11 @@ impl App {
         // target and division are in the inventory (determined by the background search)
         let target = registry().get(&m.path).filter(|e| e.want == key).map(|e| (e.out.clone(), e.pt));
         let id = m.id;
-        let label = format!("Proxys {} / {}", self.proxies.done + 1, self.proxies.total);
+        let label = format!("Proxies {} / {}", self.proxies.done + 1, self.proxies.total);
         self.tasks.spawn(ctx, "proxy", label, move |p, cancel| {
             let t0 = std::time::Instant::now();
             // in „…“: the log export redacts names with spaces only there
-            let name = format!("„{}“", m.path.file_name().unwrap_or_default().to_string_lossy());
+            let name = format!("“{}”", m.path.file_name().unwrap_or_default().to_string_lossy());
             let r = match target {
                 Some((out, Some(pt))) => build_parts(&m, &out, &spec, &pt, p, cancel),
                 Some((out, None)) => build(&m, &out, &spec, p, cancel).map(|_| true),
@@ -1216,16 +1216,16 @@ impl App {
 
     /// Settings → Performance: proxies
     pub fn proxy_settings(&mut self, ui: &mut egui::Ui) {
-        theme::section(ui, "Proxys");
+        theme::section(ui, "Proxies");
         if widgets::toggle_row(
             ui,
-            "Proxys für große Videos verwenden",
+            "Use proxies for large videos",
             &mut self.settings.use_proxies,
         ) {
             self.settings.save();
             self.invalidate_preview();
         }
-        theme::row(ui, "Qualität", |ui| {
+        theme::row(ui, "Quality", |ui| {
             let names: Vec<&str> = PROXY_HEIGHTS.iter().map(|p| p.1).collect();
             let mut i = PROXY_HEIGHTS.iter().position(|p| p.0 == self.settings.proxy_h).unwrap_or(0);
             if widgets::segmented(ui, &names, &mut i) {
@@ -1248,7 +1248,7 @@ impl App {
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(crate::tr(format!(
-                    "{n} Proxys · {:.0} MB",
+                    "{n} proxies · {:.0} MB",
                     bytes as f64 / 1e6
                 )))
                 .small()
@@ -1256,7 +1256,7 @@ impl App {
             );
             if n > 0
                 && ui
-                    .add(theme::ghost(format!("{}  Proxys löschen", icon::TRASH)))
+                    .add(theme::ghost(format!("{}  Delete proxies", icon::TRASH)))
                     .clicked()
             {
                 // a running build notices this after its part (entry missing) and ends
@@ -1319,7 +1319,7 @@ mod tests {
     fn media(w: u32, h: u32, fps: Rational, codec: &str) -> MediaRef {
         MediaRef {
             id: MediaId::new(),
-            path: PathBuf::from("quelle.mp4"),
+            path: PathBuf::from("source.mp4"),
             kind: MediaKind::Video,
             duration: Time::from_secs_f64(60.0),
             width: w,
@@ -1486,13 +1486,13 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         std::fs::write(d.path().join("a-540.mp4"), [0u8; 10]).unwrap();
         std::fs::write(d.path().join("b-540.part.mp4"), [0u8; 5]).unwrap();
-        let t = d.path().join("c-540.teile");
+        let t = d.path().join("c-540.parts");
         std::fs::create_dir(&t).unwrap();
         std::fs::write(t.join("0000.mp4"), [0u8; 7]).unwrap();
         std::fs::write(t.join("0001.mp4"), [0u8; 3]).unwrap();
         // two proxies (finished, in parts), all bytes
         assert_eq!(folder_usage(d.path()), (2, 25));
-        assert_eq!(folder_usage(&d.path().join("fehlt")), (0, 0));
+        assert_eq!(folder_usage(&d.path().join("missing")), (0, 0));
     }
 
     /// Older single-file proxies stay valid: no part build, stream from the finished file.
@@ -1501,7 +1501,7 @@ mod tests {
         // the registry is shared with the app tests: under the home lock, entry removed at the end
         let home = crate::export_ui::TestHome::new();
         let d = &home.dir;
-        let src = d.path().join("quelle.mp4");
+        let src = d.path().join("source.mp4");
         std::fs::write(&src, b"x").unwrap();
         let mut m = media(1920, 1080, Rational::new(30, 1), "h264");
         m.path = src;
@@ -1566,7 +1566,7 @@ mod tests {
         let vfr = ",setpts='(N/60+0.006*sin(N*1.7))/TB'";
         let cases: [(&str, &str, &[&str]); 3] = [
             ("cfr.mp4", "", &[]),
-            ("versatz.mp4", "", &["-output_ts_offset", "1.37"]),
+            ("offset.mp4", "", &["-output_ts_offset", "1.37"]),
             ("vfr.mp4", vfr, &["-fps_mode", "passthrough", "-video_track_timescale", "90000"]),
         ];
         for (name, vf, extra) in cases {
@@ -1575,7 +1575,7 @@ mod tests {
             let pt = Parting::new(m.duration.as_secs_f64(), out_fps(&m, &spec), 1.0).unwrap();
             assert!(pt.count >= 4, "{name}: {pt:?}");
             let st = probe_start(&m.path);
-            let pdir = d.path().join(format!("{name}.teile"));
+            let pdir = d.path().join(format!("{name}.parts"));
             let no = AtomicBool::new(false);
             let mut joined = Vec::new();
             for k in 0..pt.count {
@@ -1589,7 +1589,7 @@ mod tests {
             }
             // comparison: the same way in one go (one "part" over everything)
             let whole = Parting { per: 1_000_000, count: 1, ..pt };
-            let wdir = d.path().join(format!("{name}.ganz"));
+            let wdir = d.path().join(format!("{name}.whole"));
             build_part_with(&m, &wdir, &whole, st, 0, &spec, Encoder::Software, None, &|_| {}, &no).unwrap();
             let reference = codes(&wdir.join(parts::part_name(0)));
             assert_eq!(joined, reference, "{name}: seams not frame-exact");
@@ -1598,7 +1598,7 @@ mod tests {
                 assert!(reference.windows(2).all(|w| (w[1] + 32 - w[0]) % 32 == 2), "{reference:?}");
             }
             // joining: the same frames
-            let out = d.path().join(format!("{name}-ganz.mp4"));
+            let out = d.path().join(format!("{name}-whole.mp4"));
             merge(&pdir, &pt, &out, &no).unwrap();
             assert_eq!(codes(&out), reference, "{name}: joined differently");
             assert!(!parts::tmp_of(&out).exists());
@@ -1642,13 +1642,13 @@ mod tests {
         let m = cl_media::probe(&src).unwrap();
         let spec = proxy_spec(&m, 90, Rational::new(30, 1));
         let pt = Parting::new(m.duration.as_secs_f64(), out_fps(&m, &spec), 1.0).unwrap();
-        let pdir = d.path().join("s.teile");
+        let pdir = d.path().join("s.parts");
         let no = AtomicBool::new(false);
         let st = probe_start(&src);
         for k in 0..pt.count {
             build_part_with(&m, &pdir, &pt, st, k, &spec, Encoder::Software, None, &|_| {}, &no).unwrap();
         }
-        let merged = d.path().join("s-ganz.mp4");
+        let merged = d.path().join("s-whole.mp4");
         merge(&pdir, &pt, &merged, &no).unwrap();
         let whole = d.path().join("s-zug.mp4");
         build_with(&m, &whole, &spec, Encoder::Software, None, &|_| {}, &no).unwrap();
@@ -1670,7 +1670,7 @@ mod tests {
         }
         let _b = builds();
         let d = tempfile::tempdir().unwrap();
-        let src = d.path().join("kurz.mp4");
+        let src = d.path().join("short.mp4");
         assert!(cl_media::ffmpeg_command()
             .unwrap()
             .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=2", "-f", "lavfi", "-i", "sine=d=3.5"])
@@ -1683,16 +1683,16 @@ mod tests {
         let spec = proxy_spec(&m, 90, Rational::new(30, 1));
         let pt = Parting::new(m.duration.as_secs_f64(), out_fps(&m, &spec), 1.0).unwrap();
         assert!(pt.count >= 3, "{pt:?}");
-        let pdir = d.path().join("k.teile");
+        let pdir = d.path().join("k.parts");
         let no = AtomicBool::new(false);
         // temp files of a second window (other process) stay untouched
         std::fs::create_dir_all(&pdir).unwrap();
         let foreign = [pdir.join("0000.part.mp4"), pdir.join("0000.1.part.mp4")];
         for f in &foreign {
-            std::fs::write(f, b"fremd").unwrap();
+            std::fs::write(f, b"other").unwrap();
         }
         let n: Vec<u64> = (0..pt.count).map(|k| build_part_with(&m, &pdir, &pt, 0.0, k, &spec, Encoder::Software, None, &|_| {}, &no).unwrap()).collect();
-        assert!(foreign.iter().all(|f| std::fs::read(f).unwrap() == b"fremd"), "foreign temp file overwritten");
+        assert!(foreign.iter().all(|f| std::fs::read(f).unwrap() == b"other"), "foreign temp file overwritten");
         assert_eq!(*n.last().unwrap(), 0, "{n:?}");
         assert_eq!(std::fs::metadata(pdir.join(parts::part_name(pt.count - 1))).unwrap().len(), 0);
         let out = d.path().join("k.mp4");
@@ -1728,8 +1728,8 @@ mod tests {
         // also when FFmpeg has already ended, so the part is always aborted (no timing involved)
         let cancel = AtomicBool::new(false);
         let r = build_part_with(&m, &pdir, &pt, 0.0, 1, &spec, Encoder::Software, None, &|_| cancel.store(true, Ordering::Relaxed), &cancel);
-        assert_eq!(r.unwrap_err(), "Abgebrochen");
-        std::fs::write(pdir.join("0003.part.mp4"), b"halb").unwrap();
+        assert_eq!(r.unwrap_err(), "Canceled");
+        std::fs::write(pdir.join("0003.part.mp4"), b"half").unwrap();
         // marker: replace part 2 with a copy of part 0 – if it were rebuilt, it would be correct again
         std::fs::copy(pdir.join(parts::part_name(0)), pdir.join(parts::part_name(2))).unwrap();
         // "restart": clean up, read inventory, continue building
@@ -1842,8 +1842,8 @@ mod tests {
         let _b = builds();
         let d = &home.dir;
         let mut m = media(1920, 1080, Rational::new(30, 1), "h264");
-        m.path = d.path().join("weg.mp4");
-        let out = d.path().join("weg-540.mp4");
+        m.path = d.path().join("gone.mp4");
+        let out = d.path().join("gone-540.mp4");
         let want = (540, Rational::new(30, 1));
         set_test_entry(&m.path, out.clone(), want, vec![false; 10], false);
         let pt = Parting::new(100.0, want.1, PART_SECS).unwrap();
@@ -1869,7 +1869,7 @@ mod tests {
             app.core.tick(&t);
         };
         tick(&mut app, 0.1);
-        assert_eq!(app.core.mode(), crate::playcore::Mode::Spielen);
+        assert_eq!(app.core.mode(), crate::playcore::Mode::Playing);
         let rev = app.revision;
         app.core.pause(rev, true, true);
         app.ensure_proxies(&ctx);
@@ -1888,7 +1888,7 @@ mod tests {
         m.path = app.dir().join("v.mp4");
         app.project.media.push(m.clone());
         let want = (app.settings.proxy_h, app.project.settings.fps);
-        let out = app.dir().join("woanders").join("v-540.mp4");
+        let out = app.dir().join("elsewhere").join("v-540.mp4");
         set_test_entry(&m.path, out.clone(), want, vec![true; 10], true);
         assert_eq!(app.stream_source(&m, 540, Pick::Full), (out, Time::ZERO));
         app.proxies.key = Some(want);
@@ -2047,7 +2047,7 @@ mod tests {
         let _u = Unpause;
         ProxyState::set_paused(true);
         let r = build_with(&m, &out, &spec, Encoder::Software, None, &|_| cancel.store(true, Ordering::Relaxed), &cancel);
-        assert_eq!(r.unwrap_err(), "Abgebrochen");
+        assert_eq!(r.unwrap_err(), "Canceled");
         assert!(!out.exists() && !parts::tmp_of(&out).exists());
     }
 
@@ -2073,7 +2073,7 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let no = AtomicBool::new(false);
         let secs = |t: Instant| t.elapsed().as_secs_f64();
-        println!("Quelle {} ({:.0} s, {} Stücke à {} Bilder)", src.display(), m.duration.as_secs_f64(), pt.count, pt.per);
+        println!("source {} ({:.0} s, {} pieces of {} frames)", src.display(), m.duration.as_secs_f64(), pt.count, pt.per);
         let picks = [0, pt.count / 3, pt.count / 2, pt.count * 3 / 4, pt.count - 2];
         let mut built: Option<PathBuf> = None;
         for enc in encoder_chain(available_encoders(), &[], "auto") {
@@ -2084,7 +2084,7 @@ mod tests {
                 let st = probe_start(&src);
                 let first = build_part_with(&m, &dir, &pt, st, 0, &spec, enc, hw, &|_| {}, &no).map(|_| secs(t));
                 let Ok(first) = first else {
-                    println!("{enc:?} hw={hw:?}: Fehler {first:?}");
+                    println!("{enc:?} hw={hw:?}: error {first:?}");
                     continue;
                 };
                 let mut more: Vec<f64> = picks[1..]
@@ -2097,7 +2097,7 @@ mod tests {
                 let best = more.iter().copied().fold(f64::MAX, f64::min);
                 let bytes: u64 = picks.iter().filter_map(|k| std::fs::metadata(dir.join(parts::part_name(*k))).ok()).map(|x| x.len()).sum();
                 println!(
-                    "{enc:?} hw={hw:?}: erstes Stück {first:.2} s (mit ffprobe), weitere Median {:.2} s bestes {best:.2} s = {:.1} s je Minute Quelle, {:.1} MB/min",
+                    "{enc:?} hw={hw:?}: first piece {first:.2} s (with ffprobe), further median {:.2} s best {best:.2} s = {:.1} s per minute of source, {:.1} MB/min",
                     median(&mut more),
                     median(&mut more.clone()) / PART_SECS * 60.0,
                     bytes as f64 / 1e6 / (picks.len() as f64 * PART_SECS / 60.0)
@@ -2132,21 +2132,21 @@ mod tests {
         }
         let best = |v: &[f64]| v.iter().copied().fold(f64::MAX, f64::min);
         println!(
-            "Einzelbild: Stück Median {:.0} ms bestes {:.0} ms, Original Median {:.0} ms bestes {:.0} ms",
+            "Single frame: piece median {:.0} ms best {:.0} ms, original median {:.0} ms best {:.0} ms",
             median(&mut sp.clone()),
             best(&sp),
             median(&mut so.clone()),
             best(&so)
         );
         println!(
-            "Stromstart: Stücke Median {:.0} ms bestes {:.0} ms, Original Median {:.0} ms bestes {:.0} ms",
+            "Stream start: pieces median {:.0} ms best {:.0} ms, original median {:.0} ms best {:.0} ms",
             median(&mut ap.clone()),
             best(&ap),
             median(&mut ao.clone()),
             best(&ao)
         );
         // restart in the middle of a build: abort a part (FFmpeg ended), a ".part" of a hard exit lies around
-        let rdir = d.path().join("neustart.teile");
+        let rdir = d.path().join("neustart.parts");
         for k in 0..3 {
             build_part_with(&m, &rdir, &pt, 0.0, k, &spec, Encoder::Software, None, &|_| {}, &no).unwrap();
         }
@@ -2157,14 +2157,14 @@ mod tests {
                 cancel.store(true, Ordering::Relaxed)
             }
         }, &cancel);
-        std::fs::write(rdir.join("0004.part.mp4"), b"halb").unwrap();
+        std::fs::write(rdir.join("0004.part.mp4"), b"half").unwrap();
         let before: Vec<_> = (0..3).map(|k| std::fs::metadata(rdir.join(parts::part_name(k))).unwrap().modified().unwrap()).collect();
         parts::cleanup(d.path());
         let ready = parts::scan_ready(&rdir, pt.count);
         let next = parts::next_part(&pt, |i| ready[i as usize], &Focus::default());
         let after: Vec<_> = (0..3).map(|k| std::fs::metadata(rdir.join(parts::part_name(k))).unwrap().modified().unwrap()).collect();
         println!(
-            "Neustart: Abbruch {:?}, fertig {:?}, .part übrig {}, weiter mit Stück {next:?}, fertige unverändert {}",
+            "Restart: abort {:?}, done {:?}, .part left {}, continue with piece {next:?}, done unchanged {}",
             r.err(),
             (0..pt.count).filter(|k| ready[*k as usize]).collect::<Vec<_>>(),
             std::fs::read_dir(&rdir).unwrap().flatten().any(|e| e.file_name().to_string_lossy().ends_with(".part.mp4")),
@@ -2227,10 +2227,10 @@ mod tests {
             set_play_state(false, false);
             let pl = player.map(|h| h.join().unwrap());
             println!(
-                "Gesamtbau {}: {total:.0} s ({:.1} s je Minute Quelle) {r:?}{}",
-                if playing { "bei laufender Wiedergabe" } else { "ohne Wiedergabe" },
+                "Full build {}: {total:.0} s ({:.1} s per minute of source) {r:?}{}",
+                if playing { "during playback" } else { "without playback" },
                 total / (m.duration.as_secs_f64() / 60.0),
-                pl.map(|(f, l)| format!(", Wiedergabe {f} Bilder, davon {l} über 100 ms zu spät")).unwrap_or_default()
+                pl.map(|(f, l)| format!(", playback {f} frames, of which {l} more than 100 ms late")).unwrap_or_default()
             );
         }
     }
@@ -2263,7 +2263,7 @@ mod tests {
                             mb
                         );
                     }
-                    Err(e) => println!("{enc:?} hw={hw:?}: Fehler {e}"),
+                    Err(e) => println!("{enc:?} hw={hw:?}: error {e}"),
                 }
             }
         }

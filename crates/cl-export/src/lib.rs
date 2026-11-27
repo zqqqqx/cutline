@@ -26,29 +26,29 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExportError {
-    #[error("Das Projekt ist leer")]
+    #[error("The project is empty")]
     Empty,
     /// File names of the missing media in the export range
     #[error("{}", missing_text(.0))]
     MissingMedia(Vec<String>),
     #[error("FFmpeg: {0}")]
     Ffmpeg(String),
-    #[error("Abgebrochen")]
+    #[error("Canceled")]
     Cancelled,
-    #[error("Lautheit konnte nicht gemessen werden")]
+    #[error("Could not measure loudness")]
     Loudness,
-    #[error("E/A-Fehler: {0}")]
+    #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Media(#[from] cl_media::MediaError),
     /// Error in a section of a large export (timeline times; `args`: the
     /// failed FFmpeg call, empty for other errors)
-    #[error("Abschnitt {from}–{to}: {err}")]
+    #[error("Section {from}–{to}: {err}")]
     Section { from: String, to: String, err: Box<ExportError>, args: Vec<String> },
     /// So many clips at once that even a single frame overwhelms FFmpeg
-    #[error("Zu viele gleichzeitige Clips bei {0} – FFmpeg kann sie nicht auf einmal öffnen")]
+    #[error("Too many simultaneous clips at {0} – FFmpeg cannot open them all at once")]
     TooManyClips(String),
-    #[error("Zu wenig Speicherplatz für die Zwischendateien: {need} nötig, {free} frei")]
+    #[error("Not enough disk space for the intermediate files: {need} needed, {free} free")]
     NoSpace { need: String, free: String },
 }
 
@@ -113,10 +113,10 @@ impl Format {
             Format::Mkv => "MKV",
             Format::WebM => "WebM",
             Format::Gif => "GIF",
-            Format::Wav => "WAV (nur Ton)",
-            Format::Mp3 => "MP3 (nur Ton)",
-            Format::M4a => "AAC/M4A (nur Ton)",
-            Format::Flac => "FLAC (nur Ton)",
+            Format::Wav => "WAV (audio only)",
+            Format::Mp3 => "MP3 (audio only)",
+            Format::M4a => "AAC/M4A (audio only)",
+            Format::Flac => "FLAC (audio only)",
         }
     }
 }
@@ -176,7 +176,7 @@ impl Encoder {
     /// Order of the automatic choice
     pub const AUTO: [Encoder; 5] = [Encoder::Nvenc, Encoder::Qsv, Encoder::Amf, Encoder::Mf, Encoder::Software];
 
-    /// Id in the settings („Hardware-Kodierung“)
+    /// Id in the settings („Hardware encoding“)
     pub fn id(self) -> &'static str {
         match self {
             Encoder::Software => "software",
@@ -277,7 +277,7 @@ pub fn target_edge(kbps: u32, (w, h): (u32, u32), fps: f64) -> Option<(u32, bool
 }
 
 fn default_chapter_name() -> String {
-    "Kapitel".into()
+    "Chapter".into()
 }
 
 impl ExportSettings {
@@ -446,7 +446,7 @@ impl Job {
         self.frames / self.duration.as_secs_f64().max(1e-6)
     }
 
-    /// Does a measuring run for „Lautheit angleichen“ run before the export? (In sections it runs
+    /// Does a measuring run for "Normalize loudness" run before the export? (In sections it runs
     /// only at the end over the finished audio, short and without its own display.)
     pub fn measures_loudness(&self) -> bool {
         self.measure.is_some() && self.sections.is_empty()
@@ -469,7 +469,7 @@ impl Job {
     }
 }
 
-/// Share of the measuring run in the reported progress (with „Lautheit angleichen“).
+/// Share of the measuring run in the reported progress (with "Normalize loudness").
 pub const MEASURE_SHARE: f32 = 0.1;
 
 fn loudnorm(target: f32) -> String {
@@ -1027,12 +1027,12 @@ fn missing_media(p: &Project, start: Time, end: Time) -> Vec<String> {
     v
 }
 
-/// „Datei fehlt: a.mp4“ or „4 Dateien fehlen: a.mp4, b.wav, c.png …“
+/// "File missing: a.mp4" or "4 files are missing: a.mp4, b.wav, c.png …"
 pub fn missing_text(names: &[String]) -> String {
     match names {
-        [one] => format!("Datei fehlt: {one}"),
+        [one] => format!("File missing: {one}"),
         _ => format!(
-            "{} Dateien fehlen: {}{}",
+            "{} files are missing: {}{}",
             names.len(),
             names.iter().take(3).cloned().collect::<Vec<_>>().join(", "),
             if names.len() > 3 { " …" } else { "" }
@@ -1313,7 +1313,7 @@ fn video_args(s: &ExportSettings) -> Vec<String> {
 
 /// Runs a job and reports progress (0..1). `cancel` aborts.
 /// An existing target file stays unchanged on abort or error.
-/// With „Lautheit angleichen“ the measuring run goes first (first [`MEASURE_SHARE`] of the progress).
+/// With "Normalize loudness" the measuring run goes first (first [`MEASURE_SHARE`] of the progress).
 pub fn run(job: &Job, cancel: Arc<AtomicBool>, mut progress: impl FnMut(f32)) -> Result<()> {
     let r = run_job(job, &cancel, &mut progress);
     if r.is_err() {
@@ -1448,7 +1448,7 @@ fn section_error(sec: &Section, e: ExportError, args: Vec<String>) -> ExportErro
 /// `.part` to the target. If that fails (target e.g. open in the player), the finished file stays.
 fn finish(part: &Path, out: &Path) -> Result<()> {
     std::fs::rename(part, out).map_err(|e| {
-        std::io::Error::new(e.kind(), format!("{e} – die fertige Datei liegt unter {}", part.display())).into()
+        std::io::Error::new(e.kind(), format!("{e} – the finished file is at {}", part.display())).into()
     })
 }
 
@@ -1477,7 +1477,7 @@ fn run_passes<'a>(job: &Job, passes: &'a [graph::ShaderPass], cancel: &AtomicBoo
             Err(ExportError::Cancelled) => return Err(ExportError::Cancelled),
             // no shader error may cost the export
             Err(e) => {
-                eprintln!("Shader-Übergang: {e}");
+                eprintln!("Shader transition: {e}");
                 failed.push(p);
             }
         }
@@ -1548,7 +1548,7 @@ fn run_pass(job: &Job, p: &graph::ShaderPass, cancel: &AtomicBool, progress: &mu
         let img = match gpu.render(&p.shader, &prm, fa, fb, (p.w, p.h), *t) {
             Ok(i) => i,
             Err(e) => {
-                eprintln!("Shader-Übergang: {e}");
+                eprintln!("Shader transition: {e}");
                 return Ok(false);
             }
         };
@@ -1673,12 +1673,12 @@ pub fn driver_too_old(stderr: &str) -> bool {
 
 static OLD_DRIVER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Hint „Grafiktreiber veraltet“ after the last detection (see [`driver_hint`])?
+/// Hint "Graphics driver outdated" after the last detection (see [`driver_hint`])?
 pub fn old_driver_found() -> bool {
     OLD_DRIVER.load(Ordering::Relaxed)
 }
 
-/// Hint „Grafiktreiber veraltet“: only if NVENC fails solely because of the driver AND no other
+/// Hint "Graphics driver outdated": only if NVENC fails solely because of the driver AND no other
 /// hardware path (QSV, AMF, Media Foundation) was found – otherwise the app does encode in hardware.
 pub fn driver_hint(nvenc_driver_old: bool, found: &[Encoder]) -> bool {
     nvenc_driver_old && found.iter().all(|e| *e == Encoder::Software)
@@ -1845,7 +1845,7 @@ pub(crate) fn audio_readable(path: &Path, wait: bool) -> bool {
             AUDIO_WARNINGS
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .push(format!("Ton von „{name}“ kann nicht gelesen werden – Wiedergabe ohne diese Datei"));
+                .push(format!("Cannot read the audio of “{name}” – playing without this file"));
         }
         READABLE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(key, Some(ok));
         ok
@@ -1939,16 +1939,16 @@ mod tests {
     #[test]
     fn range_chapters_start_with_the_running_marker() {
         let mk = |at: f64, name: &str| Marker { id: 0, at: Time::from_secs_f64(at), duration: Time::ZERO, name: name.into(), note: String::new(), color: 0 };
-        let ms = [mk(0.0, "Intro"), mk(10.0, "Thema"), mk(24.93, "Highlights"), mk(35.13, "Interview"), mk(40.0, "Ende")];
+        let ms = [mk(0.0, "Intro"), mk(10.0, "Thema"), mk(24.93, "Highlights"), mk(35.13, "Interview"), mk(40.0, "End")];
         let s = |x: f64| Time::from_secs_f64(x);
-        let v = chapter_list(&ms, s(34.13), s(36.13), "Kapitel");
+        let v = chapter_list(&ms, s(34.13), s(36.13), "Chapter");
         assert_eq!(v, vec![(Time::ZERO, "Highlights".to_string()), (s(35.13) - s(34.13), "Interview".to_string())]);
         // whole file: as before
-        assert_eq!(chapter_list(&ms[1..], Time::ZERO, s(50.0), "Kapitel")[0].1, "Intro");
+        assert_eq!(chapter_list(&ms[1..], Time::ZERO, s(50.0), "Chapter")[0].1, "Intro");
         // markers without a name in the UI language
         assert_eq!(chapter_list(&[mk(0.0, ""), mk(20.0, "B")], Time::ZERO, s(50.0), "Chapter")[0].1, "Chapter");
         // chapter file with the same names and times from the range start
-        let meta = ffmetadata(&ms, s(34.13), s(36.13), "Kapitel").unwrap();
+        let meta = ffmetadata(&ms, s(34.13), s(36.13), "Chapter").unwrap();
         assert!(ffmetadata(&[mk(0.0, ""), mk(20.0, "B")], Time::ZERO, s(50.0), "Chapter").unwrap().contains("title=Chapter\n"));
         assert!(meta.contains("START=0\nEND=1000\ntitle=Highlights\n") && meta.contains("START=1000\nEND=2000\ntitle=Interview\n"), "{meta}");
     }
@@ -1963,8 +1963,8 @@ mod tests {
         };
         let s = Time::from_secs_f64;
         let (snd, mute_vid, img) = (media("a.wav", true, MediaKind::Audio), media("v.mp4", false, MediaKind::Video), media("i.png", false, MediaKind::Image));
-        let mut gone = media("weg.wav", true, MediaKind::Audio);
-        gone.path = dir.path().join("fehlt.wav");
+        let mut gone = media("gone.wav", true, MediaKind::Audio);
+        gone.path = dir.path().join("missing.wav");
         let mut p = Project::new("T");
         p.media.extend([snd.clone(), mute_vid.clone(), img.clone(), gone.clone()]);
         let clip = |m: &MediaRef, a: f64, b: f64| Clip::new(ClipContent::Media { media: m.id, kind: m.kind }, s(a), s(b - a));
@@ -2004,7 +2004,7 @@ mod tests {
         let mut p = Project::new("T");
         let gone = |name: &str| MediaRef {
             id: MediaId::new(),
-            path: PathBuf::from(format!("C:/weg/{name}")),
+            path: PathBuf::from(format!("C:/gone/{name}")),
             kind: MediaKind::Video,
             duration: Time::from_secs_f64(60.0),
             width: 320,
@@ -2030,7 +2030,7 @@ mod tests {
         match build(&p, &s, &none, &dir.path().join("o.mp4")) {
             Err(ExportError::MissingMedia(v)) => assert_eq!(v, ["a.mp4", "b.mp4", "c.mp4"]),
             Err(e) => panic!("{e}"),
-            Ok(_) => panic!("Export trotz fehlender Medien"),
+            Ok(_) => panic!("Export despite missing media"),
         }
         // range only in the second clip: only its file counts
         s.range = Some((Time::from_secs_f64(12.0), Time::from_secs_f64(15.0)));
@@ -2040,13 +2040,13 @@ mod tests {
     #[test]
     fn text_clips_share_one_font_copy() {
         let dir = tempfile::tempdir().unwrap();
-        let font = dir.path().join("schrift.ttf");
-        std::fs::write(&font, b"keine echte Schrift").unwrap();
+        let font = dir.path().join("font.ttf");
+        std::fs::write(&font, b"not a real font").unwrap();
         let mut p = Project::new("T");
         let mut t = Track::new(TrackKind::Text);
         for i in 0..50 {
             t.clips.push(Clip::new(
-                ClipContent::Text(TextStyle { text: format!("Zeile {i}"), ..Default::default() }),
+                ClipContent::Text(TextStyle { text: format!("line {i}"), ..Default::default() }),
                 Time::from_secs_f64(i as f64),
                 Time::from_secs_f64(1.0),
             ));
@@ -2067,7 +2067,7 @@ mod tests {
     fn finished_part_survives_failed_rename() {
         let dir = tempfile::tempdir().unwrap();
         let part = dir.path().join("a.mp4.part");
-        std::fs::write(&part, b"fertig").unwrap();
+        std::fs::write(&part, b"done").unwrap();
         // target is a folder: rename fails as with a locked file
         let out = dir.path().join("a.mp4");
         std::fs::create_dir(&out).unwrap();
@@ -2184,7 +2184,7 @@ mod tests {
         )
         .unwrap();
         let mut style = TextStyle {
-            text: "Export mit Umlauten: ÄÖÜ und langem Text der umbrechen muss".into(),
+            text: "Export with umlauts: ÄÖÜ and long text that has to wrap".into(),
             size: 40.0,
             ..Default::default()
         };
@@ -2352,7 +2352,7 @@ mod tests {
         let f = cl_media::decode_frame(&out, Time::from_secs_f64(1.0), 32, 56).unwrap();
         assert!(
             sat(&f, 0, 12) * 3 < sat(&f, 20, 32),
-            "links grau, rechts farbig"
+            "left gray, right colored"
         );
         let early = cl_media::decode_frame(&out, Time::from_secs_f64(2.05), 32, 56).unwrap();
         let late = cl_media::decode_frame(&out, Time::from_secs_f64(3.5), 32, 56).unwrap();
@@ -2362,7 +2362,7 @@ mod tests {
         );
     }
 
-    /// Microphone recorded only on the left: on both channels in the export (default „Automatisch“),
+    /// Microphone recorded only on the left: on both channels in the export (default „Automatic“),
     /// with „Stereo“ the right channel stays silent.
     #[test]
     fn one_sided_audio_is_spread_to_both_channels() {
@@ -2370,7 +2370,7 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("links.wav");
+        let src = dir.path().join("left.wav");
         assert!(cl_media::ffmpeg_command()
             .unwrap()
             .args(["-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=440:d=2", "-af", "pan=stereo|c0=c0|c1=0*c0"])
@@ -2397,7 +2397,7 @@ mod tests {
                 .map(|v| v.trim().parse::<f64>().unwrap_or(f64::NEG_INFINITY))
                 .collect()
         };
-        let mut p = Project::new("Kanäle");
+        let mut p = Project::new("Channels");
         p.media.push(m.clone());
         let mut t = Track::new(TrackKind::Audio);
         t.clips.push(Clip::new(
@@ -2430,7 +2430,7 @@ mod tests {
             note: String::new(),
             color: 0,
         };
-        p.timeline.markers = vec![mk(1, 1.0, "Teil = 1"), mk(2, 2.5, "Ende")];
+        p.timeline.markers = vec![mk(1, 1.0, "Part = 1"), mk(2, 2.5, "End")];
 
         let mut s = ExportSettings::from_project(&p);
         let out = dir.path().join("out.mp4");
@@ -2455,7 +2455,7 @@ mod tests {
             .unwrap();
         let ch = String::from_utf8_lossy(&ch.stdout);
         let titles: Vec<&str> = ch.lines().filter_map(|l| l.rsplit(',').next()).collect();
-        assert_eq!(titles, ["Intro", "Teil = 1", "Ende"], "{ch}");
+        assert_eq!(titles, ["Intro", "Part = 1", "End"], "{ch}");
         // turned off: no chapters in the file
         let off = build(&p, &ExportSettings { chapters: false, ..s.clone() }, &no_fonts, &out).unwrap();
         assert!(!off.args.iter().any(|a| a == "chapters.txt"));
@@ -2606,7 +2606,7 @@ mod tests {
                 }
                 let t0 = std::time::Instant::now();
                 run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
-                eprintln!("Runde {round}, Vorschau {with}: {:.2} s", t0.elapsed().as_secs_f64());
+                eprintln!("round {round}, preview {with}: {:.2} s", t0.elapsed().as_secs_f64());
             }
         }
     }
@@ -2745,7 +2745,7 @@ mod tests {
         let _ = tid;
         // text with outline, box, in animation
         let st = TextStyle {
-            text: "Hallo".into(),
+            text: "Hello".into(),
             size: 40.0,
             outline: Some((3.0, [0, 0, 0, 255])),
             background: Some([200, 0, 0, 180]),
@@ -3055,7 +3055,7 @@ mod tests {
         .unwrap();
         let matte = make("matte.mkv", "color=black:s=320x180:r=30:d=2,drawbox=x=0:y=0:w=160:h=180:color=white:t=fill,format=gray", &["-c:v", "ffv1"]);
         let frame = |m: &MediaRef, fx: ClipFx, name: &str| {
-            let mut d = Document::new(Project::new("Kante"));
+            let mut d = Document::new(Project::new("Edge"));
             let mut s = d.project().settings.clone();
             (s.width, s.height) = (320, 180);
             d.apply(EditOp::SetSettings { settings: s }, OpSource::Ui).unwrap();
@@ -3181,7 +3181,7 @@ mod tests {
         let half = make("half.mkv", "color=white:s=320x180:r=30:d=0.04,drawbox=x=0:y=0:w=160:h=180:color=black:t=fill,format=gray", &["-c:v", "ffv1"]);
         let span = Some(MatteSpan { start: Time::from_secs_f64(0.5), end: Time::from_secs_f64(1.0) });
         let export = |m: &MediaRef, c: Clip, name: &str| {
-            let mut d = Document::new(Project::new("Bereich"));
+            let mut d = Document::new(Project::new("Range"));
             let mut s = d.project().settings.clone();
             (s.width, s.height) = (320, 180);
             d.apply(EditOp::SetSettings { settings: s }, OpSource::Ui).unwrap();
@@ -3427,7 +3427,7 @@ mod tests {
             .unwrap()
             .success());
         let m = cl_media::probe(&src).unwrap();
-        let mut p = Project::new("Ton");
+        let mut p = Project::new("Audio~sound");
         p.media.push(m.clone());
         let mut t = Track::new(TrackKind::Audio);
         t.clips.push(Clip::new(
@@ -3537,7 +3537,7 @@ mod tests {
         }
         // as in the test report: loud sounds at the same time, +6 dB each
         let dir = tempfile::tempdir().unwrap();
-        let mut p = Project::new("Laut");
+        let mut p = Project::new("Loud");
         for id in ["whoosh", "impact", "boom", "airhorn"] {
             let path = dir.path().join(format!("{id}.wav"));
             cl_fx::sfx::render(cl_fx::sfx::sfx(id).unwrap(), &path).unwrap();
@@ -3569,7 +3569,7 @@ mod tests {
         let gap = peaks_db(&out, 0.0, 0.9);
         let tone = peaks_db(&out, 1.2, 1.5);
         assert!(!gap.is_empty() && gap.iter().all(|v| *v < -60.0), "gap silent: {gap:?}");
-        assert!(!tone.is_empty() && tone.iter().all(|v| *v > -30.0), "Ton ab 1 s: {tone:?}");
+        assert!(!tone.is_empty() && tone.iter().all(|v| *v > -30.0), "Audio from 1 s: {tone:?}");
     }
 
     #[test]
@@ -3615,7 +3615,7 @@ mod tests {
         let mut p = sine_project(dir.path(), 0.0);
         let mut s = wav_settings(&p);
         s.loudness = Some(-14.0);
-        let out = dir.path().join("laut.wav");
+        let out = dir.path().join("loud.wav");
         let mut seen = Vec::new();
         run(&build(&p, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |x| seen.push(x)).unwrap();
         let l = lufs(&out);
@@ -3636,7 +3636,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut p = sine_project(dir.path(), 0.0);
         p.timeline.tracks[0].clips[0].fx.speed_curve = Some("montage".into());
-        let out = dir.path().join("kurve.wav");
+        let out = dir.path().join("curve.wav");
         run(&build(&p, &wav_settings(&p), &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         let tone = peaks_db(&out, 0.05, 1.9);
         assert!(!tone.is_empty() && tone.iter().all(|v| *v > -30.0), "{tone:?}");
@@ -3661,12 +3661,12 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let p = sine_project(dir.path(), 0.0);
-        let out = dir.path().join("ziel.wav");
-        std::fs::write(&out, b"alte Datei").unwrap();
+        let out = dir.path().join("target.wav");
+        std::fs::write(&out, b"old file").unwrap();
         let job = build(&p, &wav_settings(&p), &no_fonts, &out).unwrap();
         assert!(matches!(run(&job, Arc::new(AtomicBool::new(true)), |_| {}), Err(ExportError::Cancelled)));
-        assert_eq!(std::fs::read(&out).unwrap(), b"alte Datei");
-        assert!(!dir.path().join("ziel.part.wav").exists());
+        assert_eq!(std::fs::read(&out).unwrap(), b"old file");
+        assert!(!dir.path().join("target.part.wav").exists());
         // success: target replaced, no partial file left
         run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         assert!(cl_media::probe(&out).is_ok());
@@ -3683,7 +3683,7 @@ mod tests {
         // an unused missing media item does not block the export
         let mut gone = p.media[0].clone();
         gone.id = MediaId::new();
-        gone.path = dir.path().join("weg.wav");
+        gone.path = dir.path().join("gone.wav");
         p.media.push(gone);
         assert!(build(&p, &wav_settings(&p), &no_fonts, &dir.path().join("o.wav")).is_ok());
         // preview loads no URL from the project file
@@ -3711,12 +3711,12 @@ mod tests {
             let tmp = tempfile::Builder::new().prefix("cutline-shader-test").tempdir().unwrap();
             let dir = tmp.path();
             std::fs::write(dir.join("wipe.wgsl"), WIPE).unwrap();
-            std::fs::write(dir.join("broken.wgsl"), "fn transition( kaputt").unwrap();
+            std::fs::write(dir.join("broken.wgsl"), "fn transition( broken").unwrap();
             let e = |id: &str| Entry {
                 id: format!("t.shader/{id}"),
                 kind: Kind::Transition,
                 name: id.into(),
-                categories: vec!["Effekt".into()],
+                categories: vec!["Effect".into()],
                 pack: "t.shader".into(),
                 license: "CC0-1.0".into(),
                 author: "Test".into(),
@@ -3903,7 +3903,7 @@ mod tests {
             .output()
             .unwrap();
         let p = cl_media::probe(f).unwrap();
-        assert_eq!(o.stdout.len(), (p.width * p.height * 4) as usize, "Bild {n}");
+        assert_eq!(o.stdout.len(), (p.width * p.height * 4) as usize, "Image {n}");
         cl_media::RgbaFrame { width: p.width, height: p.height, data: o.stdout }
     }
 
@@ -3929,7 +3929,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         for align in [-1i8, 0, 1] {
             let frame = |text: &str, name: &str| {
-                let mut p = Project::new("Zeilen");
+                let mut p = Project::new("lines");
                 (p.settings.width, p.settings.height) = (640, 360);
                 p.settings.fps = Rational { num: 30, den: 1 };
                 let mut tt = Track::new(TrackKind::Text);
@@ -3942,10 +3942,10 @@ mod tests {
                 let (out, _job) = export(&p, dir.path(), name);
                 frame_n(&out, 5)
             };
-            let one = ink_x(&frame("AAA BBB", "eins.mp4"), 0, 360).unwrap();
-            let two = frame("AAA BBB\nAAA BBB", "zwei.mp4");
+            let one = ink_x(&frame("AAA BBB", "four.mp4"), 0, 360).unwrap();
+            let two = frame("AAA BBB\nAAA BBB", "five.mp4");
             let (top, bottom) = (ink_x(&two, 0, 180).unwrap(), ink_x(&two, 180, 360).unwrap());
-            for (name, l) in [("erste Zeile", top), ("zweite Zeile", bottom)] {
+            for (name, l) in [("first line", top), ("second line", bottom)] {
                 assert!(
                     l.0.abs_diff(one.0) <= 2 && l.1.abs_diff(one.1) <= 2,
                     "alignment {align}, {name}: {l:?} instead of {one:?} as single line"
@@ -4028,7 +4028,7 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            let mut p = Project::new("Zuschnitt");
+            let mut p = Project::new("Crop");
             (p.settings.width, p.settings.height) = (320, 180);
             p.settings.fps = Rational { num: 30, den: 1 };
             p.media = vec![v.clone()];
@@ -4037,7 +4037,7 @@ mod tests {
             let mut t = Track::new(TrackKind::Video);
             t.clips.push(c);
             p.timeline.tracks.push(t);
-            let (plain, _) = export(&p, dir.path(), &format!("ohne{n}.mp4"));
+            let (plain, _) = export(&p, dir.path(), &format!("without{n}.mp4"));
             p.timeline.tracks[0].clips[0].crop = crop;
             let (cut, job) = export(&p, dir.path(), &format!("mit{n}.mp4"));
             let g = std::fs::read_to_string(job.workdir.path().join("graph.txt")).unwrap();
@@ -4071,7 +4071,7 @@ mod tests {
             }
             assert!(gone > 100 && kept > 400, "#{n}: {gone} empty, {kept} equal");
             let mean = diff as f64 / (kept * 3) as f64;
-            assert!(mean < 6.0, "#{n}: Rest weicht im Mittel um {mean:.1} ab (verschoben?)");
+            assert!(mean < 6.0, "#{n}: rest deviates on average by {mean:.1} (shifted?)");
         }
     }
 
@@ -4110,7 +4110,7 @@ mod tests {
         let fb = cl_gpu::Frame { rgba: &blue, width: 320, height: 180 };
         let want = gpu.render(WIPE, &[0.0; cl_gpu::PARAMS], fa, fb, (320, 180), 0.5).unwrap();
         let d = mean_diff(&mid.data, &want);
-        assert!(d < 8.0, "Mitte weicht vom cl-gpu-Bild ab: {d}");
+        assert!(d < 8.0, "middle deviates from the cl-gpu image: {d}");
         let d_fall = mean_diff(&frame_n(&fall, 45).data, &want);
         assert!(d_fall > 40.0, "fallback should look different: {d_fall}");
         // left already blue, right still red
@@ -4192,7 +4192,7 @@ mod tests {
         shader_pack();
         let dir = tempfile::tempdir().unwrap();
         let cols = ["red", "blue", "green", "yellow"];
-        let mut p = Project::new("Zeit");
+        let mut p = Project::new("Timing");
         p.settings.width = 1920;
         p.settings.height = 1080;
         p.settings.fps = Rational { num: 30, den: 1 };
@@ -4224,7 +4224,7 @@ mod tests {
                 t.id = "fade".into();
             }
         }
-        let without = time(&p, "ohne.mp4");
+        let without = time(&p, "without.mp4");
         println!("Export 10 s 1080p, 3 transitions: with shader {with:.2} s, without {without:.2} s");
     }
 
@@ -4358,7 +4358,7 @@ mod tests {
         let normal = second_pass(&log("-20.00", "-30.00"), -14.0).unwrap();
         assert!(normal.starts_with("loudnorm=") && normal.contains("measured_I=-20:"), "{normal}");
         assert_eq!(second_pass(&log("-inf", "-inf"), -14.0).as_deref(), Some("anull"));
-        assert_eq!(second_pass("kein JSON", -14.0), None);
+        assert_eq!(second_pass("no JSON", -14.0), None);
         assert_eq!(second_pass(&log("-20.00", "-30.00").replace("input_lra", "x"), -14.0), None);
         // +4 LUFS: loudnorm takes measured_I only up to 0 → lower by 6 dB first
         let loud = second_pass(&log("4.00", "-6.00"), -14.0).unwrap();
@@ -4375,7 +4375,7 @@ mod tests {
         p.timeline.tracks[0].clips[0].volume_db = 30.0;
         let mut s = wav_settings(&p);
         s.loudness = Some(-14.0);
-        let out = dir.path().join("sehr-laut.wav");
+        let out = dir.path().join("very-loud.wav");
         run(&build(&p, &s, &no_fonts, &out).unwrap(), Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         let l = lufs(&out);
         assert!((l + 14.0).abs() <= 1.0, "{l} LUFS");
@@ -4386,18 +4386,18 @@ mod tests {
         let mut p = Project::new("x");
         let mut t = Track::new(TrackKind::Text);
         let txt = |s: &str| ClipContent::Text(TextStyle { text: s.into(), ..Default::default() });
-        t.clips.push(Clip::new(txt("<3 A --> B & C\n\nzwei"), Time::from_secs_f64(1.0), Time::from_secs_f64(2.0)));
-        t.clips.push(Clip::new(txt("später"), Time::from_secs_f64(5.0), Time::from_secs_f64(1.0)));
+        t.clips.push(Clip::new(txt("<3 A --> B & C\n\ntwo"), Time::from_secs_f64(1.0), Time::from_secs_f64(2.0)));
+        t.clips.push(Clip::new(txt("later"), Time::from_secs_f64(5.0), Time::from_secs_f64(1.0)));
         p.timeline.tracks.push(t);
         assert_eq!(
             to_vtt(&p),
-            "WEBVTT\n\n1\n00:00:01.000 --> 00:00:03.000\n&lt;3 A -&gt; B &amp; C\nzwei\n\n2\n00:00:05.000 --> 00:00:06.000\nspäter\n"
+            "WEBVTT\n\n1\n00:00:01.000 --> 00:00:03.000\n&lt;3 A -&gt; B &amp; C\ntwo\n\n2\n00:00:05.000 --> 00:00:06.000\nlater\n"
         );
-        assert!(to_srt(&p).contains("\n<3 A --> B & C\nzwei\n"));
+        assert!(to_srt(&p).contains("\n<3 A --> B & C\ntwo\n"));
         // range 2–4 s: first text shortened and moved, second missing
         assert_eq!(
             to_srt_in(&p, Time::from_secs_f64(2.0), Time::from_secs_f64(4.0)),
-            "1\n00:00:00,000 --> 00:00:01,000\n<3 A --> B & C\nzwei\n"
+            "1\n00:00:00,000 --> 00:00:01,000\n<3 A --> B & C\ntwo\n"
         );
     }
 
@@ -4416,15 +4416,15 @@ mod tests {
         let mut t = Track::new(TrackKind::Text);
         t.clips.push(Clip::new(
             ClipContent::Text(TextStyle {
-                text: "Hallo".into(),
+                text: "Hello".into(),
                 ..Default::default()
             }),
             Time::from_millis(1500),
             Time::from_millis(2000),
         ));
         p.timeline.tracks.push(t);
-        assert_eq!(to_srt(&p), "1\n00:00:01,500 --> 00:00:03,500\nHallo\n");
-        assert_eq!(to_vtt(&p), "WEBVTT\n\n1\n00:00:01.500 --> 00:00:03.500\nHallo\n");
+        assert_eq!(to_srt(&p), "1\n00:00:01,500 --> 00:00:03,500\nHello\n");
+        assert_eq!(to_vtt(&p), "WEBVTT\n\n1\n00:00:01.500 --> 00:00:03.500\nHello\n");
         assert!(subtitles_for(&p, Path::new("a.VTT")).starts_with("WEBVTT"));
     }
     /// Animated image (1 s, stripe runs to the right) as a 4 s image clip over blue video:
@@ -4468,7 +4468,7 @@ mod tests {
             let bg = cl_media::probe(Path::new(&p("bg.mp4"))).unwrap();
             let el = cl_media::probe(Path::new(&p(file))).unwrap();
             assert_eq!(el.kind, MediaKind::Image, "{file}");
-            let mut pr = Project::new("Bewegtes Bild");
+            let mut pr = Project::new("Moving picture");
             pr.settings.width = 320;
             pr.settings.height = 320;
             let mut v = Track::new(TrackKind::Video);
@@ -4546,7 +4546,7 @@ mod tests {
         assert_eq!(job.args, single.args);
         let g = |j: &Job| std::fs::read_to_string(j.workdir.path().join("graph.txt")).unwrap();
         assert_eq!(g(&job), g(&single));
-        assert!(g(&job).contains("alimiter"), "Begrenzer im Durchgang");
+        assert!(g(&job).contains("alimiter"), "limiter in pass");
     }
 
     /// Dense cutting in the preview window (300 clips of 0.1 s in 20 s, long paths): clips of one
@@ -4558,7 +4558,7 @@ mod tests {
         let deep = dir.path().join("x".repeat(120)).join("y".repeat(60));
         std::fs::create_dir_all(&deep).unwrap();
         let media = |n: usize| {
-            let path = deep.join(format!("datei_{n}.wav"));
+            let path = deep.join(format!("file_{n}.wav"));
             std::fs::write(&path, b"x").unwrap();
             // mark as readable: the background check would otherwise report the dummy as unreadable in the
             // middle of building and its clips would drop out from then on (test was flaky)
@@ -4588,7 +4588,7 @@ mod tests {
         assert!(sections::cmd_len(&inputs) < sections::MAX_CMD);
         let g = graph.join(";\n");
         assert!(g.contains(":a:1]asplit") && g.contains(":a]asplit"), "audio stream per clip also with shared inputs");
-        assert_eq!(g.matches("atrim=start=").count(), 200, "200 Clips im Fenster");
+        assert_eq!(g.matches("atrim=start=").count(), 200, "200 clips in window");
         // many different files: understandable error with time
         let e = audio_window_graph(&dense(300), Time::ZERO, Time::from_secs_f64(20.0)).unwrap_err();
         assert!(matches!(e, ExportError::TooManyClips(_)), "{e}");
@@ -4610,9 +4610,9 @@ mod tests {
         let s = Time::from_secs_f64;
         let mut c = Clip::new(ClipContent::Text(TextStyle::default()), s(10.0), s(100.0));
         assert_eq!(graph::lead_skip(&c, s(11.5)), 0.0, "too close to the start");
-        assert_eq!(graph::lead_skip(&c, s(40.7)), 29.0, "ganze Sekunden, ≥ 1 s Vorlauf");
+        assert_eq!(graph::lead_skip(&c, s(40.7)), 29.0, "whole seconds, ≥ 1 s lead-in");
         c.speed = 2.0;
-        assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "Tempo");
+        assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "Speed");
         c.speed = 1.0;
         c.fx.reverse = true;
         assert_eq!(graph::lead_skip(&c, s(40.7)), 0.0, "reversed");
@@ -4642,7 +4642,7 @@ mod tests {
         let need = scratch_bytes(&s, 3600.0);
         assert!((95..115).contains(&(need >> 30)), "{} GB", need >> 30);
         let work = dir.path().join("work");
-        assert_eq!(space_needs(need, &work, &dir.path().join("ziel.mov")), vec![(work.clone(), 2 * need)]);
+        assert_eq!(space_needs(need, &work, &dir.path().join("target.mov")), vec![(work.clone(), 2 * need)]);
         #[cfg(windows)]
         {
             let other = if dir.path().to_string_lossy().starts_with(['Z', 'z']) { "Y:/x/ziel.mov" } else { "Z:/x/ziel.mov" };
@@ -4672,11 +4672,11 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let bad = dir.path().join("kaputt_c2.wav");
-        std::fs::write(&bad, b"kein Ton").unwrap();
+        let bad = dir.path().join("broken_c2.wav");
+        std::fs::write(&bad, b"no sound").unwrap();
         assert!(!audio_readable(&bad, true));
-        assert!(!audio_readable(&bad, false), "Ergebnis gemerkt");
-        let w: Vec<String> = take_audio_warnings().into_iter().filter(|w| w.contains("kaputt_c2.wav")).collect();
+        assert!(!audio_readable(&bad, false), "result remembered");
+        let w: Vec<String> = take_audio_warnings().into_iter().filter(|w| w.contains("broken_c2.wav")).collect();
         assert_eq!(w.len(), 1, "{w:?}");
     }
 
@@ -4704,17 +4704,17 @@ mod tests {
         p.timeline.tracks.push(t);
         let mut s = ExportSettings::from_project(&p);
         (s.format, s.codec) = (Format::Mov, Codec::ProRes);
-        let (one, cut) = (dir.path().join("eins.mov"), dir.path().join("teile.mov"));
+        let (one, cut) = (dir.path().join("four.mov"), dir.path().join("parts.mov"));
         let job = build(&p, &s, &no_fonts, &one).unwrap();
         run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         let job = build_limited(&p, &s, &no_fonts, &cut, 3).unwrap();
         let bounds: Vec<f64> = job.sections.iter().map(|x| x.from.as_secs_f64()).collect();
         assert!(bounds.iter().any(|b| *b > 1.2 && *b < 1.8), "boundary in the transition: {bounds:?}");
-        assert!(job.sections.iter().filter(|x| !x.passes.is_empty()).count() >= 2, "Vorlauf in beiden Abschnitten");
+        assert!(job.sections.iter().filter(|x| !x.passes.is_empty()).count() >= 2, "lead-in in both sections");
         run(&job, Arc::new(AtomicBool::new(false)), |_| {}).unwrap();
         for n in 0..90 {
             let d = mean_diff(&frame_n(&one, n).data, &frame_n(&cut, n).data);
-            assert!(d < 0.05, "Bild {n}: Abweichung {d}");
+            assert!(d < 0.05, "frame {n}: deviation {d}");
         }
         if cl_gpu::gpu().is_none() {
             eprintln!("no GPU: shader use in sections not checked");
@@ -4913,7 +4913,7 @@ mod tests {
         s.codec = Codec::Vp9;
         assert_eq!(s.for_target(600.0, true).audio_bitrate(), 64);
         assert_eq!(s.for_target(10.0, true).audio_bitrate(), 192);
-        // without audible sound (or „Ton exportieren“ off): deduct nothing for audio
+        // without audible sound (or "Export audio" off): deduct nothing for audio
         (s.format, s.codec, s.target_mb) = (Format::Mp4, Codec::H264, Some(25));
         assert_eq!(s.for_target(60.0, false).quality, Quality::Bitrate(3166));
         s.include_audio = false;
@@ -4954,7 +4954,7 @@ mod tests {
     }
 
     fn noise_video_with(dir: &Path, secs: f64, sound: bool) -> MediaRef {
-        let path = dir.join(if sound { "rauschen.mp4" } else { "rauschen_stumm.mp4" });
+        let path = dir.join(if sound { "noise.mp4" } else { "noise_muted.mp4" });
         let mut c = cl_media::ffmpeg_command().unwrap();
         c.args(["-v", "error", "-y", "-f", "lavfi", "-i"])
             .arg(format!("testsrc2=size=480x270:rate=30:duration={secs},noise=alls=40:allf=t"));
@@ -4973,7 +4973,7 @@ mod tests {
     /// Project of `n` equally long clips of the noise video (several: sections possible)
     fn noise_project(dir: &Path, secs: f64, n: usize) -> Project {
         let m = noise_video(dir, secs);
-        let mut p = Project::new("Rauschen");
+        let mut p = Project::new("Noise");
         (p.settings.width, p.settings.height, p.settings.fps) = (480, 270, Rational::new(30, 1));
         let mut t = Track::new(TrackKind::Video);
         let len = secs / n as f64;
@@ -5034,7 +5034,7 @@ mod tests {
         }
         let mut s = ExportSettings::from_project(&p);
         s.target_mb = Some(1);
-        // silent source (track is mixed silent) and „Ton exportieren“ off
+        // silent source (track is mixed silent) and "Export audio" off
         for include_audio in [true, false] {
             s.include_audio = include_audio;
             let out = dir.path().join(format!("stumm_{include_audio}.mp4"));
@@ -5057,7 +5057,7 @@ mod tests {
         let mut s = ExportSettings::from_project(&p);
         s.target_mb = Some(1);
         for stop in [0.1, 0.6] {
-            let out = dir.path().join("abbruch.mp4");
+            let out = dir.path().join("cancel.mp4");
             let job = build(&p, &s, &no_fonts, &out).unwrap();
             let cancel = Arc::new(AtomicBool::new(false));
             let c = cancel.clone();

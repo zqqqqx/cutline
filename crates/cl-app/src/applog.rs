@@ -20,13 +20,18 @@ pub const KEEP_DAYS: i64 = 7;
 /// From this size on a daily file only takes warnings and errors (at double the size nothing more)
 pub const FILE_LIMIT: u64 = 20 * 1024 * 1024;
 
-const START: &str = "beginnt";
-const END: &str = "endet sauber";
-const PANIC: &str = "Absturz";
-const LIMIT_NOTE: &str = "Obergrenze der Datei erreicht – ab hier nur noch Warnungen und Fehler";
+const SESSION: &str = "session";
+const CRASH: &str = "crash";
+const START: &str = "starts";
+const END: &str = "ends cleanly";
+const PANIC: &str = "Panic";
+// (the markers as versions up to 0.19.3 wrote them are in translations/legacy/names.tsv: the log of
+// the last run may be an old one)
+use cl_core::legacy::old;
+const LIMIT_NOTE: &str = "File size limit reached – only warnings and errors from here on";
 const DAY_MS: i64 = 86_400_000;
 /// Targets Cutline itself uses with `target:` (everything with `cutline::…` belongs anyway)
-const OWN: &[&str] = &["sitzung", "system", "perf", "projekt", "export", "proxy", "update", "paket", "import", "meldung", "wiedergabe"];
+const OWN: &[&str] = &["session", "system", "perf", "project", "export", "proxy", "update", "pack", "import", "feedback", "playback"];
 
 pub struct Rec {
     pub ms: i64,
@@ -43,7 +48,7 @@ pub enum Msg {
 
 static TX: OnceLock<Sender<Msg>> = OnceLock::new();
 static DIR: OnceLock<PathBuf> = OnceLock::new();
-/// The last run ended without „endet sauber“ or with a panic
+/// The last run ended without its „ends cleanly“ line or with a panic
 static CRASHED: AtomicBool = AtomicBool::new(false);
 static LAST_EXPORT: Mutex<Option<PathBuf>> = Mutex::new(None);
 static UI_INFO: OnceLock<String> = OnceLock::new();
@@ -286,11 +291,11 @@ const NAME_EXTS: &[&str] = &[
     "heic", "svg", "cutline", "srt", "vtt", "ass", "ttf", "otf", "zip", "lut", "cube",
 ];
 
-/// Single file names (`kaputt_text.mp4`) become `<datei>` with extension; already replaced ones (`<pfad>.mp4`)
+/// Single file names (`kaputt_text.mp4`) become `<file>` with extension; already replaced ones (`<path>.mp4`)
 /// stay. shortcut: a name with spaces only loses its last word – messages therefore put
 /// names in „…“.
 fn anon_names(s: &str) -> String {
-    let sep = |c: char| c.is_whitespace() || "\"'()[]„“,;=".contains(c);
+    let sep = |c: char| c.is_whitespace() || "\"'()[]„“”,;=".contains(c);
     let mut out = String::with_capacity(s.len());
     let mut start = 0;
     for (i, c) in s.char_indices().chain(std::iter::once((s.len(), ' '))) {
@@ -298,11 +303,11 @@ fn anon_names(s: &str) -> String {
             continue;
         }
         let w = &s[start..i];
-        // „name.mp4: Fehler“ – the colon does not belong to the name
+        // "name.mp4: error" – the colon does not belong to the name
         let core = w.trim_end_matches([':', '.']);
         match core.rsplit_once('.') {
             Some((stem, ext)) if !stem.is_empty() && !core.starts_with('<') && NAME_EXTS.contains(&ext.to_ascii_lowercase().as_str()) => {
-                out.push_str("<datei>.");
+                out.push_str("<file>.");
                 out.push_str(ext);
                 out.push_str(&w[core.len()..]);
             }
@@ -318,8 +323,8 @@ fn anon_names(s: &str) -> String {
 
 /// Redact content (for messages, export errors and the exported log; logs
 /// end up in public issues): names in „…“ become `***`, paths (`C:\`, `C:/`, `\\`, `~/`, `~\` or
-/// `/` at a word start, up to the line end or `: `, ` · `, `"`, `'`, `)`, `“`) become `<pfad>` with extension,
-/// single file names `<datei>` with extension.
+/// `/` at a word start, up to the line end or `: `, ` · `, `"`, `'`, `)`, `“`) become `<path>` with extension,
+/// single file names `<file>` with extension.
 pub fn anon(s: &str) -> String {
     anon_names(&anon_paths(s))
 }
@@ -338,6 +343,20 @@ fn anon_paths(s: &str) -> String {
             None => q.push_str(p),
         }
     }
+    let mut e = String::with_capacity(q.len());
+    let mut parts = q.split('“');
+    e.push_str(parts.next().unwrap_or_default());
+    for p in parts {
+        e.push('“');
+        match p.split_once('”') {
+            Some((_, rest)) => {
+                e.push_str("***”");
+                e.push_str(rest);
+            }
+            None => e.push_str(p),
+        }
+    }
+    let q = e;
     let (s, b) = (q.as_str(), q.as_bytes());
     let mut out = String::with_capacity(s.len());
     let (mut i, mut copied) = (0, 0);
@@ -358,6 +377,7 @@ fn anon_paths(s: &str) -> String {
             && !matches!(b[e], b'\n' | b'\r' | b'"' | b'\'' | b')')
             && !(b[e] == b':' && matches!(b.get(e + 1), None | Some(b' ')))
             && !b[e..].starts_with("“".as_bytes())
+            && !b[e..].starts_with("”".as_bytes())
             && !b[e..].starts_with(" · ".as_bytes())
         {
             e += 1;
@@ -365,7 +385,7 @@ fn anon_paths(s: &str) -> String {
         let name = s[i..e].trim_end().rsplit(['/', '\\']).next().unwrap_or_default();
         let ext = name.rsplit_once('.').map(|x| x.1).filter(|x| (1..=8).contains(&x.len()) && x.bytes().all(|c| c.is_ascii_alphanumeric()));
         out.push_str(&s[copied..i]);
-        out.push_str("<pfad>");
+        out.push_str("<path>");
         if let Some(x) = ext {
             out.push('.');
             out.push_str(x);
@@ -433,11 +453,11 @@ impl Writer {
         self.last = Some((r, 0));
     }
 
-    /// „… 37× wiederholt“ for the last merged line
+    /// „… repeated 37×“ for the last merged line
     fn repeats(&mut self) {
         if let Some((l, n)) = &mut self.last {
             if *n > 0 {
-                let r = Rec { ms: l.ms, level: l.level, area: l.area.clone(), msg: format!("… {n}× wiederholt") };
+                let r = Rec { ms: l.ms, level: l.level, area: l.area.clone(), msg: format!("… repeated {n}×") };
                 *n = 0;
                 self.write(&r);
             }
@@ -460,7 +480,7 @@ impl Writer {
         let mut text = String::new();
         if note {
             o.noted = true;
-            text += &format_line(&Rec { ms: r.ms, level: Level::Warn, area: "sitzung".into(), msg: LIMIT_NOTE.into() }, self.off);
+            text += &format_line(&Rec { ms: r.ms, level: Level::Warn, area: SESSION.into(), msg: LIMIT_NOTE.into() }, self.off);
         }
         if line {
             text += &format_line(r, self.off);
@@ -505,17 +525,31 @@ fn marker_pid(line: &str, area: &str, what: &str) -> Option<u32> {
     rest[..rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len())].parse().ok()
 }
 
-/// Did the last run end unexpectedly? (no „endet sauber“ after its start or a panic;
+/// Session start in a log line (pid), as this version or an older one wrote it
+pub fn start_pid(line: &str) -> Option<u32> {
+    marker_pid(line, SESSION, START).or_else(|| marker_pid(line, old("log_session"), old("log_start")))
+}
+
+fn end_pid(line: &str) -> Option<u32> {
+    marker_pid(line, SESSION, END).or_else(|| marker_pid(line, old("log_session"), old("log_end")))
+}
+
+/// Panic in a log line (pid), as this version or an older one wrote it
+pub fn panic_pid(line: &str) -> Option<u32> {
+    marker_pid(line, CRASH, PANIC).or_else(|| marker_pid(line, old("log_crash"), old("log_panic")))
+}
+
+/// Did the last run end unexpectedly? (no „ends cleanly“ line after its start, or a panic;
 /// a second window still running does not count)
 pub fn unclean_exit(text: &str, alive: impl Fn(u32) -> bool) -> bool {
     let mut last: Option<(u32, bool, bool)> = None;
     for line in text.lines() {
-        if let Some(pid) = marker_pid(line, "sitzung", START) {
+        if let Some(pid) = start_pid(line) {
             last = Some((pid, false, false));
         } else if let Some((pid, clean, panic)) = &mut last {
-            if marker_pid(line, "sitzung", END) == Some(*pid) {
+            if end_pid(line) == Some(*pid) {
                 *clean = true;
-            } else if marker_pid(line, "absturz", PANIC) == Some(*pid) {
+            } else if panic_pid(line) == Some(*pid) {
                 *panic = true;
             }
         }
@@ -617,7 +651,7 @@ static LOGGER: Logger = Logger;
 /// Set up the log for the program (writer thread, `log` facade, panic hook)
 pub fn init() {
     init_at(crate::paths::logs_dir(), true);
-    log::info!(target: "sitzung", "{START} pid={} · Cutline {} ({})", std::process::id(), env!("CARGO_PKG_VERSION"), build());
+    log::info!(target: "session", "{START} pid={} · Cutline {} ({})", std::process::id(), env!("CARGO_PKG_VERSION"), build());
 }
 
 fn init_at(dir: PathBuf, check: bool) {
@@ -639,8 +673,8 @@ fn init_at(dir: PathBuf, check: bool) {
 fn panic_hook(info: &str) {
     let th = std::thread::current();
     let bt = std::backtrace::Backtrace::force_capture().to_string();
-    let msg = format!("{PANIC} pid={} im Thread „{}“: {info}\n{bt}", std::process::id(), th.name().unwrap_or("?"));
-    let r = Rec { ms: now_ms(), level: Level::Error, area: "absturz".into(), msg: redact(&msg) };
+    let msg = format!("{PANIC} pid={} in thread “{}”: {info}\n{bt}", std::process::id(), th.name().unwrap_or("?"));
+    let r = Rec { ms: now_ms(), level: Level::Error, area: CRASH.into(), msg: redact(&msg) };
     if th.name() == Some(THREAD) {
         // the writer thread itself: append directly
         if let Some(dir) = DIR.get() {
@@ -666,7 +700,7 @@ fn build() -> &'static str {
 
 /// Clean exit (before closing the window)
 pub fn session_end() {
-    log::info!(target: "sitzung", "{END} pid={}", std::process::id());
+    log::info!(target: "session", "{END} pid={}", std::process::id());
     flush();
 }
 
@@ -686,8 +720,8 @@ pub(crate) use perf_line;
 pub fn outcome<T, E: std::fmt::Display>(area: &str, what: &str, t0: std::time::Instant, r: Result<T, E>) -> Result<T, E> {
     let ms = t0.elapsed().as_millis();
     match &r {
-        Ok(_) => log::info!(target: area, "{what} fertig in {ms} ms"),
-        Err(e) => log::warn!(target: area, "{what} fehlgeschlagen nach {ms} ms: {e}"),
+        Ok(_) => log::info!(target: area, "{what} done in {ms} ms"),
+        Err(e) => log::warn!(target: area, "{what} failed after {ms} ms: {e}"),
     }
     r
 }
@@ -702,7 +736,7 @@ pub fn warned(area: &str, msg: String) -> String {
 pub fn counts(p: &cl_core::Project) -> String {
     let tracks = &p.timeline.tracks;
     format!(
-        "{} Spuren · {} Clips · {} Medien · {:.1} s",
+        "{} tracks · {} clips · {} media · {:.1} s",
         tracks.len(),
         tracks.iter().map(|t| t.clips.len()).sum::<usize>(),
         p.media.len(),
@@ -713,7 +747,7 @@ pub fn counts(p: &cl_core::Project) -> String {
 /// Project opened/saved/closed – only key figures, no name and no path
 pub fn project(what: &str, p: &cl_core::Project, t0: Option<std::time::Instant>) {
     let ms = t0.map(|t| format!(" in {} ms", t.elapsed().as_millis())).unwrap_or_default();
-    log::info!(target: "projekt", "{what}{ms}: {}", counts(p));
+    log::info!(target: "project", "{what}{ms}: {}", counts(p));
 }
 
 /// FFmpeg command line for the log: the structure stays, paths are redacted (texts are in files)
@@ -805,7 +839,7 @@ pub fn system_info() -> &'static str {
     static S: OnceLock<String> = OnceLock::new();
     S.get_or_init(|| {
         let ff = cl_media::ffmpeg_command().ok();
-        let path = ff.as_ref().map(|c| c.get_program().to_string_lossy().into_owned()).unwrap_or_else(|| "nicht gefunden".into());
+        let path = ff.as_ref().map(|c| c.get_program().to_string_lossy().into_owned()).unwrap_or_else(|| "not found".into());
         let version = run_out(cl_media::ffmpeg_command().ok().map(|mut c| {
             c.arg("-version");
             c
@@ -816,11 +850,11 @@ pub fn system_info() -> &'static str {
         }));
         let hw = hw_encoders(&encoders);
         if let Some(v) = ffmpeg_too_old(version.lines().next().unwrap_or("")) {
-            log::warn!(target: "system", "FFmpeg {v} ist zu alt: Cutline braucht {MIN_FFMPEG} oder neuer");
+            log::warn!(target: "system", "FFmpeg {v} is too old: Cutline needs {MIN_FFMPEG} or newer");
             *OLD_FFMPEG.lock().unwrap_or_else(|e| e.into_inner()) = Some(v);
         }
         format!(
-            "Cutline {} ({}, {} {})\nSystem: {}\nCPU: {} Kerne · Arbeitsspeicher: {}\nFFmpeg: {path} · {}\nHardware-Encoder: {}",
+            "Cutline {} ({}, {} {})\nSystem: {}\nCPU: {} cores · memory: {}\nFFmpeg: {path} · {}\nHardware-Encoder: {}",
             env!("CARGO_PKG_VERSION"),
             build(),
             std::env::consts::OS,
@@ -829,7 +863,7 @@ pub fn system_info() -> &'static str {
             std::thread::available_parallelism().map_or(0, |n| n.get()),
             ram_gb().map_or("?".into(), |g| format!("{g:.1} GB")),
             version.lines().next().unwrap_or("?"),
-            if hw.is_empty() { "keine".into() } else { hw.join(", ") }
+            if hw.is_empty() { "none".into() } else { hw.join(", ") }
         )
     })
 }
@@ -838,10 +872,10 @@ pub fn system_info() -> &'static str {
 pub fn startup(cc: &eframe::CreationContext<'_>, s: &crate::settings::AppSettings) {
     let gpu = cc.wgpu_render_state.as_ref().map(|r| {
         let i = r.adapter.get_info();
-        format!("{} ({:?}, {:?}, Treiber {} {})", i.name, i.backend, i.device_type, i.driver, i.driver_info)
+        format!("{} ({:?}, {:?}, driver {} {})", i.name, i.backend, i.device_type, i.driver, i.driver_info)
     });
     let info = format!(
-        "Grafik: {} · Skalierung: {:.2} × {:.2} · Sprache: {} · Design: {}",
+        "Graphics: {} · scale: {:.2} × {:.2} · language: {} · theme: {}",
         gpu.as_deref().unwrap_or("?"),
         cc.egui_ctx.native_pixels_per_point().unwrap_or(1.0),
         s.ui_scale,
@@ -910,12 +944,12 @@ pub fn scrub_settings(v: &mut serde_json::Value) {
 /// Header of the export
 pub fn header(system: &str, ui: &str, mut settings: serde_json::Value, packages: &[(String, String, bool)], project: Option<String>, now: i64) -> String {
     scrub_settings(&mut settings);
-    let packs: Vec<String> = packages.iter().map(|(id, v, on)| format!("{id} {v}{}", if *on { "" } else { " (aus)" })).collect();
+    let packs: Vec<String> = packages.iter().map(|(id, v, on)| format!("{id} {v}{}", if *on { "" } else { " (off)" })).collect();
     let text = format!(
-        "Cutline-Protokoll · exportiert {}\n{system}\n{ui}\nPakete: {}\nProjekt: {}\nEinstellungen: {}\n\n---- Protokoll der letzten 24 Stunden ----\n",
+        "Cutline log · exported {}\n{system}\n{ui}\nPacks: {}\nProject: {}\nSettings: {}\n\n---- Log of the last 24 hours ----\n",
         stamp(now, offset()),
         packs.join(", "),
-        project.as_deref().unwrap_or("keins"),
+        project.as_deref().unwrap_or("none"),
         settings
     );
     redact(&text)
@@ -939,25 +973,25 @@ pub fn export_text(dir: &Path, head: &str, now: i64, home: &str) -> String {
 /// Suggested file name: `cutline-protokoll-YYYY-MM-DD-HHMM.txt`
 pub fn export_name(now: i64) -> String {
     let s = stamp(now, offset());
-    format!("cutline-protokoll-{}-{}{}.txt", &s[..10], &s[11..13], &s[14..16])
+    format!("cutline-log-{}-{}{}.txt", &s[..10], &s[11..13], &s[14..16])
 }
 
 impl crate::app::App {
-    /// Settings → About Cutline: „Protokoll exportieren“
+    /// Settings → About Cutline: „Export log“
     pub fn export_log(&mut self, ctx: &egui::Context) {
         let now = now_ms();
         // Click test without a file dialog: target from the environment (only with CUTLINE_SHOTS)
         let target = match std::env::var_os("CUTLINE_LOG_EXPORT").filter(|_| std::env::var_os("CUTLINE_SHOTS").is_some()) {
             Some(p) => Some(PathBuf::from(p)),
-            None => crate::dialog().add_filter(crate::tr("Textdatei"), &["txt"]).set_file_name(export_name(now)).save_file(),
+            None => crate::dialog().add_filter(crate::tr("Text file"), &["txt"]).set_file_name(export_name(now)).save_file(),
         };
         let Some(out) = target else { return };
         let text = self.log_text_job();
-        self.tasks.spawn(ctx, "log-export", crate::tr("Protokoll wird exportiert"), move |_, _| {
+        self.tasks.spawn(ctx, "log-export", crate::tr("Exporting log"), move |_, _| {
             match crate::paths::write_atomic(&out, text()) {
                 Ok(()) => crate::tasks::TaskDone::Run(Box::new(move |app: &mut crate::app::App| {
-                    log::info!(target: "sitzung", "Protokoll exportiert: {}", out.display());
-                    app.toast(format!("{}  Protokoll gespeichert", icon::CHECK));
+                    log::info!(target: "session", "Log exported: {}", out.display());
+                    app.toast(format!("{}  Log saved", icon::CHECK));
                     *LAST_EXPORT.lock().unwrap_or_else(|e| e.into_inner()) = Some(out);
                 })),
                 Err(e) => crate::tasks::TaskDone::Failed(format!("{}: {e}", out.display())),
@@ -991,27 +1025,27 @@ pub fn about_buttons(app: &mut crate::app::App, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         let busy = app.tasks.running("log-export").is_some();
         if ui
-            .add_enabled(!busy, theme::secondary(format!("{}  Protokoll exportieren", icon::FILE_TEXT)))
-            .on_hover_text(crate::tr("Letzte 24 Stunden als Textdatei speichern"))
+            .add_enabled(!busy, theme::secondary(format!("{}  Export log", icon::FILE_TEXT)))
+            .on_hover_text(crate::tr("Save the last 24 hours as a text file"))
             .clicked()
         {
             app.export_log(ui.ctx());
         }
-        if theme::icon_button(ui, icon::FOLDER_OPEN, "Protokollordner öffnen", true, false).clicked() {
+        if theme::icon_button(ui, icon::FOLDER_OPEN, "Open log folder", true, false).clicked() {
             let d = crate::paths::logs_dir();
             let _ = std::fs::create_dir_all(&d);
             crate::home::reveal(&d);
         }
         let last = LAST_EXPORT.lock().unwrap_or_else(|e| e.into_inner()).clone();
         if let Some(p) = last {
-            if ui.add(theme::ghost(format!("{}  Im Explorer zeigen", icon::FOLDER_OPEN))).clicked() {
+            if ui.add(theme::ghost(format!("{}  Show in Explorer", icon::FOLDER_OPEN))).clicked() {
                 crate::home::reveal(&p);
             }
         }
     });
 }
 
-/// After a crash, on the next start: a subtle message with „Protokoll exportieren“ (once)
+/// After a crash, on the next start: a subtle message with „Export log“ (once)
 pub fn crash_notice(ctx: &egui::Context, app: &mut crate::app::App) {
     if !CRASHED.load(Ordering::Relaxed) {
         return;
@@ -1024,12 +1058,12 @@ pub fn crash_notice(ctx: &egui::Context, app: &mut crate::app::App) {
             crate::dialog::frame(ctx).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(icon::WARNING_CIRCLE).color(theme::TEXT_DIM()));
-                    ui.label(crate::tr("Cutline wurde beim letzten Mal unerwartet beendet"));
-                    if ui.add(theme::secondary("Protokoll exportieren")).clicked() {
+                    ui.label(crate::tr("Cutline quit unexpectedly last time"));
+                    if ui.add(theme::secondary("Export log")).clicked() {
                         app.export_log(ctx);
                     }
                     crate::report::crash_button(ui, app);
-                    close |= theme::icon_button(ui, icon::X, "Schließen", true, false).clicked();
+                    close |= theme::icon_button(ui, icon::X, "Close", true, false).clicked();
                 });
             });
         });
@@ -1062,14 +1096,14 @@ mod tests {
     #[test]
     fn names_paths_and_texts_stay_out_of_the_log() {
         assert_eq!(anon("„Bewerbung Firma X“ importiert: 3 Clips"), "„***“ importiert: 3 Clips");
-        assert_eq!(anon(r"Archiv erstellt: D:\Kunden\Firma X\a.zip"), "Archiv erstellt: <pfad>.zip");
-        assert_eq!(anon("Stand gesichert in /home/u/Firma X/p.cutline"), "Stand gesichert in <pfad>.cutline");
+        assert_eq!(anon(r"Archiv erstellt: D:\Kunden\Firma X\a.zip"), "Archiv erstellt: <path>.zip");
+        assert_eq!(anon("Stand gesichert in /home/u/Firma X/p.cutline"), "Stand gesichert in <path>.cutline");
         assert_eq!(
             anon("Error opening input C:/Firma X/b.mp4: No such file\n~/x/y.wav: denied"),
-            "Error opening input <pfad>.mp4: No such file\n<pfad>.wav: denied"
+            "Error opening input <path>.mp4: No such file\n<path>.wav: denied"
         );
         // no paths: stays
-        for s in ["10 MB/s", "-/filter_complex", "https://a.b/c", "und/oder", "1/2", "Paket entfernt"] {
+        for s in ["10 MB/s", "-/filter_complex", "https://a.b/c", "and/or", "1/2", "Pack removed"] {
             assert_eq!(anon(s), s);
         }
         let args: Vec<String> =
@@ -1078,7 +1112,7 @@ mod tests {
                 .into();
         assert_eq!(
             ffmpeg_cmd(&args),
-            "ffmpeg -y -i <pfad>.mov -/filter_complex graph.txt -c:v libx264 <pfad>.mp4"
+            "ffmpeg -y -i <path>.mov -/filter_complex graph.txt -c:v libx264 <path>.mp4"
         );
     }
 
@@ -1086,7 +1120,7 @@ mod tests {
     #[test]
     fn multi_word_file_names_are_redacted_whole() {
         let name = "Bewerbung Firma Müller.mp4";
-        for msg in [crate::file_drop::probe_error(name), format!("„{name}“: Invalid data"), format!("„{name}“ fertig in 12 ms")] {
+        for msg in [crate::file_drop::probe_error(name), format!("„{name}“: Invalid data"), format!("„{name}“ done in 12 ms")] {
             let out = anon(&msg);
             assert!(!out.contains("Bewerbung") && !out.contains("Firma"), "{out}");
         }
@@ -1097,22 +1131,22 @@ mod tests {
     #[test]
     fn exported_log_has_no_file_or_project_names() {
         let lines = [
-            r"2026-11-16 19:09:17.136 +01:00 INFO  export: fertig nach 245.4 s: C:\Users\nutzer/AppData/Local/Temp/qa/K5_proj\entwurf.mp4 · Some((852, 480, Rational { num: 60, den: 1 }, Mp4, H264, Recommended, Nvenc, true))",
-            r"2026-11-16 19:10:31.628 +01:00 INFO  export: Fehler nach 27.3 s: ~/AppData/Local/Temp/qa/K5_proj\K5_abbruch.mp4 · Some((852, 480))",
-            r"2026-11-16 19:11:56.839 +01:00 INFO  export: fertig nach 12.0 s: ~/AppData/Local/Temp/qa/K5_proj\entwurf.gif · Some((1920, 1080))",
-            "2026-11-16 18:44:12.469 +01:00 INFO  proxy: videoplayback.mp4 fertig in 129747 ms",
-            "2026-11-16 18:51:54.712 +01:00 ERROR meldung: kaputt_text.mp4 konnte nicht gelesen werden: Datei kann nicht gelesen werden",
-            "2026-11-16 18:52:57.789 +01:00 INFO  meldung: Vorlage „Mein Projekt“ gespeichert",
+            r"2026-11-16 19:09:17.136 +01:00 INFO  export: done after 245.4 s: C:\Users\nutzer/AppData/Local/Temp/qa/K5_proj\entwurf.mp4 · Some((852, 480, Rational { num: 60, den: 1 }, Mp4, H264, Recommended, Nvenc, true))",
+            r"2026-11-16 19:10:31.628 +01:00 INFO  export: Error after 27.3 s: ~/AppData/Local/Temp/qa/K5_proj\K5_abbruch.mp4 · Some((852, 480))",
+            r"2026-11-16 19:11:56.839 +01:00 INFO  export: done after 12.0 s: ~/AppData/Local/Temp/qa/K5_proj\entwurf.gif · Some((1920, 1080))",
+            "2026-11-16 18:44:12.469 +01:00 INFO  proxy: videoplayback.mp4 done in 129747 ms",
+            "2026-11-16 18:51:54.712 +01:00 ERROR feedback: broken_text.mp4 could not be read: file cannot be read",
+            "2026-11-16 18:52:57.789 +01:00 INFO  feedback: Template “My project” saved",
         ];
         let dir = tempfile::tempdir().unwrap();
         let now = lines.iter().filter_map(|l| parse_stamp(l)).max().unwrap() + 1000;
         std::fs::write(dir.path().join(file_name(now, offset())), lines.join("\n") + "\n").unwrap();
         let out = export_text(dir.path(), "", now, r"C:\Users\nutzer");
-        for bad in ["entwurf", "K5_", "videoplayback", "kaputt_text", "AppData", "Mein Projekt", "nutzer"] {
+        for bad in ["entwurf", "K5_", "videoplayback", "broken_text", "AppData", "My project", "nutzer"] {
             assert!(!out.contains(bad), "{bad} in\n{out}");
         }
-        assert!(out.contains("fertig nach 245.4 s: <pfad>.mp4 · Some((852, 480, Rational { num: 60, den: 1 }"), "{out}");
-        assert!(out.contains("<pfad>.gif · ") && out.contains("proxy: <datei>.mp4 fertig") && out.contains("meldung: <datei>.mp4 konnte"), "{out}");
+        assert!(out.contains("done after 245.4 s: <path>.mp4 · Some((852, 480, Rational { num: 60, den: 1 }"), "{out}");
+        assert!(out.contains("<path>.gif · ") && out.contains("proxy: <file>.mp4 done") && out.contains("feedback: <file>.mp4 could not"), "{out}");
         // Versions, times and numbers stay
         for s in ["Cutline 0.11.1 (Release)", "18:44:12.469", "graph.txt", "10.0.26300.9974", "245.4 s"] {
             assert_eq!(anon(s), s);
@@ -1179,7 +1213,7 @@ mod tests {
             "FFmpeg beendet: exit code=1 · Tokens: 5 · token count 3",
             "https://example.com/a/b.zip: Dns Failed",
             "Bearer of bad news",
-            "\"key\": \"Strg+S\"",
+            "\"key\": \"Ctrl+S\"",
             "Projekt „Urlaub 🎬“ · 3 Spuren",
             "",
         ] {
@@ -1190,7 +1224,7 @@ mod tests {
     #[test]
     fn home_becomes_tilde() {
         let h = if cfg!(windows) { "C:\\Users\\Ada" } else { "/home/ada" };
-        assert_eq!(tilde(&format!("{h}\\Videos\\a.mp4 und {h}/x"), h), "~\\Videos\\a.mp4 und ~/x");
+        assert_eq!(tilde(&format!("{h}\\Videos\\a.mp4 and {h}/x"), h), "~\\Videos\\a.mp4 and ~/x");
         assert_eq!(tilde("c:/users/ada/b.mp4 · Ü", "C:\\Users\\Ada\\"), "~/b.mp4 · Ü");
         assert_eq!(tilde("/a/b", ""), "/a/b");
         assert_eq!(tilde("ÄÖÜ ohne Pfad", h), "ÄÖÜ ohne Pfad");
@@ -1202,19 +1236,19 @@ mod tests {
         let now = 1_763_251_200_000; // Sunday 01:00 local time
         let line = |ms: i64, m: &str| format_line(&rec(ms, Level::Info, m), off);
         let yesterday = format!(
-            "{}{}kaputt ohne Zeit\n{}{}",
-            line(now - DAY_MS - 1000, "zu alt"),
-            line(now - 3_600_000, "gestern spät"),
-            line(now - 7_200_000, "noch früher"),
+            "{}{}broken without time\n{}{}",
+            line(now - DAY_MS - 1000, "too old"),
+            line(now - 3_600_000, "yesterday late"),
+            line(now - 7_200_000, "even earlier"),
             &line(now - 1000, "halb")[..20]
         );
-        let today = format!("Müll am Anfang\n{}{}", line(now - 1_800_000, "nach Mitternacht"), format_line(&rec(now - 60_000, Level::Error, "Panic\nZeile 2"), off));
+        let today = format!("junk at the start\n{}{}", line(now - 1_800_000, "after midnight"), format_line(&rec(now - 60_000, Level::Error, "Panic\nline 2"), off));
         let out = last_24h(&[yesterday, today], now);
-        let order: Vec<&str> = ["noch früher", "gestern spät", "nach Mitternacht", "Panic", "    Zeile 2"].to_vec();
+        let order: Vec<&str> = ["even earlier", "yesterday late", "after midnight", "Panic", "    line 2"].to_vec();
         let pos: Vec<usize> = order.iter().map(|m| out.find(m).unwrap_or_else(|| panic!("{m} missing:\n{out}"))).collect();
         assert!(pos.windows(2).all(|w| w[0] < w[1]), "{out}");
-        assert!(!out.contains("zu alt") && !out.contains("Müll"), "{out}");
-        assert!(out.contains("kaputt ohne Zeit"), "belongs to the entry before");
+        assert!(!out.contains("too old") && !out.contains("junk"), "{out}");
+        assert!(out.contains("broken without time"), "belongs to the entry before");
     }
 
     #[test]
@@ -1229,13 +1263,13 @@ mod tests {
         let tx = spawn(d.path().into(), 2000, false);
         let now = now_ms();
         for i in 0..200 {
-            tx.send(Msg::Rec(rec(now, Level::Info, &format!("Zeile {i}")))).unwrap();
+            tx.send(Msg::Rec(rec(now, Level::Info, &format!("line {i}")))).unwrap();
         }
-        tx.send(Msg::Rec(rec(now, Level::Warn, "Warnung bleibt"))).unwrap();
+        tx.send(Msg::Rec(rec(now, Level::Warn, "warning stays"))).unwrap();
         synced(&tx, true, Duration::from_secs(10));
         let t = read_all(d.path());
         assert_eq!(t.matches(LIMIT_NOTE).count(), 1, "{t}");
-        assert!(t.contains("Warnung bleibt") && !t.contains("Zeile 199"));
+        assert!(t.contains("warning stays") && !t.contains("line 199"));
         assert!(t.len() < 2600, "{}", t.len());
     }
 
@@ -1245,14 +1279,14 @@ mod tests {
         let tx = spawn(d.path().into(), FILE_LIMIT, false);
         let now = now_ms();
         for _ in 0..38 {
-            tx.send(Msg::Rec(rec(now, Level::Warn, "Ton: Aussetzer"))).unwrap();
+            tx.send(Msg::Rec(rec(now, Level::Warn, "Audio: dropout"))).unwrap();
         }
         tx.send(Msg::Rec(rec(now, Level::Info, "anders"))).unwrap();
         tx.send(Msg::Rec(rec(now, Level::Info, "anders"))).unwrap();
         synced(&tx, true, Duration::from_secs(10));
         let t = read_all(d.path());
-        assert_eq!(t.matches("Ton: Aussetzer").count(), 1, "{t}");
-        assert!(t.contains("test: … 37× wiederholt") && t.contains("test: … 1× wiederholt"), "{t}");
+        assert_eq!(t.matches("Audio: dropout").count(), 1, "{t}");
+        assert!(t.contains("test: … repeated 37×") && t.contains("test: … repeated 1×"), "{t}");
         assert!(t.find("37×").unwrap() < t.find("anders").unwrap());
     }
 
@@ -1260,13 +1294,13 @@ mod tests {
     fn old_files_are_pruned() {
         let d = tempfile::tempdir().unwrap();
         let today = days_from_civil(2026, 11, 15);
-        for n in ["cutline-2026-11-15.log", "cutline-2026-11-08.log", "cutline-2026-11-07.log", "cutline-2025-01-01.log", "notizen.txt", "cutline-kaputt.log"] {
+        for n in ["cutline-2026-11-15.log", "cutline-2026-11-08.log", "cutline-2026-11-07.log", "cutline-2025-01-01.log", "notes.txt", "cutline-broken.log"] {
             std::fs::write(d.path().join(n), "x").unwrap();
         }
         assert_eq!(prune(d.path(), today), 2);
         let mut left: Vec<String> = std::fs::read_dir(d.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
         left.sort();
-        assert_eq!(left, ["cutline-2026-11-08.log", "cutline-2026-11-15.log", "cutline-kaputt.log", "notizen.txt"]);
+        assert_eq!(left, ["cutline-2026-11-08.log", "cutline-2026-11-15.log", "cutline-broken.log", "notes.txt"]);
     }
 
     #[test]
@@ -1278,20 +1312,28 @@ mod tests {
         m.insert("mcp_token".into(), serde_json::json!("mcp-0123456789abcdef"));
         m.insert("epidemic".into(), serde_json::json!({"api_key": "epidemic_live_Q1W2E3", "tokens": {"access_token": "AT-555", "refresh_token": "RT-777"}, "user_id": "cl-1"}));
         m.insert("notiz".into(), serde_json::json!("Authorization: Bearer zzzzzzzzzzzzzzzz"));
-        let h = header("System: Test", "Grafik: Test", s, &[("standard".into(), "1.2.0".into(), true)], Some("2 Spuren".into()), 1_763_251_200_000);
+        let h = header("System: Test", "Graphics: Test", s, &[("standard".into(), "1.2.0".into(), true)], Some("2 tracks".into()), 1_763_251_200_000);
         for secret in ["geheim.cutline", "Privat", "mcp-0123456789abcdef", "Q1W2E3", "AT-555", "RT-777", "zzzzzzzz"] {
             assert!(!h.contains(secret), "{secret} in\n{h}");
         }
-        assert!(h.contains("standard 1.2.0") && h.contains("2 Spuren") && h.contains("\"theme\"") && h.contains("user_id"), "{h}");
+        assert!(h.contains("standard 1.2.0") && h.contains("2 tracks") && h.contains("\"theme\"") && h.contains("user_id"), "{h}");
     }
 
     #[test]
     fn detects_unclean_exit() {
         let l = |m: &str| format!("2026-11-15 10:00:00.000 +01:00 INFO  {m}\n");
-        let start = |p: u32| l(&format!("sitzung: {START} pid={p} · Cutline 0.12.0 (Release)"));
-        let end = |p: u32| l(&format!("sitzung: {END} pid={p}"));
-        let panic = |p: u32| l(&format!("absturz: {PANIC} pid={p} im Thread „main“: panicked at x.rs:1:1:"));
+        let start = |p: u32| l(&format!("{SESSION}: {START} pid={p} · Cutline 0.20.0 (Release)"));
+        let end = |p: u32| l(&format!("{SESSION}: {END} pid={p}"));
+        let panic = |p: u32| l(&format!("{CRASH}: {PANIC} pid={p} in thread “main”: panicked at x.rs:1:1:"));
         let dead = |_| false;
+        // logs of versions up to 0.19.3 (German markers) are read the same way
+        let old_start = |p: u32| l(&format!("sitzung: beginnt pid={p} · Cutline 0.12.0 (Release)"));
+        let old_end = |p: u32| l(&format!("sitzung: endet sauber pid={p}"));
+        let old_panic = |p: u32| l(&format!("absturz: Absturz pid={p} im Thread „main“: panicked at x.rs:1:1:"));
+        assert!(!unclean_exit(&format!("{}{}", old_start(1), old_end(1)), dead));
+        assert!(unclean_exit(&old_start(1), dead), "old log, no end");
+        assert!(unclean_exit(&format!("{}{}{}", old_start(1), old_panic(1), old_end(1)), dead), "old log, panic");
+        assert!(!unclean_exit(&format!("{}{}{}{}", old_start(1), old_end(1), start(2), end(2)), dead), "old run, then a new one");
         assert!(!unclean_exit("", dead), "no log");
         assert!(!unclean_exit(&format!("{}{}", start(1), end(1)), dead));
         assert!(unclean_exit(&start(1), dead), "no end");
@@ -1337,12 +1379,12 @@ mod tests {
     fn error_is_on_disk_at_once() {
         let d = tempfile::tempdir().unwrap();
         let tx = spawn(d.path().into(), FILE_LIMIT, false);
-        tx.send(Msg::Rec(rec(now_ms(), Level::Info, "davor"))).unwrap();
-        tx.send(Msg::Rec(rec(now_ms(), Level::Error, "Fehler XYZ"))).unwrap();
+        tx.send(Msg::Rec(rec(now_ms(), Level::Info, "before"))).unwrap();
+        tx.send(Msg::Rec(rec(now_ms(), Level::Error, "error XYZ"))).unwrap();
         // only wait until processed – without a flush
         synced(&tx, false, Duration::from_secs(10));
         let t = read_all(d.path());
-        assert!(t.contains("davor") && t.contains("ERROR test: Fehler XYZ"), "{t:?}");
+        assert!(t.contains("before") && t.contains("ERROR test: error XYZ"), "{t:?}");
     }
 
     #[test]
@@ -1356,7 +1398,7 @@ mod tests {
         }
         // the writer survives the failed writes and keeps answering; nothing was written anywhere
         synced(&tx, true, Duration::from_secs(10));
-        tx.send(Msg::Rec(rec(now_ms(), Level::Error, "danach"))).unwrap();
+        tx.send(Msg::Rec(rec(now_ms(), Level::Error, "after"))).unwrap();
         synced(&tx, true, Duration::from_secs(10));
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "x", "blocking file untouched");
         assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 1, "no log written elsewhere");
@@ -1375,10 +1417,10 @@ mod tests {
     fn panic_child() {
         let Some(dir) = std::env::var_os("CUTLINE_LOG_CHILD") else { return };
         init_at(PathBuf::from(dir), false);
-        log::info!(target: "projekt", "über die Fassade");
-        log::info!(target: "wgpu_core::device", "fremde Info");
-        log::warn!(target: "wgpu_core::device", "fremde Warnung");
-        panic!("Testabsturz 4711");
+        log::info!(target: "project", "via the facade");
+        log::info!(target: "wgpu_core::device", "foreign info");
+        log::warn!(target: "wgpu_core::device", "foreign warning");
+        panic!("test panic 4711");
     }
 
     #[test]
@@ -1392,14 +1434,14 @@ mod tests {
             .unwrap();
         assert!(!out.status.success(), "child should crash");
         let t = read_all(d.path());
-        assert!(t.contains("ERROR absturz: Absturz pid=") && t.contains("Testabsturz 4711") && t.contains("applog.rs"), "{t}\n{}", String::from_utf8_lossy(&out.stderr));
-        assert!(t.contains("INFO  projekt: über die Fassade") && t.contains("WARN  wgpu_core::device: fremde Warnung") && !t.contains("fremde Info"), "{t}");
-        assert!(unclean_exit(&format!("2026-11-15 10:00:00.000 +01:00 INFO  sitzung: {START} pid={}\n{t}", out_pid(&t)), |_| false));
+        assert!(t.contains("ERROR crash: Panic pid=") && t.contains("test panic 4711") && t.contains("applog.rs"), "{t}\n{}", String::from_utf8_lossy(&out.stderr));
+        assert!(t.contains("INFO  project: via the facade") && t.contains("WARN  wgpu_core::device: foreign warning") && !t.contains("foreign info"), "{t}");
+        assert!(unclean_exit(&format!("2026-11-15 10:00:00.000 +01:00 INFO  {SESSION}: {START} pid={}\n{t}", out_pid(&t)), |_| false));
         // previous behavior stays: the default message still comes afterward
-        assert!(String::from_utf8_lossy(&out.stderr).contains("Testabsturz 4711"));
+        assert!(String::from_utf8_lossy(&out.stderr).contains("test panic 4711"));
     }
 
     fn out_pid(t: &str) -> u32 {
-        t.lines().find_map(|l| marker_pid(l, "absturz", PANIC)).unwrap()
+        t.lines().find_map(panic_pid).unwrap()
     }
 }

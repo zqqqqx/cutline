@@ -84,7 +84,7 @@ pub fn move_track_to(tracks: &[Track], row: usize, gap: usize) -> Option<EditOp>
     let peer = |k: &usize| (tracks[ord[*k]].kind == TrackKind::Audio) == audio && !tracks[ord[*k]].main;
     let (up, n) = if g < row { (true, (g..row).filter(peer).count()) } else { (false, (row + 1..g).filter(peer).count()) };
     Some(EditOp::Batch {
-        label: "Spur verschieben".into(),
+        label: "Move track".into(),
         ops: (0..n).map(|_| EditOp::MoveTrack { track: t.id, up }).collect(),
     })
 }
@@ -148,7 +148,7 @@ pub fn move_to_new_tracks(doc: &mut Document, row: usize, upper: bool, moves: &[
                 EditOp::MoveClip { clip: *clip, track, start: *start }
             })
             .collect();
-        d.apply(EditOp::Batch { label: "Auf neue Spur verschieben".into(), ops }, OpSource::Ui)?;
+        d.apply(EditOp::Batch { label: "Move to new track".into(), ops }, OpSource::Ui)?;
         Ok(())
     })
 }
@@ -193,7 +193,7 @@ pub fn shift_tracks(p: &Project, moves: &[(ClipId, Time)], steps: isize) -> Opti
         ops.extend(line.into_iter().map(|(_, clip)| EditOp::MoveClip { clip, track: Some(m.id), start: park + park }));
     }
     count_ops(ops.len());
-    Some((plan.iter().map(|x| (x.0, x.4)).collect(), EditOp::Batch { label: "Clips verschieben".into(), ops }))
+    Some((plan.iter().map(|x| (x.0, x.4)).collect(), EditOp::Batch { label: "Move clips".into(), ops }))
 }
 
 #[cfg(test)]
@@ -314,7 +314,7 @@ mod tests {
     }
     fn names(p: &Project) -> Vec<String> {
         let t = &p.timeline.tracks;
-        display_order(t).into_iter().map(|i| t[i].name.clone().unwrap_or_else(|| format!("neu {:?}", t[i].kind))).collect()
+        display_order(t).into_iter().map(|i| t[i].name.clone().unwrap_or_else(|| format!("new {:?}", t[i].kind))).collect()
     }
     fn clip(p: &mut Project, row: usize, at: f64) -> ClipId {
         let i = display_order(&p.timeline.tracks)[row];
@@ -375,24 +375,24 @@ mod tests {
     #[test]
     fn insert_index_puts_the_track_at_the_gap() {
         for (spec, row, upper, kind, want) in [
-            (&["T", "V", "M", "A1", "A2"][..], 0, true, Video, vec!["neu Video", "T", "V", "M", "A1", "A2"]),
-            (&["T", "V", "M", "A1", "A2"][..], 0, false, Audio, vec!["T", "V", "M", "neu Audio", "A1", "A2"]),
-            (&["T", "V", "M", "A1", "A2"][..], 3, false, Text, vec!["T", "V", "neu Text", "M", "A1", "A2"]),
-            (&["T", "V", "M", "A1", "A2"][..], 3, false, Audio, vec!["T", "V", "M", "A1", "neu Audio", "A2"]),
-            (&["T", "V", "M", "A1", "A2"][..], 4, false, Audio, vec!["T", "V", "M", "A1", "A2", "neu Audio"]),
-            (&["T", "V", "M", "A1", "A2"][..], 1, false, Text, vec!["T", "V", "neu Text", "M", "A1", "A2"]),
+            (&["T", "V", "M", "A1", "A2"][..], 0, true, Video, vec!["new Video", "T", "V", "M", "A1", "A2"]),
+            (&["T", "V", "M", "A1", "A2"][..], 0, false, Audio, vec!["T", "V", "M", "new Audio", "A1", "A2"]),
+            (&["T", "V", "M", "A1", "A2"][..], 3, false, Text, vec!["T", "V", "new Text", "M", "A1", "A2"]),
+            (&["T", "V", "M", "A1", "A2"][..], 3, false, Audio, vec!["T", "V", "M", "A1", "new Audio", "A2"]),
+            (&["T", "V", "M", "A1", "A2"][..], 4, false, Audio, vec!["T", "V", "M", "A1", "A2", "new Audio"]),
+            (&["T", "V", "M", "A1", "A2"][..], 1, false, Text, vec!["T", "V", "new Text", "M", "A1", "A2"]),
             // without main track an image may go to the very bottom of the visual area
-            (&["T", "V", "A1"][..], 2, true, Effect, vec!["T", "V", "neu Effect", "A1"]),
+            (&["T", "V", "A1"][..], 2, true, Effect, vec!["T", "V", "new Effect", "A1"]),
             // audio only: visual track goes above
-            (&["A1"][..], 0, false, Text, vec!["neu Text", "A1"]),
+            (&["A1"][..], 0, false, Text, vec!["new Text", "A1"]),
             // visual only: audio below
-            (&["T"][..], 0, true, Audio, vec!["T", "neu Audio"]),
+            (&["T"][..], 0, true, Audio, vec!["T", "new Audio"]),
         ] {
             let mut d = Document::new(proj(spec));
             let t = d.project().timeline.tracks.clone();
             let index = gap_index(&t, new_track_gap(&t, row, upper, kind), kind);
             d.apply(EditOp::InsertTrack { index, kind }, OpSource::Ui).unwrap();
-            assert_eq!(names(d.project()), want, "{spec:?} Zeile {row} {upper} {kind:?}");
+            assert_eq!(names(d.project()), want, "{spec:?} row {row} {upper} {kind:?}");
         }
     }
 
@@ -410,7 +410,7 @@ mod tests {
         // audio directly below A1; distances stay
         let s = |x: f64| Time::from_secs_f64(x);
         move_to_new_tracks(&mut d, 3, false, &[(v, s(10.0)), (v2, s(13.0)), (a, s(11.0))]).unwrap();
-        assert_eq!(names(d.project()), ["T", "V", "neu Video", "M", "A1L", "neu Audio", "A2"]);
+        assert_eq!(names(d.project()), ["T", "V", "new Video", "M", "A1L", "new Audio", "A2"]);
         let tr = &d.project().timeline.tracks;
         let ord = display_order(tr);
         let starts = |row: usize| tr[ord[row]].clips.iter().map(|c| c.start.as_secs_f64()).collect::<Vec<_>>();
@@ -470,7 +470,7 @@ mod tests {
         clip(&mut p, 1, 50.0);
         let mut d = Document::new(p);
         move_to_new_tracks(&mut d, 2, true, &[(b, s(7.0)), (a, s(5.0))]).unwrap();
-        assert_eq!(names(d.project()), ["V1", "V2", "neu Video", "M"]);
+        assert_eq!(names(d.project()), ["V1", "V2", "new Video", "M"]);
     }
 
     #[test]

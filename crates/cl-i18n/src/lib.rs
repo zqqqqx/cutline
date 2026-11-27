@@ -12,10 +12,10 @@ use unic_langid::LanguageIdentifier;
 pub use fluent_bundle::FluentArgs as Args;
 
 mod ui;
-pub use ui::{entries as ui_entries, set_ui_lang, tr, ui_lang};
+pub use ui::{entries as ui_entries, key_english, legacy_english, set_ui_lang, tr, tr_in, ui_lang};
 
-const DE: &str = include_str!("../locales/de.ftl");
-const EN: &str = include_str!("../locales/en.ftl");
+const DE: &str = include_str!("../../../translations/de_DE/app.ftl");
+const EN: &str = include_str!("../../../translations/en_US/app.ftl");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Lang {
@@ -62,10 +62,10 @@ fn bundle_for(lang: Lang) -> FluentBundle<FluentResource> {
         Lang::En | Lang::Pseudo => (EN, "en".parse().unwrap()),
     };
     let res =
-        FluentResource::try_new(src.to_string()).expect("FTL-Datei ist gültig (per Test geprüft)");
+        FluentResource::try_new(src.to_string()).expect("the FTL file is valid (checked by a test)");
     let mut b = FluentBundle::new_concurrent(vec![id]);
     b.set_use_isolating(false);
-    b.add_resource(res).expect("keine doppelten Schlüssel");
+    b.add_resource(res).expect("no duplicate keys");
     b
 }
 

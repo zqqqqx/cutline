@@ -3,7 +3,7 @@
 //! Five places per project, `CUTLINE_QA_SECS` (default 30) seconds of playback per place, after 10 s
 //! an edit (effect + volume), after 20 s a click at another place.
 //!
-//! Run by hand (projects `PL_einfach/PL_schnitt/PL_gross.cutline` in the folder):
+//! Run by hand (projects `PL_simple/PL_cut/PL_large.cutline` in the folder):
 //! `CUTLINE_QA_DIR=<folder> cargo test --release -p cl-app --bin cutline play_measure -- --ignored --nocapture`
 //! Proxies are used if they lie in the data folder (`CUTLINE_HOME`) – as in the app.
 //! Endurance run (memory): `CUTLINE_QA_SECS=150 CUTLINE_QA_JUMP=8` jumps every 8 s after the click
@@ -104,7 +104,7 @@ fn sizes(core: &PlayCore<cl_media::FrameStream>, decoder: &Decoder, starter_queu
     use std::sync::atomic::Ordering::Relaxed;
     let h = &decoder.held;
     format!(
-        "{t:.0} s: privat {:.0} MB | Kern {} | Einzelbilder {} ({:.0} MB), Animationen {} ({:.0} MB) | Starter wartend {starter_queue}",
+        "{t:.0} s: private {:.0} MB | core {} | single frames {} ({:.0} MB), animations {} ({:.0} MB) | starter waiting {starter_queue}",
         private_mb(),
         core.sizes(),
         h[0].load(Relaxed),
@@ -233,19 +233,19 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
         }
         // dragging a slider (inspector): for 1.5 s a new effect value and a new
         // size of the lowest layer per UI frame, only then one step in the history
-        if paused_since.is_none() && resumed.is_none() && rel >= pause_at && core.mode() == Mode::Spielen {
+        if paused_since.is_none() && resumed.is_none() && rel >= pause_at && core.mode() == Mode::Playing {
             let running = audio.as_ref().is_some_and(|a| a.started());
             core.pause(revision, running, true);
             paused_since = Some(rel);
             if debug {
-                eprintln!("PAUSE {rel:.2} s pos {:.2} Stufe {}", playhead.as_secs_f64(), core.quality.level);
+                eprintln!("PAUSE {rel:.2} s pos {:.2} level {}", playhead.as_secs_f64(), core.quality.level);
             }
         } else if paused_since.is_some_and(|p| rel - p >= 1.5) {
             paused_since = None;
             core.play(playhead, revision, t);
             resumed = Some(t);
             if debug {
-                eprintln!("PLAY {rel:.2} s pos {:.2} Stufe {} {}", playhead.as_secs_f64(), core.quality.level, core.sizes());
+                eprintln!("PLAY {rel:.2} s pos {:.2} level {} {}", playhead.as_secs_f64(), core.quality.level, core.sizes());
             }
         }
         if (drag_at..drag_at + 1.5).contains(&rel) {
@@ -335,7 +335,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
                 }
             }
         }
-        if core.mode() == Mode::Stand {
+        if core.mode() == Mode::Stopped {
             break; // project end
         }
         run.clock_audio |= matches!(ain, AudioIn::Running(_));
@@ -348,7 +348,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
             match s {
                 Some(s) => {
                     if debug {
-                        eprintln!("angehängt ({rel:.2} s, pos {:.2}) {:04x} ab {:.2}", playhead.as_secs_f64(), o.id & 0xffff, o.at.as_secs_f64());
+                        eprintln!("attached ({rel:.2} s, pos {:.2}) {:04x} from {:.2}", playhead.as_secs_f64(), o.id & 0xffff, o.at.as_secs_f64());
                     }
                     core.attach_alias(o, f, s, t, alias);
                 }
@@ -363,16 +363,16 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
                 let (id, key): (ClipId, u64) = ($id, $key);
                 first_any.get_or_insert(t);
                 if debug && shown_key.insert(id, key).is_some_and(|k| k != key) {
-                    eprintln!("neuer Schlüssel sichtbar ({rel:.2} s, pos {:.2}) {:04x}, Rückstand {:.0} ms", playhead.as_secs_f64(), lid(id) & 0xffff, core.av_offset_ms().unwrap_or(0.0));
+                    eprintln!("new key visible ({rel:.2} s, pos {:.2}) {:04x}, lag {:.0} ms", playhead.as_secs_f64(), lid(id) & 0xffff, core.av_offset_ms().unwrap_or(0.0));
                 }
                 *run.layer_frames.entry(format!("{:04x}", lid(id) & 0xffff)).or_insert(0) += 1;
                 if Some(id) == prim {
                     if debug && t >= warm_until && prim_frames.last().is_some_and(|l| t - l > 0.15) {
                         let what: Vec<String> = needs
                             .iter()
-                            .map(|n| format!("{}{}{}{}", format!("{:04x}", lid(n.id) & 0xffff), if streamable(&n.clip) { " Strom" } else { " Einzelbild" }, if n.prefetch.is_some() { " vorab" } else { "" }, if n.overlay.is_some() { " Element" } else { "" }))
+                            .map(|n| format!("{}{}{}{}", format!("{:04x}", lid(n.id) & 0xffff), if streamable(&n.clip) { " Strom" } else { " Einzelbild" }, if n.prefetch.is_some() { " ahead" } else { "" }, if n.overlay.is_some() { " Element" } else { "" }))
                             .collect();
-                        eprintln!("Lücke {:.0} ms bis {rel:.2} s (pos {:.2}): Hauptebene {} – {what:?} | {}", (t - prim_frames.last().unwrap()) * 1000.0, playhead.as_secs_f64(), format!("{:04x}", lid(id) & 0xffff), core.sizes());
+                        eprintln!("gap {:.0} ms until {rel:.2} s (pos {:.2}): main layer {} – {what:?} | {}", (t - prim_frames.last().unwrap()) * 1000.0, playhead.as_secs_f64(), format!("{:04x}", lid(id) & 0xffff), core.sizes());
                     }
                     prim_frames.push(t);
                 }
@@ -391,7 +391,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
                     if let Some((ta, src)) = still_asked.remove(&key) {
                         let ms = (t - ta) * 1000.0;
                         if debug && ms > 700.0 {
-                            eprintln!("Einzelbild {ms:.0} ms bis {rel:.2} s (Quelle {src:.2} s)");
+                            eprintln!("single frame {ms:.0} ms until {rel:.2} s (source {src:.2} s)");
                         }
                         run.still_max_ms = run.still_max_ms.max(ms);
                     }
@@ -438,7 +438,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
                     let mut j = open_job(o, c, m, p, (w, h), sfps, alias);
                     j.source_at = Time((j.source_at - off).0.max(0));
                     if std::env::var_os("CUTLINE_QA_DEBUG").is_some() {
-                        eprintln!("öffnen ({rel:.2} s, pos {:.2}, Stufe {}) {:04x} {:.2} s: {} ab {:.3} {}×{} hw={:?} graph={:?}", playhead.as_secs_f64(), core.quality.level, o.id & 0xffff, o.at.as_secs_f64(), j.path.display(), j.source_at.as_secs_f64(), w, h, j.hw, j.graph);
+                        eprintln!("open ({rel:.2} s, pos {:.2}, level {}) {:04x} {:.2} s: {} from {:.3} {}×{} hw={:?} graph={:?}", playhead.as_secs_f64(), core.quality.level, o.id & 0xffff, o.at.as_secs_f64(), j.path.display(), j.source_at.as_secs_f64(), w, h, j.hw, j.graph);
                     }
                     starter.send(j);
                     starter_queue += 1;
@@ -446,7 +446,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
                 if n.prefetch.is_none() && core.pull(lid(n.id), t, n.overlay.is_none()).is_some() {
                     any_frame = t;
                     got!(n.id, key);
-                    if moving.is_none() && core.mode() == Mode::Spielen && playhead > start {
+                    if moving.is_none() && core.mode() == Mode::Playing && playhead > start {
                         moving = Some(t);
                         warm_until = t;
                     }
@@ -468,13 +468,13 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
         core.visible(&ids);
         // standstill: clock runs, but no layer gets a new frame (not during startup/click)
         let in_click = clicked.is_some_and(|c| c.0 <= t && run.click_ms == 0.0);
-        if core.mode() == Mode::Spielen && t >= warm_until && any_frame.is_finite() && !in_click {
+        if core.mode() == Mode::Playing && t >= warm_until && any_frame.is_finite() && !in_click {
             run.freeze_ms = run.freeze_ms.max((t - any_frame) * 1000.0);
         }
-        if core.mode() == Mode::Spielen {
+        if core.mode() == Mode::Playing {
             if let Some(l) = core.av_offset_ms() {
                 if debug && l > 100.0 && (rel * 10.0).fract() < 0.03 {
-                    eprintln!("Rückstand {l:.0} ms bei {rel:.2} s (pos {:.2}) {}", playhead.as_secs_f64(), core.sizes());
+                    eprintln!("lag {l:.0} ms at {rel:.2} s (pos {:.2}) {}", playhead.as_secs_f64(), core.sizes());
                 }
                 lags.push(l);
                 if rel < edit_at {
@@ -484,7 +484,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
         }
         // click → first frame at the new place
         if let Some((tc, to)) = clicked {
-            if run.click_ms == 0.0 && core.mode() == Mode::Spielen && playhead >= to && prim_frames.last().is_some_and(|f| *f >= tc) {
+            if run.click_ms == 0.0 && core.mode() == Mode::Playing && playhead >= to && prim_frames.last().is_some_and(|f| *f >= tc) {
                 run.click_ms = (t - tc) * 1000.0;
                 warm_until = t;
             }
@@ -497,7 +497,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
             let _ = r;
         }
         if std::env::var_os("CUTLINE_QA_DEBUG").is_some() && (rel * 2.0).fract() < 0.01 {
-            eprintln!("{rel:.1} s: pos {:.2} {:?} Ströme {} Ebenen {} prim {:?} Bilder {} {st:?}", playhead.as_secs_f64(), core.mode(), core.stream_count(), needs.len(), prim.is_some(), prim_frames.len());
+            eprintln!("{rel:.1} s: pos {:.2} {:?} streams {} layers {} prim {:?} frames {} {st:?}", playhead.as_secs_f64(), core.mode(), core.stream_count(), needs.len(), prim.is_some(), prim_frames.len());
         }
         dropped += st.dropped;
         run.catch_ups += st.catch_ups;
@@ -506,13 +506,13 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
     run.mem.push(sizes(&core, &decoder, starter_queue, now() - t_play));
     run.first_ms = first_any.map_or(f64::NAN, |f| (f - t_play) * 1000.0);
     run.moving_ms = moving.map_or(f64::NAN, |f| (f - t_play) * 1000.0);
-    let ruhig: Vec<f64> = prim_frames.iter().copied().filter(|f| *f - t_play >= 2.0 && *f - t_play < edit_at).collect();
-    if ruhig.len() > 1 {
-        run.fps = (ruhig.len() - 1) as f64 / (ruhig[ruhig.len() - 1] - ruhig[0]);
+    let steady: Vec<f64> = prim_frames.iter().copied().filter(|f| *f - t_play >= 2.0 && *f - t_play < edit_at).collect();
+    if steady.len() > 1 {
+        run.fps = (steady.len() - 1) as f64 / (steady[steady.len() - 1] - steady[0]);
     }
-    let neu: Vec<f64> = prim_new.iter().copied().filter(|f| *f - t_play >= 2.0 && *f - t_play < edit_at).collect();
-    if neu.len() > 1 {
-        run.fps_new = (neu.len() - 1) as f64 / (neu[neu.len() - 1] - neu[0]);
+    let fresh: Vec<f64> = prim_new.iter().copied().filter(|f| *f - t_play >= 2.0 && *f - t_play < edit_at).collect();
+    if fresh.len() > 1 {
+        run.fps_new = (fresh.len() - 1) as f64 / (fresh[fresh.len() - 1] - fresh[0]);
     }
     let click_t = clicked.map_or(f64::MAX, |c| c.0);
     let after_click = click_t + run.click_ms / 1000.0;
@@ -537,7 +537,7 @@ fn drive_parts(mut project: Project, label: &str, start: Time, secs: f64, parts:
 #[ignore]
 fn play_measure() {
     let Some(dir) = std::env::var_os("CUTLINE_QA_DIR").map(std::path::PathBuf::from) else {
-        eprintln!("CUTLINE_QA_DIR fehlt – übersprungen");
+        eprintln!("CUTLINE_QA_DIR missing – skipped");
         return;
     };
     if !cl_media::test_tools() {
@@ -565,9 +565,9 @@ fn play_measure() {
     let secs: f64 = std::env::var("CUTLINE_QA_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(30.0);
     let only = std::env::var("CUTLINE_QA_ONLY").ok();
     let plan: [(&str, [f64; 5]); 3] = [
-        ("PL_einfach", [37.0, 109.0, 335.0, 600.0, 1222.0]),
-        ("PL_schnitt", [3.0, 37.0, 128.0, 335.0, 571.0]),
-        ("PL_gross", [0.0, 40.0, 120.0, 335.0, 475.0]),
+        ("PL_simple", [37.0, 109.0, 335.0, 600.0, 1222.0]),
+        ("PL_cut", [3.0, 37.0, 128.0, 335.0, 571.0]),
+        ("PL_large", [0.0, 40.0, 120.0, 335.0, 475.0]),
     ];
     let mut rows = Vec::new();
     for (name, at) in plan {
@@ -575,7 +575,7 @@ fn play_measure() {
             continue;
         }
         let Ok(json) = std::fs::read_to_string(dir.join(format!("{name}.cutline"))) else {
-            eprintln!("{name}: fehlt – übersprungen");
+            eprintln!("{name}: missing – skipped");
             continue;
         };
         let project = Project::from_json(&json).expect("project readable");
@@ -606,16 +606,16 @@ fn play_measure() {
     for w in workers {
         let _ = w.join();
     }
-    eprintln!("\nkünstliche Last: {stress} rechnende Threads");
+    eprintln!("\nartificial load: {stress} busy threads");
     eprintln!(
-        "\n| Lauf | Proxy | Play→Bild | Play→bewegt | Bilder/s (Soll) | größte Lücke | verworfen/s | Rückstand max/Ø | Ton-Aussetzer | aufgeholt | Stufe | Bearb.: Lücke / sichtbar | Regler: Lücke | Klick→Bild | Stillstand max | Einzelbilder angef./gezeigt |"
+        "\n| Run | Proxy | Play→frame | Play→moving | Frames/s (target) | largest gap | dropped/s | lag max/avg | Audio dropouts | caught up | Level | Edit: gap / visible | Slider: gap | Click→frame | Stall max | Single frames requested/shown |"
     );
     eprintln!("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
     for r in &rows {
         eprintln!(
             "| {} | {} | {:.0} ms | {:.0} ms | {:.1} ({:.0}) | {:.0} ms | {:.1} | {:.0} / {:.0} ms | {}× {:.0} ms | {} | {} | {:.0} / {:.0} ms | {:.0} ms | {:.0} ms | {:.0} ms | {} / {} |",
             r.label,
-            if r.proxy { "ja" } else { "nein" },
+            if r.proxy { "yes" } else { "no" },
             r.first_ms,
             r.moving_ms,
             r.fps,
@@ -660,13 +660,13 @@ fn parts_measure() {
     let (Some(dir), Ok(spec)) = (std::env::var_os("CUTLINE_QA_DIR"), std::env::var("CUTLINE_QA_PARTS")) else {
         return;
     };
-    let name = std::env::var("CUTLINE_QA_ONLY").unwrap_or_else(|_| "PL_gross".into());
+    let name = std::env::var("CUTLINE_QA_ONLY").unwrap_or_else(|_| "PL_large".into());
     let project = Project::from_json(&std::fs::read_to_string(std::path::Path::new(&dir).join(format!("{name}.cutline"))).unwrap()).unwrap();
     let parts = spec.split(';').filter_map(|s| s.split_once('=')).map(|(m, d)| (m.into(), d.into())).collect();
     let secs: f64 = std::env::var("CUTLINE_QA_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(15.0);
     for a in std::env::var("CUTLINE_QA_AT").unwrap_or_else(|_| "1.0".into()).split(',').filter_map(|a| a.parse::<f64>().ok()) {
         let r = drive_parts(project.clone(), &format!("{name} ab {a}"), Time::from_secs_f64(a), secs, &parts);
-        eprintln!("PARTS | {} | Play→bewegt {:.0} ms | vor der Bearbeitung: Rückstand max {:.0} ms, Stufe {} | ganzer Lauf: Rückstand max {:.0} ms, Lücke {:.0} ms, verworfen/s {:.1}, Stufe {}", r.label, r.moving_ms, r.lag_quiet_ms, r.level_quiet, r.lag_max_ms, r.gap_ms, r.dropped_per_s, r.level_max);
+        eprintln!("PARTS | {} | play→moving {:.0} ms | before the edit: lag max {:.0} ms, level {} | whole run: lag max {:.0} ms, gap {:.0} ms, dropped/s {:.1}, level {}", r.label, r.moving_ms, r.lag_quiet_ms, r.level_quiet, r.lag_max_ms, r.gap_ms, r.dropped_per_s, r.level_max);
     }
 }
 
@@ -696,7 +696,7 @@ fn tempo_layers() {
     let mut c = Clip::new(ClipContent::Media { media: mb.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(100.0));
     match mode.as_str() {
         "rev" => c.fx.reverse = true,
-        "kurve" => c.fx.speed_curve = Some("montage".into()),
+        "curve" => c.fx.speed_curve = Some("montage".into()),
         "scale" => {
             for (i, v) in [0.5f32, 1.5, 0.5, 1.5].iter().enumerate() {
                 c.keyframes.set(Prop::Scale, Time::from_secs_f64(20.0 + i as f64 * 5.0), *v);
@@ -713,7 +713,7 @@ fn tempo_layers() {
     let secs: f64 = std::env::var("CUTLINE_QA_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(12.0);
     for at in [20.0, 33.0] {
         let r = drive(p.clone(), &format!("Tempo {mode} ab {at}"), Time::from_secs_f64(at), secs);
-        eprintln!("{}: Bilder je Ebene {:?}, Bilder/s unten {:.1}, Einzelbilder {}/{}", r.label, r.layer_frames, r.fps, r.stills_req, r.stills_shown);
+        eprintln!("{}: frames per layer {:?}, frames/s bottom {:.1}, single frames {}/{}", r.label, r.layer_frames, r.fps, r.stills_req, r.stills_shown);
         assert!(r.layer_frames.len() == 2 && r.layer_frames.values().all(|n| *n as f64 >= secs * 10.0), "{:?}", r.layer_frames);
     }
 }
@@ -725,7 +725,7 @@ fn player_cost() {
     let Some(dir) = std::env::var_os("CUTLINE_QA_DIR").map(std::path::PathBuf::from) else {
         return;
     };
-    for name in ["PL_schnitt", "PL_gross"] {
+    for name in ["PL_cut", "PL_large"] {
         let Ok(json) = std::fs::read_to_string(dir.join(format!("{name}.cutline"))) else { continue };
         let project = Project::from_json(&json).unwrap();
         let d = project.duration().as_secs_f64();
@@ -746,17 +746,17 @@ fn player_cost() {
                 if pass == 0 { t_json += el } else { t_cache += el }
             }
         }
-        eprintln!("{name}: Ebenen+Bedarf+Schlüssel je UI-Bild: mit JSON {:.3} ms, mit Zwischenspeicher {:.3} ms", t_json / n as f64, t_cache / n as f64);
+        eprintln!("{name}: layers+needs+keys per UI frame: with JSON {:.3} ms, with cache {:.3} ms", t_json / n as f64, t_cache / n as f64);
     }
     let f = cl_media::RgbaFrame { width: 1280, height: 720, data: [30u8, 60, 90, 255].repeat(1280 * 720) };
     let t0 = Instant::now();
     for _ in 0..50 {
         std::hint::black_box(crate::preview::to_color_image(&f));
     }
-    eprintln!("Strombild 1280×720 → Textur-Bild: {:.2} ms", t0.elapsed().as_secs_f64() * 1e3 / 50.0);
+    eprintln!("stream frame 1280×720 → texture frame: {:.2} ms", t0.elapsed().as_secs_f64() * 1e3 / 50.0);
 }
 
-/// One clip without proxy (`CUTLINE_HOME` on an empty folder): reverse (frames/s, `neu` =
+/// One clip without proxy (`CUTLINE_HOME` on an empty folder): reverse (frames/s, `new` =
 /// frames with new content) or forwards (Play → first frame). `CUTLINE_H4_FILES=a;b`,
 /// `CUTLINE_H4_MODE=rev|fwd`, `CUTLINE_QA_AT`, `CUTLINE_QA_SECS` (for frames/s ≥ 25: quiet part 2–10 s)
 /// `cargo test --release -p cl-app --bin cutline h4_measure -- --ignored --nocapture`
@@ -783,7 +783,7 @@ fn h4_measure() {
         p.media = vec![m];
         let r = drive(p, &format!("{} {f}", if rev { "rev" } else { "fwd" }), Time::from_secs_f64(at), secs);
         eprintln!(
-            "H4 | {} | proxy {} | Play→Bild {:.0} ms | Play→bewegt {:.0} ms | fps {:.1} neu {:.1} | Lücke {:.0} ms | Einzelbilder {}/{} | Einzelbild max {:.0} ms | Stufe {} | Klick→Bild {:.0} ms",
+            "H4 | {} | proxy {} | play→frame {:.0} ms | play→moving {:.0} ms | fps {:.1} new {:.1} | gap {:.0} ms | single frames {}/{} | single frame max {:.0} ms | level {} | click→frame {:.0} ms",
             r.label, r.proxy, r.first_ms, r.moving_ms, r.fps, r.fps_new, r.gap_ms, r.stills_req, r.stills_shown, r.still_max_ms, r.level_max, r.click_ms
         );
     }

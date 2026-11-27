@@ -29,7 +29,7 @@ fn one() -> f32 {
 }
 
 impl Preset {
-    /// Take over a clip's look. Clip-bound things (mask from „Hintergrund entfernen“,
+    /// Take over a clip's look. Clip-bound things (mask from „Remove background“,
     /// speed curve, reverse, censor areas) are left out.
     pub fn from_clip(name: &str, c: &Clip) -> Self {
         let mut fx = c.fx.clone();
@@ -109,7 +109,7 @@ impl App {
                 if theme::icon_button(
                     ui,
                     icon::FLOPPY_DISK,
-                    "Als Look speichern",
+                    "Save as look",
                     true,
                     false,
                 )
@@ -127,7 +127,7 @@ impl App {
                     .map(|(i, p)| (i, p.name.clone()))
                     .collect();
                 let label = if matching.is_empty() {
-                    crate::tr("Keine Looks")
+                    crate::tr("No looks")
                 } else {
                     crate::tr(format!("Looks ({})", matching.len()))
                 };
@@ -172,7 +172,7 @@ impl App {
                         ui.horizontal(|ui| {
                             if ui
                                 .add(crate::theme::menu_row(n.as_str()).min_width(130.0))
-                                .on_hover_text(crate::tr("Auf die Auswahl anwenden"))
+                                .on_hover_text(crate::tr("Apply to selection"))
                                 .clicked()
                             {
                                 apply = Some(*i);
@@ -183,7 +183,7 @@ impl App {
                                     if theme::icon_button(
                                         ui,
                                         icon::TRASH,
-                                        "Look löschen",
+                                        "Delete look",
                                         true,
                                         false,
                                     )
@@ -194,7 +194,7 @@ impl App {
                                     if theme::icon_button(
                                         ui,
                                         icon::PENCIL_SIMPLE,
-                                        "Umbenennen",
+                                        "Rename",
                                         true,
                                         false,
                                     )
@@ -223,13 +223,13 @@ impl App {
                 if let Some(i) = remove {
                     let p = self.presets.remove(i);
                     save(&self.presets);
-                    self.toast(format!("Look „{}“ gelöscht", p.name));
+                    self.toast(format!("Look “{}” deleted", p.name));
                 }
             }
         }
     }
 
-    /// Apply preset `i` to the selection (inspector bar and clip menu „Look anwenden“).
+    /// Apply preset `i` to the selection (inspector bar and clip menu „Apply look“).
     pub fn apply_preset(&mut self, i: usize) {
         let Some(p) = self.presets.get(i).cloned() else {
             return;
@@ -240,10 +240,10 @@ impl App {
                 p.apply(x);
             }
         });
-        self.toast(format!("Look „{}“ angewendet", p.name));
+        self.toast(format!("Look “{}” applied", p.name));
     }
 
-    /// Dialog „Preset speichern/umbenennen“ (call every frame).
+    /// Dialog "Save/rename preset" (call every frame).
     pub fn preset_dialogs(&mut self, ctx: &egui::Context) {
         let Some(d) = &mut self.preset_dialog else {
             self.preset_dialog_since = 0;
@@ -258,8 +258,8 @@ impl App {
         let err = self.dialog_error.clone();
         let mut edited = false;
         let title = match d {
-            PresetDialog::Save { .. } => "Als Look speichern",
-            PresetDialog::Rename { .. } => "Look umbenennen",
+            PresetDialog::Save { .. } => "Save as look",
+            PresetDialog::Rename { .. } => "Rename look",
         };
         let modal = crate::dialog::modal(ctx, "preset-dialog").show(ctx, |ui| {
             ui.set_width(320.0);
@@ -267,7 +267,7 @@ impl App {
             let name = match d {
                 PresetDialog::Save { name } | PresetDialog::Rename { name, .. } => name,
             };
-            let r = ui.add(egui::TextEdit::singleline(name).hint_text(crate::tr("Name, z. B. Gaming-Look")).desired_width(f32::INFINITY));
+            let r = ui.add(egui::TextEdit::singleline(name).hint_text(crate::tr("Name, e.g. Gaming look")).desired_width(f32::INFINITY));
             if fresh {
                 r.request_focus();
             }
@@ -288,7 +288,7 @@ impl App {
         }
         let empty = matches!(&self.preset_dialog, Some(PresetDialog::Save { name } | PresetDialog::Rename { name, .. }) if name.trim().is_empty());
         if ok && empty {
-            self.dialog_error = Some("Bitte einen Namen eingeben".into());
+            self.dialog_error = Some("Please enter a name".into());
         } else if ok {
             self.dialog_error = None;
             match self.preset_dialog.take() {
@@ -299,7 +299,7 @@ impl App {
                         self.presets.retain(|x| x.name != p.name);
                         self.presets.push(p);
                         save(&self.presets);
-                        self.toast(format!("Look „{}“ gespeichert", name.trim()));
+                        self.toast(format!("Look “{}” saved", name.trim()));
                     }
                 }
                 Some(PresetDialog::Rename { index, name }) if !name.trim().is_empty() => {
@@ -352,7 +352,7 @@ mod tests {
             Time::ZERO,
             Time::from_secs_f64(1.0),
         );
-        b.fx.cutout = Some("eigene.mkv".into());
+        b.fx.cutout = Some("own.mkv".into());
         b.fx.edge.shift = -0.2;
         p.apply(&mut b);
         assert_eq!(b.fx.edge.shift, -0.2);
@@ -361,7 +361,7 @@ mod tests {
         assert_eq!(b.opacity, 0.8);
         assert_eq!(
             b.fx.cutout.as_deref(),
-            Some("eigene.mkv"),
+            Some("own.mkv"),
             "target clip's mask stays"
         );
         let json = serde_json::to_string(&p).unwrap();

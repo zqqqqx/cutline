@@ -40,7 +40,7 @@ crates/
   cl-app      Desktop app (egui/wgpu), binary `cutline`
 plugins/
   cutline-basis  Reference asset pack (plugin.toml, FFmpeg chains)
-  cutline-uebergaenge  Shader transitions (own CC0 work and ports of GL Transitions, MIT)
+  cutline-transitions  Shader transitions (own CC0 work and ports of GL Transitions, MIT)
 installer/
   cutline.iss    Windows installer (Inno Setup, per-user, file association)
 ```
@@ -125,10 +125,20 @@ exactly the pictures before and after (tested for every shipped shader).
 
 ## Translations
 
-The interface is written in German. `cl_i18n::tr()` translates every visible string at runtime
-from `crates/cl-i18n/locales/ui.en.tsv` (`German<TAB>English`, `{}` for values). Icons and
-shortcuts are handled automatically. To find untranslated strings, run a debug build with
-`CUTLINE_MISSING_TR=missing.txt` and click through the app. Settings → General → Language
+The code is English, and so are the interface texts in it. `cl_i18n::tr()` translates every
+visible string at runtime from `translations/<locale>/ui.tsv` (`English<TAB>translation`, `{}`
+for values); German is `translations/de_DE/ui.tsv`. Messages with plural rules are Fluent files
+next to it (`translations/de_DE/app.ftl`, `translations/en_US/app.ftl`). Two texts that are the
+same in English but not in another language carry a context after `~` in the code
+(`"Track"` the noun, `"Track~verb"`); the context is never shown. Icons and shortcuts are handled
+automatically. To find untranslated strings, run a debug build in German with
+`CUTLINE_MISSING_TR=missing.txt` and click through the app.
+
+Up to version 0.19.3 the code and the ids of bundled content were German. Files of that time are
+converted when they are read: `cl_core::legacy` (ids and paths of bundled packs in projects,
+project format 6 → 7), `cl_app::legacy` (data folders, library keys, layout names) and
+`translations/legacy/ui.de-en.tsv` (the old dictionary, for categories of packs made for older
+versions). Settings → General → Language
 switches at runtime; the pseudo language makes every string ~40 % longer to catch clipped labels.
 
 ## Roadmap

@@ -29,7 +29,7 @@ fn word_at_time_with_stored_times_and_at_the_edges() {
     assert_eq!(karaoke_word(&st, s(2.0)), Some(2));
     assert_eq!(karaoke_word(&st, s(99.0)), Some(2), "after the last word");
     assert_eq!(karaoke_word(&[], s(1.0)), None);
-    let k = karaoke("eins zwei drei", &[0.5, 1.0, 2.0]);
+    let k = karaoke("one two three", &[0.5, 1.0, 2.0]);
     assert_eq!(k.karaoke_lit(s(3.0), s(1.2)), Some(1..2));
     let mut fill = k.clone();
     fill.karaoke.as_mut().unwrap().fill = true;
@@ -105,7 +105,7 @@ fn trim_and_tempo_move_the_times() {
 
 #[test]
 fn files_without_karaoke_stay_unchanged() {
-    let (d, _) = doc_with(TextStyle { text: "Hallo".into(), ..Default::default() }, 0.0, 1.0);
+    let (d, _) = doc_with(TextStyle { text: "Hello".into(), ..Default::default() }, 0.0, 1.0);
     let json = d.project().to_json();
     assert!(!json.contains("karaoke"), "no new field without karaoke");
     let p = Project::from_json(&json).unwrap();

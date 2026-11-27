@@ -49,7 +49,7 @@ pub(crate) fn units(p: &Project, start: Time, end: Time, video: bool, audio: boo
     if video {
         for tr in p.timeline.tracks.iter().filter(|t| !t.hidden && !matches!(t.kind, TrackKind::Effect | TrackKind::Filter)) {
             for g in graph::transition_groups(tr) {
-                let (a, b) = (g[0].start, g.last().expect("nicht leer").end());
+                let (a, b) = (g[0].start, g.last().expect("not empty").end());
                 if b <= start || a >= end {
                     continue;
                 }

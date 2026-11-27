@@ -55,11 +55,11 @@ impl App {
                 }
                 if resp
                     .on_hover_text(crate::tr(if recording {
-                        "Aufnahme beenden"
+                        "Stop recording"
                     } else if counting {
-                        "Countdown abbrechen (Esc)"
+                        "Cancel countdown (Esc)"
                     } else {
-                        "Aufnahme starten"
+                        "Start recording"
                     }))
                     .clicked()
                 {
@@ -76,16 +76,16 @@ impl App {
                         let s = r.elapsed().as_secs();
                         (
                             format!("{:02}:{:02}", s / 60, s % 60),
-                            "Aufnahme läuft".to_string(),
+                            "Recording~running".to_string(),
                         )
                     } else if let Some(u) = self.voiceover.countdown_until {
                         let left = u
                             .saturating_duration_since(std::time::Instant::now())
                             .as_secs()
                             + 1;
-                        (format!("{left}"), "Gleich geht's los".to_string())
+                        (format!("{left}"), "Get ready".to_string())
                     } else {
-                        ("00:00".into(), "Startet am Playhead".into())
+                        ("00:00".into(), "Starts at the playhead".into())
                     };
                     ui.label(RichText::new(crate::tr(time)).size(theme::FS_PAGE).monospace());
                     ui.label(
@@ -126,7 +126,7 @@ impl App {
             }
             ui.add_space(8.0);
             let mut tab = self.voiceover.tab;
-            widgets::segmented(ui, &["Aufnahme", "Einstellungen"], &mut tab);
+            widgets::segmented(ui, &["Recording", "Settings"], &mut tab);
             self.voiceover.tab = tab;
             ui.add_space(6.0);
             ui.add_enabled_ui(!recording, |ui| {
@@ -137,7 +137,7 @@ impl App {
                             self.voiceover
                                 .device
                                 .clone()
-                                .unwrap_or_else(|| "Standardmikrofon".into()),
+                                .unwrap_or_else(|| "Default microphone".into()),
                         ))
                         .width(268.0)
                         .show_ui(ui, |ui| {
@@ -146,17 +146,17 @@ impl App {
                             }
                         });
                     ui.add_space(4.0);
-                    theme::row(ui, "Eingang", |ui| {
+                    theme::row(ui, "Input", |ui| {
                         Slider::new(&mut self.voiceover.gain_db, -12.0..=24.0)
                             .suffix(" dB")
                             .default(0.0)
                             .show(ui)
                     });
-                    widgets::toggle_row(ui, "Projekt stumm", &mut self.voiceover.mute_project);
-                    widgets::toggle_row(ui, "3-2-1-Countdown", &mut self.voiceover.countdown);
+                    widgets::toggle_row(ui, "Mute project", &mut self.voiceover.mute_project);
+                    widgets::toggle_row(ui, "3-2-1 countdown", &mut self.voiceover.countdown);
                 } else {
                     egui::ScrollArea::vertical().max_height(380.0).min_scrolled_height(380.0).auto_shrink([false, false]).show(ui, |ui| {
-                        theme::row(ui, "Lautstärke", |ui| {
+                        theme::row(ui, "Volume", |ui| {
                             Slider::new(&mut self.voiceover.volume_db, -24.0..=12.0)
                                 .suffix(" dB")
                                 .default(0.0)

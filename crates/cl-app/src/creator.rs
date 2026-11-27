@@ -18,7 +18,7 @@ use crate::tasks::TaskDone;
 fn still_current(app: &mut App, rev: u64) -> bool {
     let ok = app.revision == rev;
     if !ok {
-        app.toast_err("Projekt hat sich geändert – bitte erneut ausführen");
+        app.toast_err("The project has changed – please run again");
     }
     ok
 }
@@ -105,13 +105,13 @@ impl App {
         match id {
             "quick_pauses" | "quick_fillers" | "quick_ducking" | "quick_highlights" => (
                 sel().is_some_and(|c| clip_audio(self, &c).is_some()),
-                "Wähle zuerst einen Clip mit Ton",
+                "Select a clip with audio first",
             ),
-            "quick_sync" | "quick_multicam" => (self.selection().len() >= 2, "Wähle zwei oder mehr Clips"),
+            "quick_sync" | "quick_multicam" => (self.selection().len() >= 2, "Select two or more clips"),
             "quick_punch" | "quick_vertical" => {
-                (sel().is_some_and(|c| c.kind() == TrackKind::Video), "Wähle einen Videoclip")
+                (sel().is_some_and(|c| c.kind() == TrackKind::Video), "Select a video clip")
             }
-            "quick_recap" => (!self.project.timeline.markers.is_empty(), "Setze zuerst Marker"),
+            "quick_recap" => (!self.project.timeline.markers.is_empty(), "Add markers first"),
             l if l.starts_with("quick_layout_") => {
                 (crate::arrange::Arrange::from_id(l).is_some_and(|a| a.fits(self.layout_clips(a).len())), "")
             }
@@ -119,34 +119,34 @@ impl App {
         }
     }
 
-    /// „Schnellaktionen“ menu (in the timeline toolbar). Entries are actions from
+    /// „Quick Actions“ menu (in the timeline toolbar). Entries are actions from
     /// `keymap::ACTIONS` (name, icon) and run via `run_action` as in the command search.
     pub fn tools_menu(&mut self, ui: &mut egui::Ui) {
         const SECTIONS: &[(&str, &[(&str, &str)])] = &[
             (
-                "Ton und Sprache",
+                "Sound and speech",
                 &[
-                    ("quick_pauses", "Schneidet stille Stellen aus dem ausgewählten Clip"),
-                    ("quick_fillers", "Erkennt Füllwörter lokal (Parakeet) und schneidet sie heraus"),
-                    ("quick_ducking", "Ausgewählter Musik-Clip wird leiser, wo auf anderen Spuren gesprochen wird"),
-                    ("quick_highlights", "Setzt Marker an Schreien, Explosionen, Jubel im ausgewählten Clip"),
+                    ("quick_pauses", "Cuts silent parts out of the selected clip"),
+                    ("quick_fillers", "Detects filler words locally (Parakeet) and cuts them out"),
+                    ("quick_ducking", "The selected music clip gets quieter wherever someone speaks on other tracks"),
+                    ("quick_highlights", "Adds markers at screams, explosions and cheers in the selected clip"),
                 ],
             ),
             (
-                "Mehrere Aufnahmen",
+                "Several recordings",
                 &[
-                    ("quick_sync", "Richtet alle ausgewählten Clips am Ton des zuerst gewählten aus (z. B. mehrere Blickwinkel derselben Szene)"),
-                    ("quick_multicam", "Synchronisierte Clips auf eigenen Spuren: während der Wiedergabe mit 1–9 den Blickwinkel wählen"),
-                    ("quick_speakers", "Eine Datei pro Person (z. B. aus einer Call-Aufnahme, auch als ZIP): je eine benannte Tonspur am Playhead"),
+                    ("quick_sync", "Aligns all selected clips to the audio of the first one selected (e.g. several angles of the same scene)"),
+                    ("quick_multicam", "Synced clips on their own tracks: pick the angle with 1–9 during playback"),
+                    ("quick_speakers", "One file per person (e.g. from a call recording, ZIP works too): one named audio track each at the playhead"),
                 ],
             ),
             (
-                "Bild und Format",
+                "Picture and format",
                 &[
-                    ("quick_punch", "Kurzer Zoom auf 125 % mit Keyframes (danach anpassbar)"),
-                    ("quick_vertical", "Stellt auf 1080×1920 um: Gameplay unten, Kopie des Clips oben als Facecam-Ausschnitt"),
-                    ("quick_thumbnail", "Vorschaubild 1280×720 mit freigestellter Person, Kontur und Text"),
-                    ("quick_recap", "Neues Projekt mit je 3 s um jeden Marker, mit Überblendungen („Was bisher geschah“)"),
+                    ("quick_punch", "Short zoom to 125 % with keyframes (adjustable afterwards)"),
+                    ("quick_vertical", "Switches to 1080×1920: gameplay at the bottom, a copy of the clip on top as facecam crop"),
+                    ("quick_thumbnail", "1280×720 thumbnail with cut-out person, outline and text"),
+                    ("quick_recap", "New project with 3 s around each marker, with crossfades (“previously on”)"),
                 ],
             ),
         ];
@@ -221,7 +221,7 @@ impl App {
             })
             .collect();
         if voices.is_empty() {
-            self.toast_err("Keine anderen Tonspuren unter dem Musik-Clip");
+            self.toast_err("No other audio tracks under the music clip");
             return;
         }
         let (m0, m1, id) = (
@@ -232,7 +232,7 @@ impl App {
         let base = music.volume_db;
         let rev = self.revision;
         self.tasks
-            .spawn(ctx, "tool", "Sprache wird erkannt …", move |p, _| {
+            .spawn(ctx, "tool", "Detecting speech …", move |p, _| {
                 // collect speech ranges in project time
                 let mut speech: Vec<(f64, f64)> = Vec::new();
                 for (i, (path, src, span, sp, start)) in voices.iter().enumerate() {
@@ -273,7 +273,7 @@ impl App {
                         n += 1;
                     }
                     if n == 0 {
-                        app.toast("Keine Sprache unter der Musik gefunden");
+                        app.toast("No speech found under the music");
                         return;
                     }
                     app.apply(EditOp::SetKeyframes {
@@ -295,7 +295,7 @@ impl App {
         };
         let (start, rev, id, at_rev) = (c.start.as_secs_f64(), c.fx.reverse, c.id, self.revision);
         self.tasks
-            .spawn(ctx, "tool", "Highlights werden gesucht …", move |p, _| {
+            .spawn(ctx, "tool", "Looking for highlights …", move |p, _| {
                 p(0.3);
                 match cl_analyze::audio::envelope(&path, src, Some(span)) {
                     Ok(env) => {
@@ -314,7 +314,7 @@ impl App {
                                 return;
                             }
                             if hits.is_empty() {
-                                app.toast("Keine auffällig lauten Momente gefunden");
+                                app.toast("No notably loud moments found");
                                 return;
                             }
                             app.shorts = Some(crate::shorts::ShortsState {
@@ -334,7 +334,7 @@ impl App {
             return;
         };
         let Some((rp, rs, rl, _)) = clip_audio(self, &ref_clip) else {
-            self.toast_err("Der zuerst gewählte Clip braucht Ton");
+            self.toast_err("The first selected clip needs audio");
             return;
         };
         let others: Vec<(ClipId, PathBuf, f64, f64)> = self
@@ -349,10 +349,10 @@ impl App {
         self.tasks.spawn(
             ctx,
             "tool",
-            "Aufnahmen werden synchronisiert …",
+            "Syncing recordings …",
             move |p, _| {
                 let Ok(a) = cl_analyze::audio::envelope(&rp, rs, Some(rl.min(120.0))) else {
-                    return TaskDone::Failed("Ton nicht lesbar".into());
+                    return TaskDone::Failed("Audio can't be read".into());
                 };
                 let mut moves = Vec::new();
                 for (i, (id, path, src, len)) in others.iter().enumerate() {
@@ -399,7 +399,7 @@ impl App {
         if let Some((angles, cuts)) = &mut self.multicam {
             if n < angles.len() {
                 cuts.push((self.playhead, n));
-                self.toast(format!("Blickwinkel {}", n + 1));
+                self.toast(format!("Angle {}", n + 1));
             }
         }
     }
@@ -456,7 +456,7 @@ impl App {
             }
         }
         self.apply(EditOp::Batch {
-            label: "Multicam-Schnitt".into(),
+            label: "Multicam edit".into(),
             ops,
         });
         self.toast(self.i18n.t_num("multicam-done", "count", cuts.len() as i64));
@@ -465,7 +465,7 @@ impl App {
     pub fn tool_speakers(&mut self, _ctx: &egui::Context) {
         let Some(mut files) = crate::dialog()
             .add_filter(
-                crate::tr("Audio oder ZIP"),
+                crate::tr("Audio or ZIP"),
                 &["wav", "flac", "mp3", "ogg", "m4a", "opus", "aac", "zip"],
             )
             .pick_files()
@@ -543,7 +543,7 @@ impl App {
             clip: c.id,
             keyframes: c.keyframes,
         });
-        self.toast("Zoom-Punch-in gesetzt (Keyframes im Basis-Reiter anpassbar)");
+        self.toast("Zoom punch-in added (keyframes adjustable in the Basic tab)");
     }
 
     pub fn tool_vertical(&mut self) {
@@ -595,7 +595,7 @@ impl App {
             kind: TrackKind::Video,
         });
         self.apply(EditOp::Batch {
-            label: "Hochkant-Layout".into(),
+            label: "Vertical layout".into(),
             ops,
         });
         // the track was just created: facecam on it
@@ -605,7 +605,7 @@ impl App {
                 clip: cam,
             });
         }
-        self.toast("Hochkant-Layout: Facecam oben mit Position X/Y auf dein Gesicht ausrichten");
+        self.toast("Vertical layout: align the facecam on top to your face with position X/Y");
     }
 
     pub fn tool_thumbnail(&mut self, ctx: &egui::Context) {
@@ -626,7 +626,7 @@ impl App {
         let t = self.playhead;
         let fonts = self.font_files();
         self.tasks
-            .spawn(ctx, "tool", "Thumbnail wird erstellt …", move |_, _| {
+            .spawn(ctx, "tool", "Creating thumbnail …", move |_, _| {
                 // 16:9 → 1280×720, otherwise project size
                 let size = if p.settings.width * 9 == p.settings.height * 16 {
                     (1280, 720)
@@ -642,7 +642,7 @@ impl App {
                     return TaskDone::Failed(e);
                 }
                 TaskDone::Run(Box::new(move |app: &mut App| {
-                    app.toast(format!("Thumbnail gespeichert: {}", out.display()));
+                    app.toast(format!("Thumbnail saved: {}", out.display()));
                     crate::home::reveal(&out);
                 }))
             });
@@ -653,7 +653,7 @@ impl App {
         let src = self.project.clone();
         let mut ms = src.timeline.markers.clone();
         ms.sort_by_key(|m| m.at);
-        let mut p = Project::new(format!("{} – Rückblick", src.name));
+        let mut p = Project::new(format!("{} – Recap", src.name));
         p.settings = src.settings.clone();
         p.media = src.media.clone();
         p.timeline.tracks = src
@@ -725,7 +725,7 @@ fn apply_sync(app: &mut App, rev: u64, moves: &[(ClipId, f64)]) {
         return;
     }
     if moves.is_empty() {
-        app.toast_err("Kein gemeinsamer Ton gefunden");
+        app.toast_err("No shared audio found");
         return;
     }
     let moves: Vec<(ClipId, Time)> = moves
@@ -738,7 +738,7 @@ fn apply_sync(app: &mut App, rev: u64, moves: &[(ClipId, f64)]) {
     // yet moved; blocked by another clip, the synced clips go onto a new track together
     match crate::timeline::group_in_time(&app.project, &moves) {
         Ok(EditOp::Batch { ops, .. }) => {
-            app.apply(EditOp::Batch { label: "Synchronisieren".into(), ops });
+            app.apply(EditOp::Batch { label: "Synchronize".into(), ops });
         }
         Ok(op) => {
             app.apply(op);
@@ -928,9 +928,9 @@ fn recordings_dir(zip: &Path) -> PathBuf {
 #[test]
 fn second_zip_import_does_not_overwrite_the_first() {
     let home = crate::paths::TestHome::new();
-    let first = recordings_dir(Path::new("C:/x/Anruf.zip"));
-    assert_eq!(first, home.path().join("Recordings").join("Anruf"));
+    let first = recordings_dir(Path::new("C:/x/Call.zip"));
+    assert_eq!(first, home.path().join("Recordings").join("Call"));
     std::fs::create_dir_all(&first).unwrap();
-    let second = recordings_dir(Path::new("D:/y/Anruf.zip"));
+    let second = recordings_dir(Path::new("D:/y/Call.zip"));
     assert!(second != first && !second.exists(), "{}", second.display());
 }

@@ -152,7 +152,7 @@ fn capcut_drafts_audio() {
                 mix(&p, at, (at + Time(1_000_000)).min(total)).is_err()
             })
             .count();
-        println!("  Projekt-Mix an 10 Stellen: {fails} gescheitert");
+        println!("  project mix at 10 spots: {fails} failed");
         sum[0] += ok;
         sum[1] += silent;
         sum[2] += failed + fails;

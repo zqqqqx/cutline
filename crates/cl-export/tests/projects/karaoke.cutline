@@ -172,7 +172,7 @@
         "locked": false,
         "hidden": false,
         "muted": false,
-        "name": "Untertitel",
+        "name": "Subtitles",
         "clips": [
           {
             "id": "00000000-0000-4000-9000-000000000101",
@@ -181,7 +181,7 @@
             "source_in": 0,
             "content": {
               "Text": {
-                "text": "Das ist ein Karaoke Test",
+                "text": "This is a Karaoke test",
                 "font_family": null,
                 "size": 64.0,
                 "color": [
@@ -336,7 +336,7 @@
             "source_in": 0,
             "content": {
               "Text": {
-                "text": "Zwei Zeilen\nmit Fläche",
+                "text": "Two lines\nwith area",
                 "font_family": null,
                 "size": 64.0,
                 "color": [
@@ -482,7 +482,7 @@
             "source_in": 0,
             "content": {
               "Text": {
-                "text": "nach dem Teilen weiter",
+                "text": "continue after the split",
                 "font_family": null,
                 "size": 64.0,
                 "color": [

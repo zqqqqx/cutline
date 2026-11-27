@@ -22,27 +22,32 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 /// Short, understandable message for a raw error text (network library, file system, check).
-/// The raw text belongs in the log, not in the UI; „Abgebrochen“ stays unchanged.
+/// The raw text belongs in the log, not in the UI; „Canceled“ stays unchanged.
 pub fn friendly(raw: &str) -> String {
     let l = raw.to_lowercase();
     let has = |k: &[&str]| k.iter().any(|k| l.contains(k));
-    let m = if l == "abgebrochen" {
+    // the operating system writes its own messages in its language
+    let os = |meaning: &str| {
+        const TAB: char = 9 as char;
+        include_str!("../../../translations/de_DE/os-errors.tsv").lines().filter_map(|x| x.split_once(TAB)).any(|(word, m)| m == meaning && l.contains(word))
+    };
+    let m = if l == "canceled" {
         raw
-    } else if has(&["no space", "speicherplatz", "os error 112", "os error 28", "disk full"]) {
-        "Nicht genug Speicherplatz"
-    } else if has(&["ohne prüfsumme"]) {
-        "Version ohne Prüfsumme"
-    } else if has(&["prüfsumme", "beschädigt", "unvollständig", "zu groß", "ist leer", "unsicher"]) {
+    } else if has(&["no space", "os error 112", "os error 28", "disk full"]) || os("no_space") {
+        "Not enough disk space"
+    } else if has(&["without checksum"]) {
+        "Version without checksum"
+    } else if has(&["checksum", "damaged", "incomplete", "too large", "is empty", "unsafe"]) {
         // before "404": the hex characters in the checksum error can contain "404"
-        "Datei beschädigt (Prüfsumme)"
-    } else if has(&["404", "not found", "gefunden"]) {
-        "Nicht gefunden"
-    } else if has(&["dns", "connection", "keine verbindung", "timed out", "timeout", "network", "tls", "os error 100", "os error 110"]) {
-        "Keine Verbindung"
-    } else if has(&["antwortet mit", "status", "nicht lesbar", "unlesbar"]) {
-        "Server nicht erreichbar"
+        "File damaged (checksum)"
+    } else if has(&["404", "not found"]) || os("not_found") {
+        "Not found"
+    } else if has(&["dns", "connection", "can't reach", "timed out", "timeout", "network", "tls", "os error 100", "os error 110"]) {
+        "No connection"
+    } else if has(&["responds with", "status", "not readable"]) {
+        "Server unreachable"
     } else {
-        "Unerwarteter Fehler"
+        "Unexpected error"
     };
     m.to_string()
 }
@@ -86,7 +91,7 @@ pub struct Release {
     pub sha_url: Option<String>,
     /// Asset `changes.json` (older releases don't have it)
     pub changes_url: Option<String>,
-    /// „Was ist neu“ from `changes.json`; `None` = read from the release text (`notes`)
+    /// „What's new“ from `changes.json`; `None` = read from the release text (`notes`)
     pub changes: Option<Vec<changelog::Notes>>,
 }
 
@@ -138,12 +143,12 @@ fn agent() -> ureq::Agent {
 /// Evaluate the release JSON (own function so it is testable without network).
 pub fn parse_release(json: &str, current: Version) -> Result<Option<Release>, String> {
     let r: GhRelease =
-        serde_json::from_str(json).map_err(|e| format!("Antwort nicht lesbar: {e}"))?;
+        serde_json::from_str(json).map_err(|e| format!("Response not readable: {e}"))?;
     if r.draft || r.prerelease {
         return Ok(None);
     }
     let Some(version) = Version::parse(&r.tag_name) else {
-        return Err(format!("Unbekanntes Versionsformat: {}", r.tag_name));
+        return Err(format!("Unknown version format: {}", r.tag_name));
     };
     if version <= current {
         return Ok(None);
@@ -151,12 +156,12 @@ pub fn parse_release(json: &str, current: Version) -> Result<Option<Release>, St
     let want = asset_name();
     let Some(asset) = r.assets.iter().find(|a| a.name == want) else {
         return Err(format!(
-            "Version {version} hat kein Paket für dieses System ({want})"
+            "Version {version} has no package for this system ({want})"
         ));
     };
     // never installed without a checksum: then don't offer it at all
     let Some(sha) = r.assets.iter().find(|a| a.name == format!("{want}.sha256")) else {
-        return Err(format!("Version {version} ohne Prüfsumme"));
+        return Err(format!("Version {version} without checksum"));
     };
     Ok(Some(Release {
         version,
@@ -191,7 +196,7 @@ pub fn fetch_changes(url: &str) -> Option<Vec<changelog::Notes>> {
 
 /// Query the newest version. `Ok(None)` = already up to date.
 pub fn check(current: &str) -> Result<Option<Release>, String> {
-    let cur = Version::parse(current).ok_or("Eigene Version unlesbar")?;
+    let cur = Version::parse(current).ok_or("Own version not readable")?;
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
     match agent()
         .get(&url)
@@ -207,9 +212,9 @@ pub fn check(current: &str) -> Result<Option<Release>, String> {
             }
             Ok(r)
         }
-        Err(ureq::Error::Status(404, _)) => Err("Noch keine öffentlichen Releases gefunden".into()),
-        Err(ureq::Error::Status(code, _)) => Err(format!("GitHub antwortet mit {code}")),
-        Err(e) => Err(format!("Keine Verbindung zu GitHub ({e})")),
+        Err(ureq::Error::Status(404, _)) => Err("No public releases found yet".into()),
+        Err(ureq::Error::Status(code, _)) => Err(format!("GitHub responds with {code}")),
+        Err(e) => Err(format!("Can't reach GitHub ({e})")),
     }
 }
 
@@ -243,7 +248,7 @@ fn download_max(
     let sha_url = rel
         .sha_url
         .as_ref()
-        .ok_or("Release ohne Prüfsumme – Installation aus Sicherheitsgründen abgebrochen")?;
+        .ok_or("Release without checksum – installation canceled for safety")?;
     let expected = agent()
         .get(sha_url)
         .set("User-Agent", "cutline-updater")
@@ -251,7 +256,7 @@ fn download_max(
         .map_err(|e| e.to_string())?
         .into_string()
         .map_err(|e| e.to_string())?;
-    let expected = parse_sha_file(&expected).ok_or("Prüfsummendatei unlesbar")?;
+    let expected = parse_sha_file(&expected).ok_or("Checksum file not readable")?;
     let resp = agent()
         .get(&rel.asset_url)
         .set("User-Agent", "cutline-updater")
@@ -268,7 +273,7 @@ fn download_max(
     let mut buf = [0u8; 64 * 1024];
     loop {
         if cancel.load(Ordering::Relaxed) {
-            return Err("Abgebrochen".into());
+            return Err("Canceled".into());
         }
         let n = reader.read(&mut buf).map_err(|e| e.to_string())?;
         if n == 0 {
@@ -276,14 +281,14 @@ fn download_max(
         }
         data.extend_from_slice(&buf[..n]);
         if data.len() as u64 > max {
-            return Err("Paket ist zu groß".into());
+            return Err("Package is too large".into());
         }
         progress(data.len() as u64, total);
     }
     let got = sha256_hex(&data);
     if got != expected {
         return Err(format!(
-            "Prüfsumme stimmt nicht (erwartet {}…, erhalten {}…)",
+            "Checksum does not match (expected {}…, got {}…)",
             &expected[..12],
             &got[..12]
         ));
@@ -298,7 +303,7 @@ fn download_max(
 /// (works for the running EXE too). Returns the number of files.
 pub fn install(zip_path: &Path, target: &Path) -> Result<usize, String> {
     let f = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
-    let mut zip = zip::ZipArchive::new(f).map_err(|e| format!("Paket beschädigt: {e}"))?;
+    let mut zip = zip::ZipArchive::new(f).map_err(|e| format!("Package damaged: {e}"))?;
     let mut left = MAX_UNPACKED;
     // first check everything and unpack into an intermediate folder, then swap:
     // so on an error the old installation stays untouched.
@@ -308,7 +313,7 @@ pub fn install(zip_path: &Path, target: &Path) -> Result<usize, String> {
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
         let Some(rel) = entry.enclosed_name() else {
-            return Err(format!("Unsicherer Pfad im Paket: {}", entry.name().unwrap_or_default()));
+            return Err(format!("Unsafe path in the pack: {}", entry.name().unwrap_or_default()));
         };
         let dst = staging.join(&rel);
         if entry.is_dir() {
@@ -329,7 +334,7 @@ pub fn install(zip_path: &Path, target: &Path) -> Result<usize, String> {
         files.push(rel);
     }
     if files.is_empty() {
-        return Err("Paket ist leer".into());
+        return Err("Package is empty".into());
     }
     // list of renamed files: cleanup_old deletes only these, never foreign `*.old`.
     let mut list = std::fs::OpenOptions::new()
@@ -407,7 +412,7 @@ pub fn download_to(
     let copied = (|| -> Result<(), String> {
         loop {
             if cancel.load(Ordering::Relaxed) {
-                return Err("Abgebrochen".into());
+                return Err("Canceled".into());
             }
             let n = r.read(&mut buf).map_err(|e| e.to_string())?;
             if n == 0 {
@@ -428,13 +433,13 @@ pub fn download_to(
     }
     if total > 0 && done != total {
         let _ = std::fs::remove_file(&part);
-        return Err("Download unvollständig".into());
+        return Err("Download incomplete".into());
     }
     if let Some(want) = want {
         let got: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
         if !got.eq_ignore_ascii_case(want) {
             let _ = std::fs::remove_file(&part);
-            return Err(format!("{url}: Prüfsumme stimmt nicht"));
+            return Err(format!("{url}: checksum does not match"));
         }
     }
     std::fs::rename(&part, dest).map_err(|e| e.to_string())
@@ -456,7 +461,7 @@ const MAX_UNPACKED: u64 = 4 << 30;
 fn copy_capped(r: impl Read, w: &mut impl Write, left: &mut u64) -> Result<(), String> {
     let n = std::io::copy(&mut r.take(*left + 1), w).map_err(|e| e.to_string())?;
     if n > *left {
-        return Err("Archiv ist entpackt zu groß".into());
+        return Err("Archive is too large when unpacked".into());
     }
     *left -= n;
     Ok(())
@@ -471,7 +476,7 @@ pub fn extract_zip(zip_path: &Path, dir: &Path) -> Result<usize, String> {
     for i in 0..zip.len() {
         let mut e = zip.by_index(i).map_err(|e| e.to_string())?;
         let Some(rel) = e.enclosed_name() else {
-            return Err(format!("Unsicherer Pfad: {}", e.name().unwrap_or_default()));
+            return Err(format!("Unsafe path: {}", e.name().unwrap_or_default()));
         };
         let dst = dir.join(rel);
         if e.is_dir() {
@@ -514,18 +519,18 @@ mod tests {
     #[test]
     fn raw_errors_become_short_messages() {
         let f = super::friendly;
-        assert_eq!(f("Keine Verbindung zu GitHub (https://x/a.zip: Dns Failed: failed to lookup)"), "Keine Verbindung");
-        assert_eq!(f("https://x/p.zip: Connection Failed: refused"), "Keine Verbindung");
-        assert_eq!(f("GitHub antwortet mit 503"), "Server nicht erreichbar");
-        assert_eq!(f("https://x/p.zip: Prüfsumme stimmt nicht"), "Datei beschädigt (Prüfsumme)");
-        assert_eq!(f("Prüfsumme stimmt nicht (erwartet ab…, erhalten cd…)"), "Datei beschädigt (Prüfsumme)");
-        assert_eq!(f("Es ist nicht genug Speicherplatz vorhanden. (os error 112)"), "Nicht genug Speicherplatz");
-        assert_eq!(f("GitHub antwortet mit 404"), "Nicht gefunden");
-        assert_eq!(f("Abgebrochen"), "Abgebrochen");
+        assert_eq!(f("Can't reach GitHub (https://x/a.zip: Dns Failed: failed to lookup)"), "No connection");
+        assert_eq!(f("https://x/p.zip: Connection Failed: refused"), "No connection");
+        assert_eq!(f("GitHub responds with 503"), "Server unreachable");
+        assert_eq!(f("https://x/p.zip: checksum does not match"), "File damaged (checksum)");
+        assert_eq!(f("Checksum does not match (expected ab…, got cd…)"), "File damaged (checksum)");
+        assert_eq!(f("Es ist nicht genug Speicherplatz vorhanden. (os error 112)"), "Not enough disk space");
+        assert_eq!(f("GitHub responds with 404"), "Not found");
+        assert_eq!(f("Canceled"), "Canceled");
         // hex characters with "404" in the checksum error: stays a checksum error
-        assert_eq!(f("Prüfsumme stimmt nicht (erwartet 4041ab…, erhalten cd…)"), "Datei beschädigt (Prüfsumme)");
-        assert_eq!(f("Release ohne Prüfsumme – Installation aus Sicherheitsgründen abgebrochen"), "Version ohne Prüfsumme");
-        assert_eq!(f("irgendwas"), "Unerwarteter Fehler");
+        assert_eq!(f("Checksum does not match (expected 4041ab…, got cd…)"), "File damaged (checksum)");
+        assert_eq!(f("Release without checksum – installation canceled for safety"), "Version without checksum");
+        assert_eq!(f("irgendwas"), "Unexpected error");
     }
 
     use super::*;
@@ -547,7 +552,7 @@ mod tests {
         if with_sha {
             assets.push(serde_json::json!({ "name": format!("{a}.sha256"), "browser_download_url": "https://x/pkg.sha256", "size": 1 }));
         }
-        serde_json::json!({ "tag_name": tag, "name": "Cutline", "body": "Neu: alles", "html_url": "https://github.com/x", "assets": assets }).to_string()
+        serde_json::json!({ "tag_name": tag, "name": "Cutline", "body": "New: everything", "html_url": "https://github.com/x", "assets": assets }).to_string()
     }
 
     #[test]
@@ -564,7 +569,7 @@ mod tests {
             .unwrap();
         assert_eq!(r.version, Version(0, 3, 0));
         assert!(r.sha_url.is_some());
-        assert_eq!(r.notes, "Neu: alles");
+        assert_eq!(r.notes, "New: everything");
         let mut j: serde_json::Value = serde_json::from_str(&release_json("v0.3.0", true)).unwrap();
         j["prerelease"] = true.into();
         assert!(
@@ -588,12 +593,12 @@ mod tests {
             Some(h.clone())
         );
         assert_eq!(parse_sha_file(&h.to_uppercase()), Some(h));
-        assert_eq!(parse_sha_file("kaputt"), None);
+        assert_eq!(parse_sha_file("broken"), None);
     }
 
     #[test]
     fn download_verifies_sha_from_url() {
-        // small local HTTP server, always delivers "hallo"
+        // small local HTTP server, always delivers "hello"
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();
         std::thread::spawn(move || {
@@ -601,18 +606,18 @@ mod tests {
                 let mut c = c.unwrap();
                 let mut b = [0u8; 1024];
                 let _ = c.read(&mut b);
-                let _ = c.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhallo");
+                let _ = c.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello");
             }
         });
         let dir = tempfile::tempdir().unwrap();
         let url = format!("http://127.0.0.1:{port}/f");
-        let good = format!("{url}#sha256={}", sha256_hex(b"hallo"));
-        let bad = format!("{url}#sha256={}", sha256_hex(b"anders"));
+        let good = format!("{url}#sha256={}", sha256_hex(b"hello"));
+        let bad = format!("{url}#sha256={}", sha256_hex(b"different"));
         let no = AtomicBool::new(false);
         assert!(download_to(&bad, &dir.path().join("b"), |_, _| {}, &no).is_err());
         assert!(!dir.path().join("b").exists());
         download_to(&good, &dir.path().join("g"), |_, _| {}, &no).unwrap();
-        assert_eq!(std::fs::read(dir.path().join("g")).unwrap(), b"hallo");
+        assert_eq!(std::fs::read(dir.path().join("g")).unwrap(), b"hello");
     }
 
     #[test]
@@ -620,34 +625,34 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = dir.path().join("app");
         std::fs::create_dir_all(app.join("plugins/basis")).unwrap();
-        std::fs::write(app.join("cutline.exe"), b"alt").unwrap();
-        std::fs::write(app.join("plugins/basis/plugin.toml"), b"alt").unwrap();
+        std::fs::write(app.join("cutline.exe"), b"old").unwrap();
+        std::fs::write(app.join("plugins/basis/plugin.toml"), b"old").unwrap();
         // build the package
         let zp = dir.path().join("pkg.zip");
         {
             let mut w = zip::ZipWriter::new(std::fs::File::create(&zp).unwrap());
             let o = zip::write::SimpleFileOptions::default();
             w.start_file("cutline.exe", o).unwrap();
-            w.write_all(b"neu").unwrap();
+            w.write_all(b"new").unwrap();
             w.start_file("plugins/basis/plugin.toml", o).unwrap();
-            w.write_all(b"neu").unwrap();
+            w.write_all(b"new").unwrap();
             w.start_file("ffmpeg/ffmpeg.exe", o).unwrap();
             w.write_all(b"ff").unwrap();
             w.finish().unwrap();
         }
         assert_eq!(install(&zp, &app).unwrap(), 3);
-        assert_eq!(std::fs::read(app.join("cutline.exe")).unwrap(), b"neu");
-        assert_eq!(std::fs::read(app.join("cutline.exe.old")).unwrap(), b"alt");
+        assert_eq!(std::fs::read(app.join("cutline.exe")).unwrap(), b"new");
+        assert_eq!(std::fs::read(app.join("cutline.exe.old")).unwrap(), b"old");
         assert_eq!(std::fs::read(app.join("ffmpeg/ffmpeg.exe")).unwrap(), b"ff");
         assert!(!app.join(".update-staging").exists());
-        std::fs::write(app.join("fremd.old"), b"x").unwrap();
+        std::fs::write(app.join("other.old"), b"x").unwrap();
         std::fs::write(dir.path().join("x.old"), b"x").unwrap();
         // manipulated list: a path outside the folder is ignored.
         let mut l = std::fs::OpenOptions::new().append(true).open(app.join(OLD_LIST)).unwrap();
         writeln!(l, "../x.old").unwrap();
         drop(l);
         cleanup_old(&app);
-        assert!(app.join("fremd.old").exists());
+        assert!(app.join("other.old").exists());
         assert!(dir.path().join("x.old").exists());
         assert!(!app.join(OLD_LIST).exists());
         assert!(!app.join("cutline.exe.old").exists());
@@ -660,23 +665,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = dir.path().join("app");
         std::fs::create_dir_all(&app).unwrap();
-        std::fs::write(app.join("cutline.exe"), b"alt").unwrap();
+        std::fs::write(app.join("cutline.exe"), b"old").unwrap();
         // "b" is a file: the folder for b/c.txt cannot be created
         std::fs::write(app.join("b"), b"x").unwrap();
         let zp = dir.path().join("pkg.zip");
         {
             let mut w = zip::ZipWriter::new(std::fs::File::create(&zp).unwrap());
             let o = zip::write::SimpleFileOptions::default();
-            for (name, data) in [("cutline.exe", b"neu"), ("neu.dll", b"neu"), ("b/c.txt", b"neu")] {
+            for (name, data) in [("cutline.exe", b"new"), ("new.dll", b"new"), ("b/c.txt", b"new")] {
                 w.start_file(name, o).unwrap();
                 w.write_all(data).unwrap();
             }
             w.finish().unwrap();
         }
         assert!(install(&zp, &app).is_err());
-        assert_eq!(std::fs::read(app.join("cutline.exe")).unwrap(), b"alt");
+        assert_eq!(std::fs::read(app.join("cutline.exe")).unwrap(), b"old");
         assert!(!app.join("cutline.exe.old").exists());
-        assert!(!app.join("neu.dll").exists());
+        assert!(!app.join("new.dll").exists());
     }
 
     #[test]
@@ -781,9 +786,9 @@ mod tests {
         j["draft"] = false.into();
         j["name"] = "".into();
         let e = parse_release(&j.to_string(), cur).unwrap_err();
-        assert_eq!(friendly(&e), "Version ohne Prüfsumme", "{e}");
+        assert_eq!(friendly(&e), "Version without checksum", "{e}");
         let r = parse_release(&release_json("v2.0.0", true).replace("\"Cutline\"", "\"\""), cur).unwrap().unwrap();
-        assert_eq!(r.name, "v2.0.0", "leerer Name → Tag");
+        assert_eq!(r.name, "v2.0.0", "empty name → tag");
     }
 
     #[test]
@@ -827,7 +832,7 @@ mod tests {
             ok(big.as_bytes(), None),
             b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
         ]);
-        let got = fetch_changes(&format!("{base}/c")).expect("gelesen");
+        let got = fetch_changes(&format!("{base}/c")).expect("read");
         assert_eq!(got[0].version, Some(Version(0, 3, 0)));
         assert!(fetch_changes(&format!("{base}/c")).is_none(), "unbekanntes Format");
         assert!(fetch_changes(&format!("{base}/c")).is_none(), "too large");
@@ -839,23 +844,23 @@ mod tests {
         let no = AtomicBool::new(false);
         let dir = tempfile::tempdir().unwrap();
         // wrong checksum
-        let base = serve(vec![ok(sha256_hex(b"anders").as_bytes(), None), ok(b"hallo", None)]);
-        assert!(download(&release(&base), dir.path(), |_, _| {}, &no).unwrap_err().contains("Prüfsumme"));
+        let base = serve(vec![ok(sha256_hex(b"different").as_bytes(), None), ok(b"hello", None)]);
+        assert!(download(&release(&base), dir.path(), |_, _| {}, &no).unwrap_err().contains("hecksum"));
         // without checksum don't even download
         let mut r = release(&base);
         r.sha_url = None;
         assert!(download(&r, dir.path(), |_, _| {}, &no).is_err());
         // cancelled
-        let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
-        assert_eq!(download(&release(&base), dir.path(), |_, _| {}, &AtomicBool::new(true)).unwrap_err(), "Abgebrochen");
+        let base = serve(vec![ok(sha256_hex(b"hello").as_bytes(), None), ok(b"hello", None)]);
+        assert_eq!(download(&release(&base), dir.path(), |_, _| {}, &AtomicBool::new(true)).unwrap_err(), "Canceled");
         // broken checksum file
         let base = serve(vec![ok(b"<html>404</html>", None)]);
         assert!(download(&release(&base), dir.path(), |_, _| {}, &no).is_err());
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "nichts geschrieben");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "nothing written");
         // correct
-        let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
+        let base = serve(vec![ok(sha256_hex(b"hello").as_bytes(), None), ok(b"hello", None)]);
         let p = download(&release(&base), dir.path(), |_, _| {}, &no).unwrap();
-        assert_eq!(std::fs::read(p).unwrap(), b"hallo");
+        assert_eq!(std::fs::read(p).unwrap(), b"hello");
     }
 
     /// Bug (audit of 0.19.0): the package was read into memory without a limit.
@@ -863,10 +868,10 @@ mod tests {
     fn download_stops_at_the_size_limit() {
         let dir = tempfile::tempdir().unwrap();
         let no = AtomicBool::new(false);
-        let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
-        assert_eq!(download_max(&release(&base), dir.path(), |_, _| {}, &no, 4).unwrap_err(), "Paket ist zu groß");
+        let base = serve(vec![ok(sha256_hex(b"hello").as_bytes(), None), ok(b"hello", None)]);
+        assert_eq!(download_max(&release(&base), dir.path(), |_, _| {}, &no, 4).unwrap_err(), "Package is too large");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
-        let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", None)]);
+        let base = serve(vec![ok(sha256_hex(b"hello").as_bytes(), None), ok(b"hello", None)]);
         assert!(download_max(&release(&base), dir.path(), |_, _| {}, &no, 5).is_ok());
     }
 
@@ -874,7 +879,7 @@ mod tests {
     #[test]
     fn download_survives_absurd_content_length() {
         let dir = tempfile::tempdir().unwrap();
-        let base = serve(vec![ok(sha256_hex(b"hallo").as_bytes(), None), ok(b"hallo", Some(1 << 62))]);
+        let base = serve(vec![ok(sha256_hex(b"hello").as_bytes(), None), ok(b"hello", Some(1 << 62))]);
         let r = download(&release(&base), dir.path(), |_, _| {}, &AtomicBool::new(false));
         assert!(r.is_err(), "{r:?}");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
@@ -885,7 +890,7 @@ mod tests {
     fn truncated_model_download_leaves_nothing() {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("modell.onnx");
-        let base = serve(vec![ok(b"hallo", Some(100))]);
+        let base = serve(vec![ok(b"hello", Some(100))]);
         let r = download_to(&format!("{base}/m"), &dest, |_, _| {}, &AtomicBool::new(false));
         assert!(r.is_err());
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "no leftovers");
@@ -894,7 +899,7 @@ mod tests {
         assert!(download_to(&format!("{base}/m"), &dest, |_, _| {}, &AtomicBool::new(false)).is_err());
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0, "no leftovers after read error");
         // cancelled
-        let base = serve(vec![ok(b"hallo", None)]);
+        let base = serve(vec![ok(b"hello", None)]);
         assert!(download_to(&format!("{base}/m"), &dest, |_, _| {}, &AtomicBool::new(true)).is_err());
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
         // server answers 404
@@ -919,19 +924,19 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let app = dir.path().join("app");
         std::fs::create_dir_all(&app).unwrap();
-        std::fs::write(app.join("cutline.exe"), b"alt").unwrap();
-        let garbage = dir.path().join("kaputt.zip");
-        std::fs::write(&garbage, b"PK\x03\x04 kein zip").unwrap();
+        std::fs::write(app.join("cutline.exe"), b"old").unwrap();
+        let garbage = dir.path().join("broken.zip");
+        std::fs::write(&garbage, b"PK\x03\x04 no zip").unwrap();
         assert!(install(&garbage, &app).is_err());
-        assert!(install(&dir.path().join("fehlt.zip"), &app).is_err());
-        assert!(install(&zip_with(dir.path(), &[]), &app).unwrap_err().contains("leer"));
+        assert!(install(&dir.path().join("missing.zip"), &app).is_err());
+        assert!(install(&zip_with(dir.path(), &[]), &app).unwrap_err().contains("empty"));
         for evil in ["a/../../x.exe", "../x.exe"] {
             let zp = zip_with(dir.path(), &[("ok.txt", b"1"), (evil, b"x")]);
             assert!(install(&zp, &app).is_err(), "{evil}");
             assert!(extract_zip(&zp, &dir.path().join("x")).is_err(), "{evil}");
         }
         assert!(!dir.path().join("x.exe").exists() && !dir.path().join("abs.exe").exists());
-        assert_eq!(std::fs::read(app.join("cutline.exe")).unwrap(), b"alt", "old installation untouched");
+        assert_eq!(std::fs::read(app.join("cutline.exe")).unwrap(), b"old", "old installation untouched");
         assert!(!app.join("ok.txt").exists());
         // absolute paths land at most in the target folder, never next to it
         for abs in ["/abs.exe", "C:/abs.exe", r"\\server\share\abs.exe"] {
@@ -941,9 +946,9 @@ mod tests {
             assert!(!dir.path().join("abs.exe").exists() && !std::path::Path::new("C:/abs.exe").exists(), "{abs}");
         }
         // umlauts and subfolders are unpacked correctly
-        let zp = zip_with(dir.path(), &[("Schrift/Ä ö 🎬.ttf", b"f")]);
+        let zp = zip_with(dir.path(), &[("Font/Ä ö 🎬.ttf", b"f")]);
         assert_eq!(extract_zip(&zp, &dir.path().join("y")).unwrap(), 1);
-        assert!(dir.path().join("y/Schrift/Ä ö 🎬.ttf").exists());
+        assert!(dir.path().join("y/Font/Ä ö 🎬.ttf").exists());
         // cleanup without a list and with an absolute path in the list
         cleanup_old(&dir.path().join("gibtsnicht"));
         let victim = dir.path().join("opfer.txt");

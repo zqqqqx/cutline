@@ -390,7 +390,7 @@ fn still_src(c: &Clip, m: &MediaRef, t_rel: Time, fps: Rational) -> Time {
 
 /// Source time for a single preview frame: rounded to the frame grid, at most one and a half
 /// frames before the end of the clip or file. FFmpeg delivers the first frame from `-ss`; a time in the
-/// last frame (or rounded to the end) gave none at all – „Datei kann nicht gelesen werden: “.
+/// last frame (or rounded to the end) gave none at all – "file cannot be read".
 fn still_seek(t: Time, source_in: Time, end: Time, fps: Rational) -> Time {
     let last = end - Time::from_secs_f64(1.5 / fps.as_f64().max(1.0));
     Time(t.snap_to_frame(fps).0.min(last.0).max(source_in.0))
@@ -695,7 +695,7 @@ mod presence_tests {
     /// Follow-up test K7: a 4K clip at speed 2 over a second 4K clip stayed a still image
     /// during playback while its proxy was built in parts. Here with the real app (source choice,
     /// starter, core) without a window: the upper layer must fetch frames continuously.
-    /// `CUTLINE_QA_TEMPO` (2, 0.5, rev, kurve, scale), `CUTLINE_QA_PARTS`: build this many proxy parts of the
+    /// `CUTLINE_QA_TEMPO` (2, 0.5, rev, curve, scale), `CUTLINE_QA_PARTS`: build this many proxy parts of the
     /// upper source beforehand (the rest is missing, as during the build).
     /// `cargo test --release -p cl-app --bin cutline tempo_in_app -- --ignored --nocapture`
     #[test]
@@ -718,7 +718,7 @@ mod presence_tests {
         let mut c = Clip::new(ClipContent::Media { media: mb.id, kind: MediaKind::Video }, Time::ZERO, mb.duration);
         match mode.as_str() {
             "rev" => c.fx.reverse = true,
-            "kurve" => c.fx.speed_curve = Some("montage".into()),
+            "curve" => c.fx.speed_curve = Some("montage".into()),
             "scale" => {
                 for (i, v) in [0.5f32, 1.5, 0.5, 1.5].iter().enumerate() {
                     c.keyframes.set(Prop::Scale, Time::from_secs_f64(20.0 + i as f64 * 3.0), *v);
@@ -739,7 +739,7 @@ mod presence_tests {
             let want = (app.settings.proxy_h, app.project.settings.fps);
             let t = std::time::Instant::now();
             crate::proxy::test_build_parts(&mb, app.dir().join("p").join("b-540.mp4"), want, n);
-            eprintln!("{n} Stücke in {:.0} s", t.elapsed().as_secs_f64());
+            eprintln!("{n} pieces in {:.0} s", t.elapsed().as_secs_f64());
         }
         for at in [20.0, 33.0, 72.0] {
             app.playhead = Time::from_secs_f64(at);
@@ -773,13 +773,13 @@ mod presence_tests {
                 if std::env::var_os("CUTLINE_QA_DEBUG").is_some() {
                     let el = t0.elapsed().as_secs_f64();
                     if (el * 4.0).fract() < 0.03 {
-                        eprintln!("{el:.2} s pos {:.2}: oben {} Bilder, Wahl {:?}, Ströme {:?} {}", app.playhead.as_secs_f64(), app.core.taken(lid(top)), app.proxy_picks.get(&lid(top)), app.core.streams().iter().map(|x| (x.0 & 0xffff, x.1 & 0xffff, x.2)).collect::<Vec<_>>(), app.core.sizes());
+                        eprintln!("{el:.2} s pos {:.2}: top {} frames, pick {:?}, streams {:?} {}", app.playhead.as_secs_f64(), app.core.taken(lid(top)), app.proxy_picks.get(&lid(top)), app.core.streams().iter().map(|x| (x.0 & 0xffff, x.1 & 0xffff, x.2)).collect::<Vec<_>>(), app.core.sizes());
                     }
                 }
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
             let n = total;
-            eprintln!("Tempo {mode} ab {at}: obere Ebene {n} Strombilder (erstes {first:?}), {stills} Einzelbilder, Ströme {:?}", app.core.streams());
+            eprintln!("Speed {mode} from {at}: upper layer {n} stream frames (first {first:?}), {stills} single frames, streams {:?}", app.core.streams());
             if streamable(app.project.find_clip(top).unwrap().1) {
                 let (t1, n1) = first.expect("upper layer without frame");
                 assert!((n - n1) as f64 >= (8.0 - t1 - 1.0) * 20.0, "upper layer stands still: {n1} → {n}");
@@ -965,7 +965,7 @@ mod presence_tests {
         // stream jobs arrive here at once (no starter thread): the checks below need no waiting
         let (starter, jobs) = crate::preview::Starter::capture();
         app.starter = starter;
-        let path = app.dir().join("gibt-es-nicht.mp4");
+        let path = app.dir().join("does-not-exist.mp4");
         let m = MediaRef {
             id: cl_core::MediaId::new(),
             path: path.clone(),
@@ -1042,7 +1042,7 @@ mod presence_tests {
         let ask = |app: &mut App| app.request_frame(&ctx, c.id, &c, &m, &l, egui::vec2(64.0, 36.0), None, true, true);
         ask(&mut app);
         let parts = jobs.try_recv().expect("stream from parts requested");
-        assert_eq!(parts.path, app.dir().join("q-540.teile").join("0001-0004.ffconcat"));
+        assert_eq!(parts.path, app.dir().join("q-540.parts").join("0001-0004.ffconcat"));
         assert!((parts.source_at.as_secs_f64() - 2.0).abs() < 1e-3, "source time 12 s − start of part 1 (10 s): {:?}", parts.source_at);
         ask(&mut app);
         assert!(jobs.try_recv().is_err(), "same choice: no new stream");
@@ -1057,7 +1057,7 @@ mod presence_tests {
         assert_ne!(full.alias, parts.alias, "source choice in the fingerprint");
     }
 
-    /// PL_gross: clip at 0.66 s from source 53.74 s, only proxy part 5 (50–60 s) finished. 3 s before
+    /// PL_large: clip at 0.66 s from source 53.74 s, only proxy part 5 (50–60 s) finished. 3 s before
     /// the parts end the choice switches to the original; its stream is needed only from the parts end
     /// (timeline 6.92 s), not from clock + startup of the parts stream.
     #[test]
@@ -1410,7 +1410,7 @@ mod transition_tests {
     fn project(dir: &Path, tr: &str, mask_b: bool, filter: Option<&str>) -> Project {
         let a = media(dir, "a.mp4", "testsrc2");
         let b = media(dir, "b.mp4", "smptebars");
-        let mut p = Project::new("Übergang");
+        let mut p = Project::new("Transition");
         (p.settings.width, p.settings.height) = (320, 180);
         p.settings.fps = Rational { num: 30, den: 1 };
         let mut t = Track::new(TrackKind::Video);
@@ -1489,7 +1489,7 @@ mod transition_tests {
             image::save_buffer(d.join(format!("t_{tr}_ex.png")), &ex, 320, 180, image::ExtendedColorType::Rgba8).unwrap();
         }
         let d = block_diff(&pv, &ex);
-        eprintln!("{tr} bei {t} s: Abweichung Vorschau/Export {d:.2}");
+        eprintln!("{tr} at {t} s: deviation preview/export {d:.2}");
         d
     }
 
@@ -1581,7 +1581,7 @@ mod transition_tests {
             return;
         }
         let _packs = load_shipped_packs();
-        let d = still_vs_export("cutline.uebergaenge/wuerfel", false, Some("noir"), 1.5);
+        let d = still_vs_export("cutline.transitions/cube", false, Some("noir"), 1.5);
         assert!(d < 8.0, "preview differs from the export: {d:.1}");
     }
 
@@ -1707,7 +1707,7 @@ mod transition_tests {
                 place_on_canvas(&fa, &ev, cw, ch, 1920.0, 1080.0);
             }
             eprintln!("{cw}x{ch} Ebene setzen: {:.1} ms", t0.elapsed().as_secs_f64() * 1e3 / 5.0);
-            for id in ["circleopen", "pixelize", "cutline.uebergaenge/wuerfel"] {
+            for id in ["circleopen", "pixelize", "cutline.transitions/cube"] {
                 let plan = cl_fx::catalog::transition_plan(id);
                 let t0 = std::time::Instant::now();
                 mix_layers(&plan, (&fa, &ev), (&fb, &ev), (cw, ch), (1920.0, 1080.0), 0.4);
@@ -1814,7 +1814,7 @@ mod transition_tests {
         let dir = tempfile::tempdir().unwrap();
         for text in ["AAA BBB\nCCC DDD", "EINS\nZWEI\nDREI", "HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH HHHH"] {
             let st = TextStyle { text: text.into(), size: 44.0, shadow: false, ..Default::default() };
-            let mut p = Project::new("Zeilen");
+            let mut p = Project::new("lines");
             (p.settings.width, p.settings.height) = (640, 360);
             p.settings.fps = Rational { num: 30, den: 1 };
             let mut t = Track::new(TrackKind::Text);
@@ -1833,11 +1833,11 @@ mod transition_tests {
             let (pv, ex) = (preview_lines(&app, &st), export_lines(&o.stdout));
             let pitch = |v: &[f32]| (v[v.len() - 1] - v[0]) / (v.len() - 1) as f32;
             let mid = |v: &[f32]| (v[0] + v[v.len() - 1]) / 2.0;
-            eprintln!("{text:?}: Vorschau {pv:.1?}, Export {ex:.1?}");
+            eprintln!("{text:?}: preview {pv:.1?}, export {ex:.1?}");
             assert_eq!(pv.len(), ex.len(), "{text:?}: line count");
             assert!(pv.len() >= 2, "{text:?}");
             let (dp, dm) = ((pitch(&pv) - pitch(&ex)).abs(), (mid(&pv) - mid(&ex)).abs());
-            eprintln!("{text:?}: Abweichung Zeilenabstand {dp:.1} px, Blockmitte {dm:.1} px (Größe 44)");
+            eprintln!("{text:?}: deviation line spacing {dp:.1} px, block center {dm:.1} px (size 44)");
             assert!(dp < 2.0 && dm < 5.0, "{text:?}: spacing {dp:.1}, middle {dm:.1}");
         }
     }
@@ -1872,7 +1872,7 @@ mod transition_tests {
 
     /// First frame of the export (320×180) with the bundled Anton font for every text
     fn anton_frame(p: &Project, dir: &Path) -> Vec<u8> {
-        let out = dir.join("schatten.mp4");
+        let out = dir.join("shadow.mp4");
         let font = |_: Option<&str>| Some((Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/fonts/Anton-Regular.ttf")).to_path_buf(), 0));
         let job = cl_export::build(p, &cl_export::ExportSettings::from_project(p), &font, &out).unwrap();
         cl_export::run(&job, std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)), |_| {}).unwrap();
@@ -1883,7 +1883,7 @@ mod transition_tests {
 
     /// One text clip (0–1 s) on a 320×180 project
     fn text_project(st: &TextStyle) -> Project {
-        let mut p = Project::new("Schatten");
+        let mut p = Project::new("Shadow");
         (p.settings.width, p.settings.height) = (320, 180);
         p.settings.fps = Rational { num: 30, den: 1 };
         let mut t = Track::new(TrackKind::Text);
@@ -1903,7 +1903,7 @@ mod transition_tests {
         }
         let app = crate::saving::tests::test_app();
         let dir = tempfile::tempdir().unwrap();
-        let grey = dir.path().join("grau.mp4");
+        let grey = dir.path().join("gray.mp4");
         let ok = cl_media::ffmpeg_command()
             .unwrap()
             .args(["-v", "error", "-y", "-threads", "2", "-f", "lavfi", "-i", "color=c=0x808080:s=320x180:r=30:d=1", "-c:v", "libx264", "-pix_fmt", "yuv420p"])
@@ -2056,7 +2056,7 @@ mod transition_tests {
         }
     }
 
-    /// Karaoke at three points in time (and „Füllen“): in preview and export the same word is yellow.
+    /// Karaoke at three points in time (and „Fill“): in preview and export the same word is yellow.
     /// The preview uses egui's font, so the position relative to the text width is
     /// compared. Also with a soft shadow (its own layer under the highlighted text).
     #[test]
@@ -2091,13 +2091,13 @@ mod transition_tests {
         for (t, word) in [(0.5f64, 0usize), (1.5, 1), (2.5, 2)] {
             let pv = karaoke_preview(app, &st, dur, t);
             let ex = karaoke_export(&export_frame(&p, dir.path(), (t * 30.0).round() as usize));
-            eprintln!("Karaoke bei {t} s ({shadow:?}): Vorschau {pv:.2?}, Export {ex:.2?}");
+            eprintln!("Karaoke at {t} s ({shadow:?}): preview {pv:.2?}, export {ex:.2?}");
             assert_eq!(((pv.0 * 3.0) as usize, (ex.0 * 3.0) as usize), (word, word), "at {t} s");
             assert!((pv.0 - ex.0).abs() < 0.06, "at {t} s: preview {pv:?}, export {ex:?}");
             // only the one word: nothing colours into the neighbours
             assert!(ex.2 - ex.1 < 0.36 && pv.2 - pv.1 < 0.36, "at {t} s: {pv:?} {ex:?}");
         }
-        // „Füllen“: at 1.5 s the first two words are yellow
+        // „Fill“: at 1.5 s the first two words are yellow
         st.karaoke.as_mut().unwrap().fill = true;
         p.timeline.tracks[0].clips[0].content = ClipContent::Text(st.clone());
         let pv = karaoke_preview(app, &st, dur, 1.5);
@@ -2122,7 +2122,7 @@ mod transition_tests {
     /// One clip (0–2 s) with the checkerboard; censoring moves from left (x 0.3) to right (0.7)
     fn censor_project(dir: &Path, blur: bool) -> Project {
         let m = checker(dir);
-        let mut p = Project::new("Zensur");
+        let mut p = Project::new("Censor");
         (p.settings.width, p.settings.height) = (320, 180);
         p.settings.fps = Rational { num: 30, den: 1 };
         let mut t = Track::new(TrackKind::Video);
@@ -2180,7 +2180,7 @@ mod transition_tests {
             for (n, inside, outside, o) in [(6, left, right, &orig[0]), (54, right, left, &orig[1])] {
                 let f = export_frame(&p, dir.path(), n);
                 let (di, dout) = (detail(&f, inside.0, inside.1, 50, 130), detail(&f, outside.0, outside.1, 50, 130));
-                eprintln!("blur={blur} Bild {n}: Feinheit innen {di:.1}, an der anderen Stelle {dout:.1}");
+                eprintln!("blur={blur} frame {n}: fineness inside {di:.1}, at the other spot {dout:.1}");
                 assert!(di < 6.0, "blur={blur} frame {n}: pattern still there under the area ({di:.1})");
                 assert!(dout > 60.0, "blur={blur} frame {n}: pattern next to the area missing ({dout:.1})");
                 // far enough from the area: as without censoring
@@ -2207,7 +2207,7 @@ mod transition_tests {
             let pv = still::render(&p, Time::from_secs_f64(t), 320, 180);
             let (d, c) = (detail_diff(&pv, &ex), block_diff(&pv, &ex));
             let d0 = detail_diff(&still::render(&q, Time::from_secs_f64(t), 320, 180), &ex);
-            eprintln!("Zensur bei {t} s: Feinheit Vorschau/Export {d:.2} (ohne Zensur {d0:.2}), Farbe {c:.2}");
+            eprintln!("censor at {t} s: fineness preview/export {d:.2} (without censor {d0:.2}), color {c:.2}");
             assert!(d < 6.0 && c < 8.0, "at {t} s: preview differs from the export ({d:.1}, {c:.1})");
             assert!(d0 > 3.0 * d.max(2.0), "at {t} s: test does not bite ({d0:.1} / {d:.1})");
         }
@@ -2228,9 +2228,9 @@ mod transition_tests {
         // frame 6: area u 0.19–0.49, v 0.25–0.75 → x 160+40+(u−0.5)·192 = 144–201, y 90+(v−0.5)·108 = 63–117
         let ex = export_frame(&p, dir.path(), 6);
         let pv = still::render(&p, Time::from_secs_f64(0.2), 320, 180);
-        for (what, img) in [("Export", &ex), ("Vorschau", &pv)] {
+        for (what, img) in [("Export", &ex), ("Preview", &pv)] {
             let (di, dout) = (detail(img, 148, 197, 67, 113), detail(img, 212, 250, 67, 113));
-            eprintln!("{what}: Feinheit auf der Fläche {di:.1}, daneben {dout:.1}");
+            eprintln!("{what}: fineness on the area {di:.1}, beside it {dout:.1}");
             assert!(di < 6.0, "{what}: area not on the subject ({di:.1})");
             assert!(dout > 15.0, "{what}: censored next to it ({dout:.1})");
         }
@@ -2402,11 +2402,11 @@ impl App {
             if let Some(d) = sp.ready.take_if(|d| d.pair == pair) {
                 let fps = self.project.settings.fps;
                 let interval = fps.den.max(1) as f64 / fps.num.max(1) as f64;
-                if self.core.mode() == Mode::Spielen {
+                if self.core.mode() == Mode::Playing {
                     sp.note_time(pair, d.secs, interval);
                 }
                 if crate::app::perf() {
-                    crate::applog::perf_line!("perf: Übergang gemischt ({}×{}, {} Bild(er)) in {:.1} ms (im Hintergrund)", cw, ch, sets.len(), d.secs * 1e3);
+                    crate::applog::perf_line!("perf: transition mixed ({}×{}, {} frame(s)) in {:.1} ms (in background)", cw, ch, sets.len(), d.secs * 1e3);
                 }
                 sp.last = Some(d.id);
                 if !d.images.is_empty() {
@@ -2596,7 +2596,7 @@ impl App {
     /// edit, project, quality or preview size changes the wish and discards it, as do
     /// playback, pause and a running export.
     fn update_preroll(&mut self, ctx: &egui::Context, needs: &[Need], canvas_px: egui::Vec2) {
-        let wish = if self.core.mode() == Mode::Stand && !self.playing { self.preroll_wish(needs, canvas_px) } else { None };
+        let wish = if self.core.mode() == Mode::Stopped && !self.playing { self.preroll_wish(needs, canvas_px) } else { None };
         let Some((spec, i, (w, h), sfps)) = wish else {
             self.preroll = None;
             return;
@@ -2725,7 +2725,7 @@ impl App {
             }
             let primary = id == l.clip.id;
             if let Some(f) = self.core.pull(lid(id), now, primary) {
-                if primary && self.core.mode() == Mode::Spielen {
+                if primary && self.core.mode() == Mode::Playing {
                     self.perf_frame_shown();
                 }
                 self.set_frame(ctx, id, key, &f);
@@ -2767,7 +2767,7 @@ impl App {
             let graph = cl_fx::preview_graph(c, w, h, l.t_rel.as_secs_f64(), None, lut.clone());
             let (path, at) = self.still_source(m, h, src, false);
             let window = reverse_window(c, m, path == m.path, graph.is_none(), self.core.playing() && self.core.rate() > 0.0, fps);
-            // Stand: scrub window (proxy first), with the effect graph if it can run over a window
+            // Stopped: scrub window (proxy first), with the effect graph if it can run over a window
             let scrub = (scrub && !self.core.playing() && scrub_graph_ok(c, graph.as_deref()) && !animated_fx).then(|| self.window_source(m, (w, h), src)).flatten().map(|s| {
                 // at the window size; the clip time does not matter for such a graph
                 let graph = graph.as_ref().and_then(|_| cl_fx::preview_graph(c, s.w, s.h, 0.0, None, lut));
@@ -3075,7 +3075,7 @@ impl App {
             ctx.request_repaint();
         }
         let mut builder = egui::ViewportBuilder::default()
-            .with_title(crate::tr("Cutline – Vorschau"))
+            .with_title(crate::tr("Cutline – Preview"))
             .with_inner_size([960.0, 540.0])
             .with_min_inner_size([320.0, 180.0]);
         // open on the main window's screen first; drag it to the second from there
@@ -3328,7 +3328,7 @@ impl App {
             }
         }
         resp.on_hover_text(crate::tr(format!(
-            "Pegel L {:.0} dB · R {:.0} dB",
+            "Level L {:.0} dB · R {:.0} dB",
             db(self.meter[0].1),
             db(self.meter[1].1)
         )));
@@ -3362,9 +3362,9 @@ impl App {
             icon::SPEAKER_HIGH
         };
         let tip = if v.muted {
-            "Lautstärke der Wiedergabe: stumm".to_string()
+            "Playback volume: muted".to_string()
         } else {
-            format!("Lautstärke der Wiedergabe: {:.0} %", v.percent)
+            format!("Playback volume: {:.0} %", v.percent)
         };
         let r = theme::icon_button(ui, glyph, crate::keymap::with_key(&tip, &self.key_of("playback_mute")), true, false);
         if r.clicked() {
@@ -3471,7 +3471,7 @@ impl App {
         }
         if pr
             .on_hover_text(crate::tr(format!(
-                "{}  (Leertaste)",
+                "{}  (Space)",
                 if self.playing {
                     self.t("pause")
                 } else {
@@ -3485,22 +3485,22 @@ impl App {
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(right).layout(egui::Layout::right_to_left(egui::Align::Center)), |ui| {
             // the labelled chips need about 310 px; below that they ran under the play button
             let compact = ui.available_width() < 320.0;
-            let (g, tip) = if self.player_max { (icon::CORNERS_IN, "Normale Ansicht (F)") } else { (icon::CORNERS_OUT, "Großer Player (F)") };
+            let (g, tip) = if self.player_max { (icon::CORNERS_IN, "Normal view (F)") } else { (icon::CORNERS_OUT, "Large player (F)") };
             if theme::icon_button(ui, g, tip, true, self.player_max).clicked() {
                 self.player_max = !self.player_max;
             }
-            if theme::icon_button(ui, icon::MONITOR_PLAY, "Vorschau in eigenem Fenster (zweiter Bildschirm, Doppelklick oder F11 = Vollbild)", true, self.ext_preview).clicked() {
+            if theme::icon_button(ui, icon::MONITOR_PLAY, "Preview in its own window (second screen, double-click or F11 = fullscreen)", true, self.ext_preview).clicked() {
                 self.ext_preview = !self.ext_preview;
             }
             self.player_zoom_chip(ui, compact);
-            // chip short (½, ¼), tooltip with the same words as everywhere: Voll, Halb, Viertel
+            // chip short (½, ¼), tooltip with the same words as everywhere: Full, Half, Quarter
             let (q, word) = match self.settings.preview_div {
-                1 => ("Voll", "Voll"),
-                2 => ("½", "Halb"),
-                _ => ("¼", "Viertel"),
+                1 => ("Full", "Full"),
+                2 => ("½", "Half"),
+                _ => ("¼", "Quarter"),
             };
             let qlabel = if compact { icon::MONITOR.to_string() } else { format!("{} {}", icon::MONITOR, crate::tr(q)) };
-            if theme::chip(ui, &qlabel).on_hover_text(crate::tr(format!("Vorschauqualität: {}", crate::tr(word)))).clicked() {
+            if theme::chip(ui, &qlabel).on_hover_text(crate::tr(format!("Preview quality: {}", crate::tr(word)))).clicked() {
                 self.settings.preview_div = match self.settings.preview_div {
                     1 => 2,
                     2 => 4,
@@ -3528,9 +3528,9 @@ impl App {
             if k > 0.01 {
                 let txt = ui.data(|d| d.get_temp::<String>(auto_id)).unwrap_or_default();
                 ui.add(egui::Label::new(RichText::new(txt.trim()).size(theme::FS_HINT).color(theme::ACCENT().gamma_multiply(k))))
-                    .on_hover_text(crate::tr("Vorschauqualität beim Abspielen automatisch verringert"));
+                    .on_hover_text(crate::tr("Preview quality lowered automatically during playback"));
             }
-            let aspect = AspectPreset::PRESETS.iter().find(|(_, p)| *p == self.project.settings.aspect).map(|(n, _)| *n).unwrap_or("Eigenes");
+            let aspect = AspectPreset::PRESETS.iter().find(|(_, p)| *p == self.project.settings.aspect).map(|(n, _)| *n).unwrap_or("Custom");
             let alabel = if compact { icon::FRAME_CORNERS.to_string() } else { format!("{} {aspect}", icon::FRAME_CORNERS) };
             let resp = theme::chip(ui, &alabel).on_hover_text(crate::tr(format!("{}: {aspect}", self.t("aspect"))));
             let popup = ui.make_persistent_id("aspect-popup");
@@ -3551,25 +3551,25 @@ impl App {
     /// Right click in the player: the same commands as in the player bar and the quick actions.
     fn player_menu(&mut self, ui: &mut egui::Ui) {
         use crate::timeline::menu_item;
-        if menu_item(ui, icon::IMAGE, "Standbild speichern …", "") {
+        if menu_item(ui, icon::IMAGE, "Save still frame …", "") {
             let ctx = ui.ctx().clone();
             self.tool_thumbnail(&ctx);
         }
         ui.separator();
-        if menu_item(ui, icon::MAGNIFYING_GLASS, "Ganzes Bild", "Alt+Umschalt+Z") {
+        if menu_item(ui, icon::MAGNIFYING_GLASS, "Fit", "Alt+Shift+Z") {
             self.player_zoom = 1.0;
             self.player_pan = egui::Vec2::ZERO;
         }
         let ext = if self.ext_preview { icon::CHECK } else { icon::MONITOR_PLAY };
-        if menu_item(ui, ext, "Vorschau in eigenem Fenster", "") {
+        if menu_item(ui, ext, "Preview in its own window", "") {
             self.ext_preview = !self.ext_preview;
         }
         let max = if self.player_max { icon::CHECK } else { icon::CORNERS_OUT };
-        if menu_item(ui, max, "Großer Player", &self.key_of("max")) {
+        if menu_item(ui, max, "Large player", &self.key_of("max")) {
             self.player_max = !self.player_max;
         }
         let sa = if self.safe_area { icon::CHECK } else { icon::DEVICE_MOBILE };
-        if menu_item(ui, sa, "Safe-Area", "") {
+        if menu_item(ui, sa, "Safe area", "") {
             self.safe_area = !self.safe_area;
             self.save_last_used();
         }

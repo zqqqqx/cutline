@@ -31,7 +31,7 @@ struct Media {
 /// Test media in `dir` (the name may contain special characters).
 fn media(dir: &Path) -> Media {
     std::fs::create_dir_all(dir).unwrap();
-    let (v, i, g, a) = (dir.join("clip 'ä'.mp4"), dir.join("bild 50% [1].png"), dir.join("anim, 50%.gif"), dir.join("ton;x.wav"));
+    let (v, i, g, a) = (dir.join("clip 'ä'.mp4"), dir.join("image 50% [1].png"), dir.join("anim, 50%.gif"), dir.join("sound;x.wav"));
     ffmpeg(
         &["-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=3", "-f", "lavfi", "-i", "sine=f=440:d=3", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"],
         &v,
@@ -88,7 +88,7 @@ impl Rng {
     }
 }
 
-const SPECIAL: &[&str] = &["O'Brien: 50% [a], b\\c", "Ümläute & Emoji 🎬✨", "{x} ; = # \"z\"", "-->\n\nzwei Absätze", "%{pts} %d %%"];
+const SPECIAL: &[&str] = &["O'Brien: 50% [a], b\\c", "Ümläute & Emoji 🎬✨", "{x} ; = # \"z\"", "-->\n\ntwo paragraphs", "%{pts} %d %%"];
 
 fn secs(s: f64) -> Time {
     Time::from_secs_f64(s)
@@ -125,7 +125,7 @@ fn random_project(seed: u64, m: &Media) -> Project {
         }
         if r.chance(0.5) {
             // also transitions longer than the clip and unknown ids
-            let id = if r.chance(0.1) { "gibt-es-nicht'[x];movie=a".to_string() } else { r.pick(cl_fx::TRANSITIONS).0.to_string() };
+            let id = if r.chance(0.1) { "does-not-exist'[x];movie=a".to_string() } else { r.pick(cl_fx::TRANSITIONS).0.to_string() };
             c.transition_out = Some(TransitionRef { id, duration: secs(r.f(0.1, 1.5)) });
         }
         if r.chance(0.3) {
@@ -180,7 +180,7 @@ fn random_project(seed: u64, m: &Media) -> Project {
         st.shadow = r.chance(0.5);
         st.background = r.chance(0.3).then_some([0, 0, 0, 128]);
         st.outline = r.chance(0.3).then_some((2.0, [255, 0, 0, 255]));
-        st.font_family = r.chance(0.3).then(|| "Gibt's: nicht, [x]".into());
+        st.font_family = r.chance(0.3).then(|| "Exists: no, [x]".into());
         tx.clips.push(Clip::new(ClipContent::Text(st), secs(a), secs(len)));
         a += len + r.f(0.0, 0.3);
     }
@@ -226,7 +226,7 @@ fn random_projects_export() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
-    let m = media(&dir.path().join("Medien 'x' [1], ü 50%"));
+    let m = media(&dir.path().join("Media 'x' [1], ü 50%"));
     let formats = [
         (Format::Mp4, Codec::H264),
         (Format::WebM, Codec::Vp9),
@@ -245,7 +245,7 @@ fn random_projects_export() {
         s.format = format;
         s.codec = codec;
         s.transparent = seed % 3 == 0;
-        let out = dir.path().join(format!("aus {seed}: [ä].{}", format.extension()).replace(':', "_"));
+        let out = dir.path().join(format!("out {seed}: [ä].{}", format.extension()).replace(':', "_"));
         if let Err(e) = export(&p, &s, &out) {
             failed.push(format!("Seed {seed} ({format:?}): {e}"));
             let _ = std::fs::write(dir.path().join(format!("fail-{seed}.json")), p.to_json());
@@ -280,7 +280,7 @@ fn edge_case_projects_export() {
     let dir = tempfile::tempdir().unwrap();
     let m = media(dir.path());
     let base = |w, h| {
-        let mut p = Project::new("Rand");
+        let mut p = Project::new("Edge");
         p.settings.width = w;
         p.settings.height = h;
         p.media = vec![m.video.clone(), m.image.clone(), m.gif.clone(), m.wav.clone()];
@@ -336,7 +336,7 @@ fn edge_case_projects_export() {
     // 16×16 and odd size
     let mut p = base(16, 16);
     with(&mut p, TrackKind::Video, vec![vclip(0.0, 0.5)]);
-    with(&mut p, TrackKind::Text, vec![Clip::new(ClipContent::Text(TextStyle { text: "Großer Text".into(), size: 200.0, ..Default::default() }), Time::ZERO, secs(0.5))]);
+    with(&mut p, TrackKind::Text, vec![Clip::new(ClipContent::Text(TextStyle { text: "Big text".into(), size: 200.0, ..Default::default() }), Time::ZERO, secs(0.5))]);
     cases.push(("16×16", p, 0.5));
     let mut p = base(33, 17);
     with(&mut p, TrackKind::Video, vec![vclip(0.0, 0.5)]);
@@ -458,7 +458,7 @@ fn huge_projects_build() {
         audio_codec: None,
         has_alpha: false,
     };
-    let mut p = Project::new("Groß");
+    let mut p = Project::new("Large");
     p.settings.width = 7680;
     p.settings.height = 4320;
     p.media.push(m.clone());
@@ -473,7 +473,7 @@ fn huge_projects_build() {
     p.timeline.tracks.push(t);
     let mut tx = Track::new(TrackKind::Text);
     for i in 0..500 {
-        tx.clips.push(Clip::new(ClipContent::Text(TextStyle { text: format!("Zeile {i}"), ..Default::default() }), secs(i as f64 * 0.1), secs(0.1)));
+        tx.clips.push(Clip::new(ClipContent::Text(TextStyle { text: format!("line {i}"), ..Default::default() }), secs(i as f64 * 0.1), secs(0.1)));
     }
     p.timeline.tracks.push(tx);
     let job = build(&p, &ExportSettings::from_project(&p), &no_fonts, &dir.path().join("o.mp4")).unwrap();
@@ -493,7 +493,7 @@ fn failures_are_clean() {
     }
     let dir = tempfile::tempdir().unwrap();
     let m = media(dir.path());
-    let mut p = Project::new("Fehler");
+    let mut p = Project::new("Error");
     p.settings.width = 64;
     p.settings.height = 64;
     // empty
@@ -501,7 +501,7 @@ fn failures_are_clean() {
     // missing media file / unknown media id
     let mut gone = m.video.clone();
     gone.id = MediaId::new();
-    gone.path = dir.path().join("weg.mp4");
+    gone.path = dir.path().join("gone.mp4");
     p.media.push(gone.clone());
     let mut t = Track::new(TrackKind::Video);
     t.clips.push(Clip::new(ClipContent::Media { media: gone.id, kind: MediaKind::Video }, Time::ZERO, secs(1.0)));
@@ -511,31 +511,31 @@ fn failures_are_clean() {
     p.media.clear();
     assert!(matches!(build(&p, &s, &no_fonts, &dir.path().join("x.mp4")), Err(ExportError::MissingMedia(_))));
     // 0-byte media and file replaced/shortened afterwards
-    let empty = dir.path().join("leer.mp4");
+    let empty = dir.path().join("empty.mp4");
     std::fs::write(&empty, b"").unwrap();
     gone.path = empty;
     p.media.push(gone);
     let e = export(&p, &s, &dir.path().join("x.mp4")).unwrap_err();
     assert!(matches!(e, ExportError::Ffmpeg(_)), "{e}");
     assert!(!dir.path().join("x.part.mp4").exists());
-    let short = dir.path().join("kurz.mp4");
+    let short = dir.path().join("short.mp4");
     ffmpeg(&["-f", "lavfi", "-i", "testsrc2=s=32x32:r=30:d=0.3", "-f", "lavfi", "-i", "sine=d=0.3", "-pix_fmt", "yuv420p", "-shortest"], &short);
     p.media[0].path = short;
-    export(&p, &s, &dir.path().join("ersetzt.mp4")).expect("replaced, shorter file");
-    let (d, ..) = streams(&dir.path().join("ersetzt.mp4"));
+    export(&p, &s, &dir.path().join("replaced.mp4")).expect("replaced, shorter file");
+    let (d, ..) = streams(&dir.path().join("replaced.mp4"));
     assert!((d - 1.0).abs() < 0.07, "{d}");
     // replaced by a file without audio (project says "with audio"): today a clean FFmpeg error
     // shortcut: streams are not re-probed on export (a probe per media costs time), see report
-    let silent = dir.path().join("stumm.mp4");
+    let silent = dir.path().join("muted.mp4");
     ffmpeg(&["-f", "lavfi", "-i", "testsrc2=s=32x32:r=30:d=1", "-pix_fmt", "yuv420p"], &silent);
     p.media[0].path = silent;
-    assert!(matches!(export(&p, &s, &dir.path().join("stumm-aus.mp4")), Err(ExportError::Ffmpeg(_))));
+    assert!(matches!(export(&p, &s, &dir.path().join("muted-from.mp4")), Err(ExportError::Ffmpeg(_))));
     assert!(!dir.path().join("stumm-aus.part.mp4").exists());
     // target not writable (folder missing / target is a folder)
     p.media[0] = m.video.clone();
     p.timeline.tracks[0].clips[0].content = ClipContent::Media { media: m.video.id, kind: MediaKind::Video };
-    assert!(export(&p, &s, &dir.path().join("fehlt").join("x.mp4")).is_err());
-    let blocked = dir.path().join("ordner.mp4");
+    assert!(export(&p, &s, &dir.path().join("missing").join("x.mp4")).is_err());
+    let blocked = dir.path().join("folder.mp4");
     std::fs::create_dir(&blocked).unwrap();
     assert!(export(&p, &s, &blocked).is_err());
     // range: empty or reversed
@@ -550,7 +550,7 @@ fn failures_are_clean() {
     let mut long = p.clone();
     long.timeline.tracks[0].clips[0].duration = secs(3.0);
     long.timeline.tracks[0].clips[0].fx.effects.push(FxRef::new("vhs"));
-    let out = dir.path().join("abbruch.mp4");
+    let out = dir.path().join("cancel.mp4");
     let job = build(&long, &ExportSettings::from_project(&long), &no_fonts, &out).unwrap();
     let cancel = Arc::new(AtomicBool::new(false));
     let c2 = cancel.clone();

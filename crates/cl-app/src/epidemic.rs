@@ -1,5 +1,5 @@
 //! Epidemic Sound integration in the UI: music in the Audio tab (discover, favorites,
-//! „Gefällt mir“), sign-in under Settings → Plugins and accounts, usage report on export.
+//! „Liked“), sign-in under Settings → Plugins and accounts, usage report on export.
 //! All networking runs in background threads; results come back through a channel.
 
 use std::collections::{BTreeMap, HashSet};
@@ -324,7 +324,7 @@ impl App {
                             }
                             if stray {
                                 // the track stays in the store but does not belong to the project open now
-                                self.toast(format!("„{}“ geladen", track.title));
+                                self.toast(format!("“{}” downloaded", track.title));
                             } else if let Some(id) = self.add_file_at(path, self.playhead, None) {
                                 if !beats.is_empty() {
                                     if let Some(mut c) =
@@ -337,7 +337,7 @@ impl App {
                                         self.apply(cl_core::EditOp::ReplaceClip { clip: c });
                                     }
                                 }
-                                self.toast(format!("„{}“ eingefügt", track.title));
+                                self.toast(format!("“{}” added", track.title));
                             }
                         }
                         Err(e) => {
@@ -353,7 +353,7 @@ impl App {
                         Ok(t) => {
                             self.es.cfg.tokens = Some(t);
                             self.es.reset();
-                            self.toast("Mit Epidemic Sound verbunden");
+                            self.toast("Connected to Epidemic Sound");
                             self.es.first_load(ctx);
                         }
                         Err(e) => self.toast_err(e.to_string()),
@@ -373,7 +373,7 @@ impl App {
     }
 
     /// Evaluate a background task's error. `true` = already reported (sign-in expired).
-    /// Expired sign-in: discard tokens, state „nicht verbunden“, exactly one message.
+    /// Expired sign-in: discard tokens, state "not connected", exactly one message.
     /// Limit (429): remember until when no search/loading is sent.
     fn es_note(&mut self, e: &Error) -> bool {
         match e {
@@ -434,11 +434,11 @@ impl App {
             theme::empty_state(
                 ui,
                 icon::MUSIC_NOTES,
-                "Epidemic Sound ist noch nicht verbunden",
-                "Melde dich unter Einstellungen → Plugins und Konten an",
+                "Epidemic Sound isn't connected yet",
+                "Sign in under Settings → Plugins and accounts",
             );
             ui.vertical_centered(|ui| {
-                if ui.add(theme::primary("Verbinden …")).clicked() {
+                if ui.add(theme::primary("Connect …")).clicked() {
                     self.settings_open = true;
                     self.settings_section = crate::settings::Section::Integrations;
                 }
@@ -454,9 +454,9 @@ impl App {
         };
         let connect = self.es.cfg.mode == AuthMode::Connect;
         let items: &[&str] = if connect {
-            &["Entdecken", "Favoriten", "Gefällt mir"]
+            &["Discover", "Favorites", "Liked"]
         } else {
-            &["Entdecken", "Favoriten"]
+            &["Discover", "Favorites"]
         };
         if widgets::segmented(ui, items, &mut v) {
             self.es.view = [View::Discover, View::Favorites, View::Liked][v];
@@ -470,7 +470,7 @@ impl App {
                 let r = ui.add(
                     egui::TextEdit::singleline(&mut self.es.query.term)
                         .hint_text(crate::tr(format!(
-                            "{}  Titel, Stimmung, Genre …",
+                            "{}  Title, mood, genre …",
                             icon::MAGNIFYING_GLASS
                         )))
                         .desired_width(ui.available_width() - 34.0),
@@ -478,7 +478,7 @@ impl App {
                 if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     self.es.search(&ctx, false);
                 }
-                if theme::icon_button(ui, icon::MAGNIFYING_GLASS, "Suchen", !self.es.busy, false)
+                if theme::icon_button(ui, icon::MAGNIFYING_GLASS, "Search", !self.es.busy, false)
                     .clicked()
                 {
                     self.es.search(&ctx, false);
@@ -546,15 +546,15 @@ impl App {
                 theme::empty_state(
                     ui,
                     icon::STAR,
-                    "Noch keine Favoriten",
-                    "Markiere Titel mit dem Stern",
+                    "No favorites yet",
+                    "Mark tracks with the star",
                 );
             } else {
                 theme::empty_state(
                     ui,
                     icon::MUSIC_NOTES,
-                    "Keine Titel gefunden",
-                    "Andere Suche oder weniger Filter probieren",
+                    "No tracks found",
+                    "Try another search or fewer filters",
                 );
             }
             return;
@@ -573,7 +573,7 @@ impl App {
                 {
                     ui.vertical_centered(|ui| {
                         if ui
-                            .add_enabled(!self.es.busy, theme::ghost("Mehr laden"))
+                            .add_enabled(!self.es.busy, theme::ghost("Load more"))
                             .clicked()
                         {
                             load_more = true;
@@ -613,7 +613,7 @@ impl App {
             if theme::icon_button(
                 ui,
                 glyph,
-                if playing { "Stopp" } else { "Vorhören" },
+                if playing { "Stop" } else { "Preview~listen" },
                 !loading,
                 playing,
             )
@@ -645,10 +645,10 @@ impl App {
                 );
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let add = theme::icon_button(ui, icon::PLUS, "Am Playhead einfügen", !loading, false).clicked();
+                let add = theme::icon_button(ui, icon::PLUS, "Insert at playhead", !loading, false).clicked();
                 if self.es.have.contains(&store_name(&t.id)) {
                     ui.label(RichText::new(icon::CHECK_CIRCLE).size(theme::FS_HINT).color(theme::TEXT_DIM()))
-                        .on_hover_text(crate::tr("Lokal vorrätig"));
+                        .on_hover_text(crate::tr("Available locally"));
                 }
                 if add {
                     // According to Epidemic, `isPreviewOnly` is not a reliable sign: always try – if the
@@ -690,9 +690,9 @@ impl App {
                     ui,
                     icon::STAR,
                     if fav {
-                        "Aus Favoriten entfernen"
+                        "Remove from favorites"
                     } else {
-                        "Zu Favoriten"
+                        "Add to favorites"
                     },
                     true,
                     fav,
@@ -707,7 +707,7 @@ impl App {
         let _ = DragAsset::Sfx;
     }
 
-    /// „Plugins und Konten“ section in the settings.
+    /// „Plugins and accounts“ section in the settings.
     pub fn integrations_settings(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.plugins_settings(ui);
@@ -722,8 +722,8 @@ impl App {
         } else {
             1
         };
-        theme::row(ui, "Anmeldung", |ui| {
-            if widgets::segmented(ui, &["Epidemic-Konto", "API-Schlüssel"], &mut mode) {
+        theme::row(ui, "Sign-in", |ui| {
+            if widgets::segmented(ui, &["Epidemic account", "API key"], &mut mode) {
                 self.es.cfg.mode = if mode == 0 {
                     AuthMode::Connect
                 } else {
@@ -745,13 +745,13 @@ impl App {
                         self.es.save();
                     }
                 });
-                theme::row(ui, "Weiterleitung", |ui| ui.monospace(cl_epidemic::redirect_uri()));
+                theme::row(ui, "Redirect URI", |ui| ui.monospace(cl_epidemic::redirect_uri()));
                 ui.add_space(4.0);
                 if let Some(t) = self.es.cfg.tokens.clone() {
                     theme::row(ui, "Status", |ui| {
                         ui.label(
                             RichText::new(crate::tr(format!(
-                                "{}  Verbunden{}",
+                                "{}  Connected{}",
                                 icon::CHECK_CIRCLE,
                                 self.es
                                     .user
@@ -762,7 +762,7 @@ impl App {
                             .color(theme::TEXT_DIM()),
                         );
                     });
-                    if ui.add(theme::secondary("Abmelden")).clicked() {
+                    if ui.add(theme::secondary("Sign out")).clicked() {
                         let (cid, rt) = (self.es.cfg.client_id.clone(), t.refresh_token.clone());
                         std::thread::spawn(move || cl_epidemic::logout(&cid, &rt));
                         self.es.cfg.tokens = None;
@@ -770,14 +770,14 @@ impl App {
                     }
                 } else if self.es.login_running {
                     ui.label(
-                        RichText::new(crate::tr("Anmeldung im Browser abschließen …"))
+                        RichText::new(crate::tr("Finish signing in in your browser …"))
                             .color(theme::TEXT_DIM()),
                     );
                     widgets::busy_row(ui, egui::Id::new("es-login"), true);
                 } else if ui
                     .add_enabled(
                         !self.es.cfg.client_id.trim().is_empty(),
-                        theme::primary(format!("{}  Mit Epidemic Sound verbinden", icon::SIGN_IN)),
+                        theme::primary(format!("{}  Connect to Epidemic Sound", icon::SIGN_IN)),
                     )
                     .clicked()
                 {
@@ -799,7 +799,7 @@ impl App {
                 }
             }
             AuthMode::ApiKey => {
-                theme::row(ui, "API-Schlüssel", |ui| {
+                theme::row(ui, "API key", |ui| {
                     if ui
                         .add(
                             egui::TextEdit::singleline(&mut self.es.cfg.api_key)
@@ -826,7 +826,7 @@ impl App {
                 open_url("https://developers.epidemicsound.com/");
             }
         });
-        ui.label(RichText::new(crate::tr("Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs).")).small().color(theme::TEXT_DIM()));
+        ui.label(RichText::new(crate::tr("Exports with Epidemic music are reported to Epidemic Sound (track IDs only).")).small().color(theme::TEXT_DIM()));
     }
 
     /// Switch a plugin on/off and remember it permanently.
@@ -846,9 +846,9 @@ impl App {
 }
 
 /// Central store of downloaded tracks (one file per track): a track is downloaded only once and
-/// copied into every further project. Not in the cache, so that „Cache leeren" does not remove it.
+/// copied into every further project. Not in the cache, so that „Clear cache“ does not remove it.
 fn es_store_dir() -> PathBuf {
-    paths::data_dir().join("Epidemic Sound").join("Vorrat")
+    paths::data_dir().join("Epidemic Sound").join(cl_core::legacy::TRACKS_DIR)
 }
 
 fn store_name(id: &str) -> String {
@@ -871,7 +871,7 @@ fn stored_ids(dir: &Path) -> HashSet<String> {
 }
 
 /// Target file in the project folder and whether it provably (fully downloaded) belongs to `id`. The old name
-/// „Künstler - Titel.mp3“ only stays for files that already belong to this ID (older projects); otherwise
+/// "Artist - Title.mp3" only stays for files that already belong to this ID (older projects); otherwise
 /// the track ID goes into the name, so that two tracks with the same name do not share a file.
 fn track_dest(dir: &Path, name: &str, id: &str, downloads: &BTreeMap<PathBuf, String>) -> (PathBuf, bool) {
     let safe: String = name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
@@ -962,7 +962,7 @@ mod store_tests {
     #[test]
     fn a_track_is_downloaded_once_and_copied_into_other_projects() {
         let t = tempfile::tempdir().unwrap();
-        let store = es_store(&t.path().join("Vorrat"), "abc/123");
+        let store = es_store(&t.path().join("Tracks"), "abc/123");
         assert!(store.ends_with("abc_123.mp3"));
         let n = Cell::new(0);
         let dl = |p: &Path| {
@@ -982,12 +982,12 @@ mod store_tests {
         assert_eq!(n.get(), 1);
         assert_eq!(stored_ids(store.parent().unwrap()), HashSet::from(["abc_123".to_string()]));
         // track from an older version (only in project A): fills the store without a fetch
-        let store2 = es_store(&t.path().join("Vorrat"), "alt");
+        let store2 = es_store(&t.path().join("Tracks"), "old");
         let c = t.path().join("C-media/y.mp3");
         assert_eq!(fetch_track(&c, false, &store2, Some(&a), dl), Ok(false));
         assert!(store2.is_file() && n.get() == 1);
         // a failed fetch leaves nothing behind
-        let store3 = es_store(&t.path().join("Vorrat"), "kaputt");
+        let store3 = es_store(&t.path().join("Tracks"), "broken");
         let d = t.path().join("D-media/z.mp3");
         assert!(fetch_track(&d, false, &store3, None, |_| Err("offline".into())).is_err());
         assert!(!store3.exists() && !d.exists());
@@ -997,20 +997,20 @@ mod store_tests {
     fn a_half_or_foreign_project_file_is_never_taken_as_the_track() {
         let t = tempfile::tempdir().unwrap();
         let dir = t.path().join("media");
-        let vorrat = t.path().join("Vorrat");
+        let store_dir = t.path().join("Tracks");
         let dl = |b: &'static [u8]| move |p: &Path| std::fs::write(p, b).map_err(|e| Error::from(e.to_string()));
-        let _ = std::fs::create_dir_all(&vorrat);
-        // two versions with the same „Künstler - Titel“ get different files
+        let _ = std::fs::create_dir_all(&store_dir);
+        // two versions with the same "Artist - Title" get different files
         let mut downloads = BTreeMap::new();
         let (d1, ours1) = track_dest(&dir, "A - Song", "id-1", &downloads);
         assert!(!ours1);
-        assert_eq!(fetch_track(&d1, ours1, &es_store(&vorrat, "id-1"), None, dl(b"eins")), Ok(true));
+        assert_eq!(fetch_track(&d1, ours1, &es_store(&store_dir, "id-1"), None, dl(b"four")), Ok(true));
         downloads.insert(d1.clone(), "id-1".to_string());
         let (d2, ours2) = track_dest(&dir, "A - Song", "id-2", &downloads);
         assert!(d1 != d2 && !ours2);
-        assert_eq!(fetch_track(&d2, ours2, &es_store(&vorrat, "id-2"), None, dl(b"zwei")), Ok(true));
-        assert_eq!(std::fs::read(&d2).unwrap(), b"zwei");
-        assert_eq!(std::fs::read(es_store(&vorrat, "id-2")).unwrap(), b"zwei");
+        assert_eq!(fetch_track(&d2, ours2, &es_store(&store_dir, "id-2"), None, dl(b"five")), Ok(true));
+        assert_eq!(std::fs::read(&d2).unwrap(), b"five");
+        assert_eq!(std::fs::read(es_store(&store_dir, "id-2")).unwrap(), b"five");
         assert_eq!(track_dest(&dir, "A - Song", "id-1", &downloads), (d1.clone(), true));
         // old projects: the former name still applies if it belongs to this ID
         let old = dir.join("A - Song.mp3");
@@ -1019,13 +1019,13 @@ mod store_tests {
         assert_eq!(track_dest(&dir, "A - Song", "id-2", &downloads).0, d2);
         // a half file (other project, aborted copy) is replaced, not taken over
         std::fs::write(&old, b"ei").unwrap();
-        assert_eq!(fetch_track(&old, true, &es_store(&vorrat, "id-1"), None, dl(b"x")), Ok(false));
-        assert_eq!(std::fs::read(&old).unwrap(), b"eins");
+        assert_eq!(fetch_track(&old, true, &es_store(&store_dir, "id-1"), None, dl(b"x")), Ok(false));
+        assert_eq!(std::fs::read(&old).unwrap(), b"four");
         // a foreign file under the target name never fills the store
         let d3 = dir.join("B - Song [id-3].mp3");
-        std::fs::write(&d3, b"fremd").unwrap();
-        assert_eq!(fetch_track(&d3, false, &es_store(&vorrat, "id-3"), None, dl(b"drei")), Ok(true));
-        assert_eq!(std::fs::read(&d3).unwrap(), b"drei");
+        std::fs::write(&d3, b"other").unwrap();
+        assert_eq!(fetch_track(&d3, false, &es_store(&store_dir, "id-3"), None, dl(b"nine")), Ok(true));
+        assert_eq!(std::fs::read(&d3).unwrap(), b"nine");
         assert!(!d3.with_extension("part").exists());
     }
 

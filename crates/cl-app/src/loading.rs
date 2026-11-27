@@ -144,24 +144,47 @@ pub struct Load {
     rx: Receiver<Result<Loaded, String>>,
 }
 
+/// A project saved by a version with the old ids of bundled content (see `cl_core::legacy`) was
+/// converted while loading: the file is written in the current version at once, so it is converted
+/// only this one time. The file as it was stays beside it (`<name>.cutline.v6`, never overwritten).
+fn convert_old_file(path: &Path, text: &str, project: &Project) {
+    let Some(v) = Project::file_version(text).filter(|v| *v <= cl_core::LAST_GERMAN_ID_VERSION) else { return };
+    let mut keep = path.as_os_str().to_owned();
+    keep.push(format!(".v{v}"));
+    let keep = PathBuf::from(keep);
+    if !keep.exists() {
+        if let Err(e) = std::fs::copy(path, &keep) {
+            // without the copy the file is not touched (it converts again at the next opening)
+            log::warn!(target: "project", "old project not converted on disk, copy failed: {e}");
+            return;
+        }
+    }
+    match crate::paths::write_atomic(path, project.to_json()) {
+        Ok(()) => log::info!(target: "project", "project of version {v} converted to version {}", cl_core::PROJECT_SCHEMA_VERSION),
+        Err(e) => log::warn!(target: "project", "converted project not written: {e}"),
+    }
+}
+
 /// Read and prepare a project (background thread).
 pub fn load(path: &Path, progress: &Progress) -> Result<Loaded, String> {
     progress.set(Step::Read, 0, 1, &path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
-    // The message names the file (otherwise only „Pfad nicht gefunden“ shows)
-    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {} ({e})", crate::tr("Projekt konnte nicht geöffnet werden"), path.display()))?;
+    // The message names the file (otherwise only "Path not found" shows)
+    let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {} ({e})", crate::tr("Project could not be opened"), path.display()))?;
     progress.check()?;
     let mut project = Project::from_json(&text).map_err(|e| e.to_string())?;
+    convert_old_file(path, &text, &project);
     drop(text);
     progress.set(Step::Read, 1, 1, "");
     progress.check()?;
     let paths: Vec<PathBuf> = project.media.iter().map(|m| m.path.clone()).collect::<HashSet<_>>().into_iter().collect();
     let mut present = check_files(&paths, progress, Step::Find).ok_or(cl_import::CANCELLED)?;
-    // a moved archive (`project_tools::archive`): missing files sit in `Medien/`/`Schriften/` next to
+    // a moved archive (`project_tools::archive`): missing files sit in `Media/`/`Fonts/` next to
     // the project. Only the loaded copy changes; the file on disk follows on the next save.
-    let beside = |sub: &str, p: &Path| Some(path.parent()?.join(sub).join(p.file_name()?)).filter(|c| c.is_file());
+    // (archives made by versions up to 0.19.3 call the folders `Medien` and `Schriften`)
+    let beside = |subs: [&str; 2], p: &Path| subs.iter().find_map(|sub| Some(path.parent()?.join(sub).join(p.file_name()?)).filter(|c| c.is_file()));
     for m in &mut project.media {
         if present.get(&m.path) == Some(&false) {
-            if let Some(c) = beside("Medien", &m.path) {
+            if let Some(c) = beside(["Media", cl_core::legacy::old("archive_media")], &m.path) {
                 present.insert(c.clone(), true);
                 m.path = c;
             }
@@ -170,7 +193,7 @@ pub fn load(path: &Path, progress: &Progress) -> Result<Loaded, String> {
     present.retain(|p, _| project.media.iter().any(|m| &m.path == p));
     for f in &mut project.project_fonts {
         if !f.is_file() {
-            if let Some(c) = beside("Schriften", f) {
+            if let Some(c) = beside(["Fonts", cl_core::legacy::old("archive_fonts")], f) {
                 *f = c;
             }
         }
@@ -238,7 +261,7 @@ impl Load {
                 let t = Instant::now();
                 let r = load(&p, &pr);
                 if crate::app::perf() {
-                    eprintln!("perf: Projekt laden {:.0} ms im Hintergrund", t.elapsed().as_secs_f64() * 1000.0);
+                    eprintln!("perf: project load {:.0} ms in the background", t.elapsed().as_secs_f64() * 1000.0);
                 }
                 let _ = tx.send(r);
                 c.request_repaint();
@@ -256,7 +279,7 @@ impl Load {
 }
 
 /// Steps of opening (display)
-const LOAD_STEPS: [(Step, &str); 3] = [(Step::Read, "Projekt lesen"), (Step::Find, "Medien prüfen"), (Step::Timeline, "Zeitleiste aufbauen")];
+const LOAD_STEPS: [(Step, &str); 3] = [(Step::Read, "Read project"), (Step::Find, "Check media"), (Step::Timeline, "Build timeline")];
 
 /// List of steps: done ones with a check mark, the current one highlighted with a progress line
 /// and counter, below it the current file in small text.
@@ -309,7 +332,7 @@ impl App {
 
     /// Take over finished loading and show the loading state (every frame).
     pub fn poll_load(&mut self, ctx: &egui::Context) {
-        let _s = crate::app::section("Projekt laden");
+        let _s = crate::app::section("load project");
         let Some(l) = &self.load else { return };
         let res = match l.rx.try_recv() {
             Ok(r) => r,
@@ -317,7 +340,7 @@ impl App {
                 self.load_dialog(ctx);
                 return;
             }
-            Err(TryRecvError::Disconnected) => Err("Projekt konnte nicht geladen werden (interner Fehler)".into()),
+            Err(TryRecvError::Disconnected) => Err("Project could not be loaded (internal error)".into()),
         };
         let Some(l) = self.load.take() else { return };
         match res {
@@ -331,7 +354,7 @@ impl App {
                     self.presence.set_all(done.present, done.project.media.len());
                     self.set_doc(done.project);
                     self.backups_open = false;
-                    self.toast("Sicherung wiederhergestellt");
+                    self.toast("Backup restored");
                 }
             },
             Err(e) if e == cl_import::CANCELLED => {}
@@ -346,13 +369,13 @@ impl App {
             return;
         }
         let st = l.progress.status();
-        let title = crate::tr(format!("„{}“ wird geöffnet", l.name));
+        let title = crate::tr(format!("Opening “{}”", l.name));
         let mut cancel = false;
         crate::dialog::modal(ctx, "project-load").show(ctx, |ui| {
             ui.set_width(420.0);
             cancel |= crate::dialog::title(ui, &title);
             steps_view(ui, egui::Id::new("project-load"), &LOAD_STEPS, &st);
-            cancel |= crate::dialog::footer(ui, |ui| ui.add(theme::secondary("Abbrechen")).clicked());
+            cancel |= crate::dialog::footer(ui, |ui| ui.add(theme::secondary("Cancel")).clicked());
         });
         if cancel || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.cancel_load();
@@ -368,41 +391,41 @@ impl App {
 
     /// Put a loaded project into the editor.
     pub fn apply_loaded(&mut self, p: &Path, done: Loaded, t0: Option<Instant>) {
-        let s = crate::app::section("Laden: altes Projekt verlassen");
+        let s = crate::app::section("load: leave the old project");
         if !self.flush_before_leaving() {
             return;
         }
         self.reset_editor();
         drop(s);
-        let s = crate::app::section("Laden: Projekt setzen");
+        let s = crate::app::section("load: set the project");
         let n = done.project.media.len();
         self.missing_open = done.present.values().any(|ok| !ok);
         self.presence.set_all(done.present, n);
         self.set_doc(done.project);
-        crate::applog::project("geöffnet", &self.project, t0);
+        crate::applog::project("opened", &self.project, t0);
         self.saved_revision = self.revision;
         self.project_path = Some(p.to_path_buf());
         drop(s);
-        let s = crate::app::section("Laden: Sperre und Einstellungen");
+        let s = crate::app::section("load: lock and settings");
         self.take_lock(p);
         self.settings.add_recent(p);
         self.settings.save();
         self.screen = Screen::Editor;
         self.last_backup = Some(Instant::now());
         drop(s);
-        let _s = crate::app::section("Laden: Schriften");
+        let _s = crate::app::section("load: fonts");
         let known = self.font_files();
         let mut missing: Vec<String> = done.fonts.into_iter().filter(|f| !known.contains_key(f)).collect();
         missing.sort();
         if !missing.is_empty() {
-            self.toast_err(format!("Fehlende Schriften: {}", missing.join(", ")));
+            self.toast_err(format!("Missing fonts: {}", missing.join(", ")));
         }
         if !done.gone.is_empty() {
             self.toast_err(
                 crate::theme::count_text(
                     done.gone.len(),
-                    "{} Inhalt fehlt: {} – Paket in Einstellungen → Inhalte einschalten",
-                    "{} Inhalte fehlen: {} – Paket in Einstellungen → Inhalte einschalten",
+                    "{} item is missing: {} – turn on its pack in Settings → Content",
+                    "{} items are missing: {} – turn on their pack in Settings → Content",
                 )
                 .replacen("{}", &done.gone.join(", "), 1),
             );
@@ -415,7 +438,7 @@ mod tests {
     use super::*;
 
     fn project_file(dir: &Path, media: usize) -> PathBuf {
-        let mut p = Project::new("Laden");
+        let mut p = Project::new("Download");
         for i in 0..media {
             let path = dir.join(format!("m{i}.png"));
             if i % 3 != 0 {
@@ -431,12 +454,12 @@ mod tests {
         f
     }
 
-    /// Missing project file: the message says which one (not just „Pfad nicht gefunden“)
+    /// Missing project file: the message says which one (not just "Path not found")
     #[test]
     fn missing_project_file_is_named() {
         let dir = tempfile::tempdir().unwrap();
         let e = load(&dir.path().join("weg").join("Urlaub.cutline"), &Progress::default()).err().unwrap();
-        assert!(e.contains("Urlaub.cutline") && e.starts_with("Projekt konnte nicht geöffnet werden"), "{e}");
+        assert!(e.contains("Urlaub.cutline") && e.starts_with("Project could not be opened"), "{e}");
     }
 
     #[test]
@@ -462,8 +485,8 @@ mod tests {
         let f: Vec<f32> = log.iter().map(|s| s.fraction()).collect();
         assert!(f.windows(2).all(|w| w[0] <= w[1] + 1e-6), "{f:?}");
         // broken file: error, no crash
-        std::fs::write(dir.path().join("kaputt.cutline"), "{").unwrap();
-        assert!(load(&dir.path().join("kaputt.cutline"), &Progress::default()).is_err());
+        std::fs::write(dir.path().join("broken.cutline"), "{").unwrap();
+        assert!(load(&dir.path().join("broken.cutline"), &Progress::default()).is_err());
     }
 
     /// A project saved before `has_alpha` existed: transparent videos get it on load, opaque ones not
@@ -486,7 +509,7 @@ mod tests {
         for m in json["media"].as_array_mut().unwrap() {
             assert!(m.as_object_mut().unwrap().remove("has_alpha").is_some());
         }
-        let file = dir.path().join("alt.cutline");
+        let file = dir.path().join("old.cutline");
         std::fs::write(&file, json.to_string()).unwrap();
         let done = load(&file, &Progress::default()).unwrap();
         for m in &done.project.media {
@@ -506,7 +529,7 @@ mod tests {
     #[test]
     fn presence_is_cached_and_rechecked_on_change() {
         let mut pr = Presence::default();
-        assert!(pr.get(Path::new("nie/geprüft.mp4")), "unknown counts as present");
+        assert!(pr.get(Path::new("never/checked.mp4")), "unknown counts as present");
         pr.set_all(HashMap::from([(PathBuf::from("a"), false)]), 1);
         assert!(!pr.get(Path::new("a")));
         // freshly checked: not due; other media count or running check
@@ -524,16 +547,16 @@ mod tests {
     fn old_check_does_not_overwrite_new_project() {
         let mut pr = Presence::default();
         let (tx, rx) = channel();
-        tx.send(HashMap::from([(PathBuf::from("alt"), true)])).unwrap();
+        tx.send(HashMap::from([(PathBuf::from("old"), true)])).unwrap();
         pr.pending = Some(rx);
-        pr.set_all(HashMap::from([(PathBuf::from("neu"), false)]), 1);
-        let mut p = Project::new("neu");
+        pr.set_all(HashMap::from([(PathBuf::from("new"), false)]), 1);
+        let mut p = Project::new("new");
         p.media.push(serde_json::from_value(serde_json::json!({
-            "id": cl_core::MediaId::new(), "path": "neu", "kind": "Image", "duration": 0,
+            "id": cl_core::MediaId::new(), "path": "new", "kind": "Image", "duration": 0,
             "width": 4, "height": 4, "fps": null, "has_audio": false, "video_codec": null, "audio_codec": null
         })).unwrap());
         pr.tick(&p, &egui::Context::default());
-        assert!(!pr.get(Path::new("neu")));
+        assert!(!pr.get(Path::new("new")));
     }
 
     /// Opening the same project again: the open state is already on disk before
@@ -546,9 +569,9 @@ mod tests {
         app.project_path = Some(f.clone());
         app.screen = Screen::Editor;
         assert!(app.flush_before_leaving());
-        app.apply(cl_core::EditOp::Rename { name: "A neu".into() });
+        app.apply(cl_core::EditOp::Rename { name: "A new".into() });
         app.open_project(&f);
-        assert_eq!(Project::from_json(&std::fs::read_to_string(&f).unwrap()).unwrap().name, "A neu");
+        assert_eq!(Project::from_json(&std::fs::read_to_string(&f).unwrap()).unwrap().name, "A new");
         assert!(app.load.is_some());
         app.go_home();
         assert!(app.load.is_none(), "start page cancels loading");
@@ -564,7 +587,7 @@ mod tests {
         std::fs::create_dir_all(&src).unwrap();
         std::fs::write(src.join("clip.mp4"), b"v").unwrap();
         std::fs::write(src.join("font.ttf"), b"f").unwrap();
-        let mut p = Project::new("Film: Teil 1");
+        let mut p = Project::new("Film: Part 1");
         p.media.push(serde_json::from_value(serde_json::json!({
             "id": cl_core::MediaId::new(), "path": src.join("clip.mp4"), "kind": "Video", "duration": 1000000,
             "width": 2, "height": 2, "fps": null, "has_audio": false, "video_codec": null, "audio_codec": null
@@ -575,10 +598,10 @@ mod tests {
         let moved = dir.path().join("woanders");
         std::fs::rename(&out, &moved).unwrap();
         let l = load(&moved.join(file.file_name().unwrap()), &Progress::default()).unwrap();
-        assert_eq!(l.project.media[0].path, moved.join("Medien").join("clip.mp4"));
+        assert_eq!(l.project.media[0].path, moved.join("Media").join("clip.mp4"));
         assert_eq!(l.present.len(), 1);
         assert!(l.present.values().all(|ok| *ok));
-        assert_eq!(l.project.project_fonts, vec![moved.join("Schriften").join("font.ttf")]);
+        assert_eq!(l.project.project_fonts, vec![moved.join("Fonts").join("font.ttf")]);
     }
 
     #[test]
@@ -592,5 +615,62 @@ mod tests {
         let m = check_files(&paths, &pr, Step::Find).unwrap();
         assert_eq!(m.values().filter(|v| **v).count(), 25);
         assert_eq!(pr.status().done, 50);
+    }
+    /// A project of version 6 (up to 0.19.3) is written in the current version when it is first
+    /// opened; the file as it was stays beside it and a second opening converts nothing.
+    #[test]
+    fn old_project_is_converted_on_disk_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("Old.cutline");
+        let mut p = Project::new("Old");
+        let mut t = cl_core::Track::new(cl_core::TrackKind::Effect);
+        t.clips.push(cl_core::Clip::new(ClipContent::Effect(cl_core::FxRef::new("cutline.effekte/hologramm")), cl_core::Time::ZERO, cl_core::Time::from_secs_f64(1.0)));
+        p.timeline.tracks.push(t);
+        let v6 = p.to_json().replace(&format!("\"schema_version\": {}", cl_core::PROJECT_SCHEMA_VERSION), "\"schema_version\": 6");
+        std::fs::write(&f, &v6).unwrap();
+        let id = |p: &Project| match &p.timeline.tracks[0].clips[0].content {
+            ClipContent::Effect(fx) => fx.id.clone(),
+            _ => String::new(),
+        };
+        let l = load(&f, &Progress::default()).unwrap();
+        assert_eq!(id(&l.project), "cutline.effects/hologram");
+        let on_disk = std::fs::read_to_string(&f).unwrap();
+        assert_eq!(Project::file_version(&on_disk), Some(cl_core::PROJECT_SCHEMA_VERSION));
+        assert!(on_disk.contains("cutline.effects/hologram") && !on_disk.contains("hologramm"));
+        let keep = dir.path().join("Old.cutline.v6");
+        assert_eq!(std::fs::read_to_string(&keep).unwrap(), v6, "the file as it was");
+        // opened again: a version 7 file, nothing is converted and the copy stays as it is
+        std::fs::write(&keep, "untouched").unwrap();
+        let again = load(&f, &Progress::default()).unwrap();
+        assert_eq!(again.project, l.project);
+        assert_eq!(std::fs::read_to_string(&keep).unwrap(), "untouched");
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), on_disk);
+    }
+
+    /// An archive made by a version up to 0.19.3 keeps its files in `Medien` and `Schriften`
+    #[test]
+    fn moved_archive_of_an_older_version_finds_its_media() {
+        let dir = tempfile::tempdir().unwrap();
+        let moved = dir.path().join("moved");
+        std::fs::create_dir_all(moved.join("Medien")).unwrap();
+        std::fs::write(moved.join("Medien").join("clip.mp4"), b"x").unwrap();
+        let mut p = Project::new("A");
+        p.media.push(cl_core::MediaRef {
+            id: cl_core::MediaId::new(),
+            path: dir.path().join("gone").join("Medien").join("clip.mp4"),
+            kind: MediaKind::Video,
+            duration: cl_core::Time::from_secs_f64(1.0),
+            width: 16,
+            height: 16,
+            fps: None,
+            has_audio: false,
+            audio_streams: 0,
+            video_codec: None,
+            audio_codec: None,
+            has_alpha: false,
+        });
+        std::fs::write(moved.join("A.cutline"), p.to_json()).unwrap();
+        let l = load(&moved.join("A.cutline"), &Progress::default()).unwrap();
+        assert_eq!(l.project.media[0].path, moved.join("Medien").join("clip.mp4"));
     }
 }

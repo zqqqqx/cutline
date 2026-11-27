@@ -31,7 +31,7 @@ pub fn matte(
 ) -> Result<(), String> {
     let m = cl_media::probe(src).map_err(|e| e.to_string())?;
     if m.width == 0 {
-        return Err("Kein Bild in dieser Datei".into());
+        return Err("No image in this file".into());
     }
     let lim = WORK.min(m.width.max(m.height));
     let (w, h) = cl_media::fit_size(m.width, m.height, lim, lim);
@@ -49,7 +49,7 @@ pub fn matte(
         models,
         &models
             .rvm()
-            .ok_or("Freistell-Modell fehlt (Einstellungen → Modelle)")?,
+            .ok_or("Cut-out model missing (Settings → Models)")?,
     )?;
 
     let mut dec = cl_media::ffmpeg_command()
@@ -115,7 +115,7 @@ pub fn matte(
     let result = (|| -> Result<(), String> {
         while reader.read_exact(&mut rgb).is_ok() {
             if cancel.load(Ordering::Relaxed) {
-                return Err("Abgebrochen".into());
+                return Err("Canceled".into());
             }
             // HWC u8 → CHW f32 0..1
             let mut chw = vec![0f32; 3 * wu * hu];
@@ -167,7 +167,7 @@ pub fn matte(
 /// written); on every other path (cancel, model or FFmpeg error, rename) it is removed.
 pub(crate) fn finish(tmp: &Path, out: &Path, result: Result<(), String>, written: bool) -> Result<(), String> {
     let done = result
-        .and_then(|()| if written { Ok(()) } else { Err("Maskenvideo konnte nicht geschrieben werden".into()) })
+        .and_then(|()| if written { Ok(()) } else { Err("Couldn't write the matte video".into()) })
         .and_then(|()| std::fs::rename(tmp, out).map_err(|e| e.to_string()));
     if done.is_err() {
         let _ = std::fs::remove_file(tmp);
@@ -195,7 +195,7 @@ mod tests {
     fn finish_removes_the_part_file_unless_done() {
         let dir = tempfile::tempdir().unwrap();
         let (tmp, out) = (dir.path().join("m.part.mkv"), dir.path().join("m.mkv"));
-        for (result, written) in [(Err("Abgebrochen".to_string()), true), (Err("Modell".into()), false), (Ok(()), false)] {
+        for (result, written) in [(Err("Canceled".to_string()), true), (Err("Model".into()), false), (Ok(()), false)] {
             std::fs::write(&tmp, b"x").unwrap();
             assert!(finish(&tmp, &out, result, written).is_err());
             assert!(!tmp.exists() && !out.exists(), "part file left behind");
@@ -240,7 +240,7 @@ mod tests {
         let out = dir.path().join("m.mkv");
         let t0 = std::time::Instant::now();
         matte(&models, &src, &out, &|_| {}, &AtomicBool::new(false)).unwrap();
-        println!("RVM: 30 Bilder in {:.2} s", t0.elapsed().as_secs_f64());
+        println!("RVM: 30 frames in {:.2} s", t0.elapsed().as_secs_f64());
         let m = cl_media::probe(&out).unwrap();
         assert!(
             (m.duration.as_secs_f64() - 1.2).abs() < 0.1,

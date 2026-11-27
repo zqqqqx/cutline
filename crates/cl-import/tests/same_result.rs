@@ -23,7 +23,7 @@ fn media(dir: &Path) -> Option<[PathBuf; 3]> {
         return None;
     }
     let v = dir.join("clip.mp4");
-    let b = dir.join("bild.png");
+    let b = dir.join("frame.png");
     let rec = dir.join("audio_record");
     std::fs::create_dir_all(&rec).unwrap();
     let a = rec.join("vo.wav");
@@ -68,18 +68,18 @@ fn fixture(dir: &Path, [v, b, _]: &[PathBuf; 3]) -> Value {
             "videos": [
                 {"id": "V1", "type": "video", "path": v.to_string_lossy()},
                 {"id": "B1", "type": "photo", "path": b.to_string_lossy()},
-                {"id": "VX", "type": "video", "path": dir.join("fehlt.mp4").to_string_lossy()},
+                {"id": "VX", "type": "video", "path": dir.join("missing.mp4").to_string_lossy()},
                 {"id": "VO", "type": "video", "path": ""}
             ],
             "audios": [
                 {"id": "A1", "type": "record", "path": "##_draftpath_placeholder_ABC_##/audio_record/vo.wav"},
                 {"id": "A2", "type": "music", "path": ""},
-                {"id": "AX", "type": "music", "path": dir.join("fehlt.wav").to_string_lossy()}
+                {"id": "AX", "type": "music", "path": dir.join("missing.wav").to_string_lossy()}
             ],
             "texts": [
-                {"id": "T1", "content": text("Eins", 12.0), "alignment": 0, "has_shadow": true, "font_path": font.to_string_lossy()},
-                {"id": "T2", "content": text("Zwei", 6.0), "alignment": 2},
-                {"id": "T3", "base_content": "Drei", "font_size": 9.0}
+                {"id": "T1", "content": text("One", 12.0), "alignment": 0, "has_shadow": true, "font_path": font.to_string_lossy()},
+                {"id": "T2", "content": text("Two", 6.0), "alignment": 2},
+                {"id": "T3", "base_content": "Three", "font_size": 9.0}
             ],
             "stickers": [{"id": "S1"}],
             "video_effects": [{"id": "E1"}],
@@ -99,7 +99,7 @@ fn fixture(dir: &Path, [v, b, _]: &[PathBuf; 3]) -> Value {
             {"type": "effect", "segments": [seg("E1", 0, s, json!({})), seg("E1", s, s, json!({}))]},
             {"type": "filter", "segments": [seg("E1", 0, s, json!({}))]},
             {"type": "adjust", "segments": [seg("E1", 0, s, json!({}))]},
-            {"type": "video", "segments": [seg("SP", 0, s, json!({})), seg("BT", 0, s, json!({})), seg("unbekannt", 0, s, json!({}))]}
+            {"type": "video", "segments": [seg("SP", 0, s, json!({})), seg("BT", 0, s, json!({})), seg("unknown", 0, s, json!({}))]}
         ]
     })
 }
@@ -140,7 +140,7 @@ fn snapshot(name: &str, dir: &Path, p: &cl_core::Project, rep: &cl_import::Repor
         return;
     }
     let want = std::fs::read_to_string(&file).unwrap().replace("\r\n", "\n");
-    assert_eq!(got, want, "{name}: Ergebnis weicht vom gespeicherten ab");
+    assert_eq!(got, want, "{name}: result differs from the stored snapshot");
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn staged_import_gives_the_same_project() {
     snapshot("capcut_fixture", dir.path(), &p, &rep);
     // via file and folder (name from draft_meta_info.json)
     std::fs::write(dir.path().join("draft_content.json"), d.to_string()).unwrap();
-    std::fs::write(dir.path().join("draft_meta_info.json"), json!({"draft_name": "Aus Datei"}).to_string()).unwrap();
+    std::fs::write(dir.path().join("draft_meta_info.json"), json!({"draft_name": "From file"}).to_string()).unwrap();
     let (p, rep) = cl_import::import(dir.path()).unwrap();
     snapshot("capcut_dir", dir.path(), &p, &rep);
 }

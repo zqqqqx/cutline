@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PluginError {
-    #[error("{path}: Manifest nicht lesbar: {msg}")]
+    #[error("{path}: manifest not readable: {msg}")]
     Parse { path: PathBuf, msg: String },
     #[error("{id}: {msg}")]
     Invalid { id: String, msg: String },
-    #[error("E/A-Fehler: {0}")]
+    #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
 
@@ -147,7 +147,7 @@ impl AssetEntry {
     /// and switch, at most [`MAX_SHADER_PARAMS`].
     pub fn shader_params(&self) -> Result<Vec<f32>, String> {
         if self.params.len() > MAX_SHADER_PARAMS {
-            return Err(format!("höchstens {MAX_SHADER_PARAMS} Parameter"));
+            return Err(format!("at most {MAX_SHADER_PARAMS} parameters"));
         }
         self.params
             .iter()
@@ -155,7 +155,7 @@ impl AssetEntry {
                 ParamSpec::Float { default, .. } => Ok(*default),
                 ParamSpec::Int { default, .. } => Ok(*default as f32),
                 ParamSpec::Bool { default, .. } => Ok(*default as u8 as f32),
-                _ => Err(format!("Parameter '{}': im Shader nur Zahlen und Schalter", p.id())),
+                _ => Err(format!("Parameter '{}': a shader takes numbers and switches only", p.id())),
             })
             .collect()
     }
@@ -315,38 +315,38 @@ impl Manifest {
                         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
             });
         if !id_ok {
-            return bad("ID muss im Format 'anbieter.name' sein (klein, a-z0-9-)".into());
+            return bad("The ID must have the form 'vendor.name' (lower case, a-z0-9-)".into());
         }
         if p.version.split('.').count() != 3
             || p.version.split('.').any(|n| n.parse::<u32>().is_err())
         {
-            return bad(format!("Version '{}' ist kein SemVer (x.y.z)", p.version));
+            return bad(format!("Version '{}' is not SemVer (x.y.z)", p.version));
         }
         if p.api != API_VERSION {
             return bad(format!(
-                "API-Version {} nicht unterstützt (erwartet {API_VERSION})",
+                "API version {} not supported (expected {API_VERSION})",
                 p.api
             ));
         }
         if p.name.is_empty() {
-            return bad("Name fehlt".into());
+            return bad("Name is missing".into());
         }
         for perm in &p.permissions {
             let base = perm.split(':').next().unwrap_or("");
             if !KNOWN_PERMISSIONS.contains(&base) {
-                return bad(format!("Unbekanntes Recht '{perm}'"));
+                return bad(format!("Unknown permission '{perm}'"));
             }
         }
         match p.kind {
             PluginKind::AssetPack => {
                 if !p.permissions.is_empty() {
                     return bad(
-                        "Asset-Pakete führen keinen Code aus und dürfen keine Rechte anfordern"
+                        "Asset packs run no code and may not ask for permissions"
                             .into(),
                     );
                 }
                 if self.assets.is_empty() {
-                    return bad("Asset-Paket ohne Assets".into());
+                    return bad("Asset pack without assets".into());
                 }
             }
             PluginKind::Integration => {
@@ -355,25 +355,25 @@ impl Manifest {
                     .as_deref()
                     .is_some_and(|e| e.starts_with("builtin:"))
                 {
-                    return bad("Integrationen brauchen 'entry = \"builtin:<name>\"'".into());
+                    return bad("Integrations need 'entry = \"builtin:<name>\"'".into());
                 }
                 if !p.permissions.iter().any(|x| x.starts_with("net")) {
-                    return bad("Integrationen müssen das Recht 'net' deklarieren".into());
+                    return bad("Integrations must declare the permission 'net'".into());
                 }
             }
         }
         let mut seen = std::collections::HashSet::new();
         for a in &self.assets {
             if !seen.insert(&a.id) {
-                return bad(format!("Asset-ID '{}' doppelt", a.id));
+                return bad(format!("Asset ID '{}' twice", a.id));
             }
             // only what the catalog can show (cl-app `contents::catalog_packs`)
             let (fx, sh) = (a.ffmpeg.is_some(), a.shader.is_some());
             let unsupported = match a.kind {
-                AssetKind::VideoEffect | AssetKind::Filter => (!fx || sh).then_some("braucht eine FFmpeg-Kette (Shader nur bei Übergängen)"),
-                AssetKind::Transition => (!sh || fx).then_some("braucht einen Shader (keine FFmpeg-Kette)"),
-                AssetKind::Sound | AssetKind::Sticker => (fx || sh).then_some("darf weder Shader noch FFmpeg-Kette haben"),
-                _ => Some("hat eine Art, die Cutline noch nicht anzeigen kann"),
+                AssetKind::VideoEffect | AssetKind::Filter => (!fx || sh).then_some("needs an FFmpeg chain (shaders only for transitions)"),
+                AssetKind::Transition => (!sh || fx).then_some("needs a shader (no FFmpeg chain)"),
+                AssetKind::Sound | AssetKind::Sticker => (fx || sh).then_some("may have neither a shader nor an FFmpeg chain"),
+                _ => Some("has a kind Cutline cannot show yet"),
             };
             if let Some(why) = unsupported {
                 return bad(format!("Asset '{}' {why}", a.id));
@@ -385,19 +385,19 @@ impl Manifest {
                 });
                 if !ok {
                     return bad(format!(
-                        "Übergang '{}' braucht 'fallback' (eingebauter Übergang, z. B. \"fade\")",
+                        "Transition '{}' needs 'fallback' (a built-in transition, e.g. \"fade\")",
                         a.id
                     ));
                 }
                 if let Err(e) = a.shader_params() {
-                    return bad(format!("Übergang '{}': {e}", a.id));
+                    return bad(format!("Transition '{}': {e}", a.id));
                 }
             }
             if let Some(f) = &a.ffmpeg {
                 // check raw and after filling in the default values (values could smuggle separators)
                 if !ffmpeg_chain_allowed(f) || !a.ffmpeg_filled().is_some_and(|c| ffmpeg_chain_allowed(&c)) {
                     return bad(format!(
-                        "FFmpeg-Kette von '{}' enthält nicht erlaubte Elemente",
+                        "The FFmpeg chain of '{}' contains elements that are not allowed",
                         a.id
                     ));
                 }
@@ -405,14 +405,14 @@ impl Manifest {
             let mut pids = std::collections::HashSet::new();
             for prm in &a.params {
                 if !pids.insert(prm.id()) {
-                    return bad(format!("Parameter '{}' doppelt in '{}'", prm.id(), a.id));
+                    return bad(format!("Parameter '{}' twice in '{}'", prm.id(), a.id));
                 }
                 match prm {
                     ParamSpec::Float {
                         min, max, default, ..
                     } if !(min <= default && default <= max) => {
                         return bad(format!(
-                            "Standardwert von '{}' außerhalb [{min}, {max}]",
+                            "Default value of '{}' outside [{min}, {max}]",
                             prm.id()
                         ))
                     }
@@ -420,14 +420,14 @@ impl Manifest {
                         min, max, default, ..
                     } if !(min <= default && default <= max) => {
                         return bad(format!(
-                            "Standardwert von '{}' außerhalb [{min}, {max}]",
+                            "Default value of '{}' outside [{min}, {max}]",
                             prm.id()
                         ))
                     }
                     ParamSpec::Choice {
                         options, default, ..
                     } if !options.contains(default) => {
-                        return bad(format!("Standardwert von '{}' ist keine Option", prm.id()))
+                        return bad(format!("Default value of '{}' is not an option", prm.id()))
                     }
                     _ => {}
                 }
@@ -439,26 +439,26 @@ impl Manifest {
             };
             if let Some(exts) = exts {
                 let Some(f) = &a.file else {
-                    return bad(format!("Asset '{}' braucht eine Datei ('file')", a.id));
+                    return bad(format!("Asset '{}' needs a file ('file')", a.id));
                 };
                 let ext = Path::new(f)
                     .extension()
                     .map(|e| e.to_string_lossy().to_ascii_lowercase())
                     .unwrap_or_default();
                 if !exts.contains(&ext.as_str()) {
-                    return bad(format!("Dateityp von '{f}' nicht erlaubt (erlaubt: {})", exts.join(", ")));
+                    return bad(format!("File type of '{f}' not allowed (allowed: {})", exts.join(", ")));
                 }
             }
             for f in [&a.shader, &a.file].into_iter().flatten() {
                 if f.contains("..") || Path::new(f).is_absolute() || !relative_inside(f) {
-                    return bad(format!("Pfad '{f}' muss innerhalb des Plugins liegen"));
+                    return bad(format!("Path '{f}' must be inside the plugin"));
                 }
             }
             if let Some(dir) = dir {
                 for f in [&a.shader, &a.file].into_iter().flatten()
                 {
                     if !dir.join(f).is_file() {
-                        return bad(format!("Datei '{f}' fehlt"));
+                        return bad(format!("File '{f}' is missing"));
                     }
                     // not out of the folder via links either
                     let inside = match (dir.join(f).canonicalize(), dir.canonicalize()) {
@@ -466,7 +466,7 @@ impl Manifest {
                         _ => false,
                     };
                     if !inside {
-                        return bad(format!("Pfad '{f}' muss innerhalb des Plugins liegen"));
+                        return bad(format!("Path '{f}' must be inside the plugin"));
                     }
                 }
             }
@@ -475,7 +475,7 @@ impl Manifest {
             (dir, p.entry.as_ref().filter(|e| !e.starts_with("builtin:")))
         {
             if entry.contains("..") || !dir.join(entry).exists() {
-                return bad(format!("Einstiegsdatei '{entry}' fehlt"));
+                return bad(format!("Entry file '{entry}' is missing"));
             }
         }
         Ok(())
@@ -550,7 +550,7 @@ impl Registry {
         {
             return Err(PluginError::Invalid {
                 id: m.plugin.id.clone(),
-                msg: "bereits geladen".into(),
+                msg: "already loaded".into(),
             });
         }
         let enabled = m.plugin.default_enabled;
@@ -596,7 +596,7 @@ const MAX_ENTRIES: usize = 10_000;
 fn copy_capped(r: impl std::io::Read, w: &mut impl std::io::Write, left: &mut u64) -> Result<(), String> {
     let n = std::io::copy(&mut r.take(*left + 1), w).map_err(|e| e.to_string())?;
     if n > *left {
-        return Err("Paket ist entpackt zu groß".into());
+        return Err("Pack is too large when unpacked".into());
     }
     *left -= n;
     Ok(())
@@ -629,17 +629,17 @@ fn install_zip_inner(zip_path: &Path, root: &Path, replace: bool, expect: Option
 
 fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool, expect: Option<&str>) -> Result<Installed, String> {
     let f = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
-    let mut zip = zip::ZipArchive::new(f).map_err(|e| format!("Keine gültige ZIP-Datei: {e}"))?;
+    let mut zip = zip::ZipArchive::new(f).map_err(|e| format!("Not a valid ZIP file: {e}"))?;
     // the bundled packages have fewer than 200 files; millions of empty entries would otherwise
     // create just as many files
     if zip.len() > MAX_ENTRIES {
-        return Err(format!("Paket hat zu viele Dateien ({}, höchstens {MAX_ENTRIES})", zip.len()));
+        return Err(format!("Pack has too many files ({}, at most {MAX_ENTRIES})", zip.len()));
     }
     let mut left = MAX_UNPACKED;
     for i in 0..zip.len() {
         let mut e = zip.by_index(i).map_err(|e| e.to_string())?;
         let Some(rel) = e.enclosed_name() else {
-            return Err(format!("Unsicherer Pfad im Paket: {}", e.name().unwrap_or_default()));
+            return Err(format!("Unsafe path in the pack: {}", e.name().unwrap_or_default()));
         };
         let dst = staging.join(rel);
         if e.is_dir() {
@@ -663,7 +663,7 @@ fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool, e
             .collect();
         match subs.as_slice() {
             [one] => one.clone(),
-            _ => return Err(format!("Kein {MANIFEST_FILE} im Paket")),
+            _ => return Err(format!("No {MANIFEST_FILE} in the pack")),
         }
     };
     let path = dir.join(MANIFEST_FILE);
@@ -671,11 +671,11 @@ fn install_staged(zip_path: &Path, root: &Path, staging: &Path, replace: bool, e
         .map_err(|e| e.to_string())?;
     m.validate(Some(&dir)).map_err(|e| e.to_string())?;
     if m.plugin.kind != PluginKind::AssetPack {
-        return Err("Nur Inhaltspakete (asset-pack) lassen sich hinzufügen".into());
+        return Err("Only content packs (asset-pack) can be added".into());
     }
     let id = m.plugin.id.clone();
     if expect.is_some_and(|e| e != id) {
-        return Err(format!("Paket-ID „{id}“ passt nicht zur Liste"));
+        return Err(format!("Pack ID “{id}” does not match the list"));
     }
     let target = root.join(&id);
     if target.exists() {
@@ -709,7 +709,7 @@ pub fn remove_pack(root: &Path, dir: &Path) -> Result<(), String> {
         dir.canonicalize().map_err(|e| e.to_string())?,
     );
     if d == r || !d.starts_with(&r) {
-        return Err("Nur eigene Pakete lassen sich entfernen".into());
+        return Err("Only your own packs can be removed".into());
     }
     std::fs::remove_dir_all(&d).map_err(|e| e.to_string())
 }
@@ -776,7 +776,7 @@ mod tests {
             .validate(None)
             .unwrap_err()
             .to_string();
-        assert!(err.contains("außerhalb"), "{err}");
+        assert!(err.contains("outside"), "{err}");
         // asset packages must not request permissions
         let m = base.replace(
             "license = \"MIT\"",
@@ -815,8 +815,8 @@ ffmpeg='eq=gamma={{g}}'
 params=[{{type='choice',id='g',options=['1[a];movie=x.mp4'],default='1[a];movie=x.mp4'}}]"
         );
         let err = Manifest::parse(&m, p).unwrap().validate(None).unwrap_err().to_string();
-        assert!(err.contains("nicht erlaubte"), "{err}");
-        for bad in ["movie@m=x.mp4", r"eq=gamma=1,lut3d=C\:/x.cube", "sendcmd=c=x", "frei0r=x", "ladspa=x", " lv2=p=x", "zmq"] {
+        assert!(err.contains("not allowed"), "{err}");
+        for bad in ["movie@m=x.mp4", r"eq=gamma=1,lut3d=C\:/x.cube", "sendcmd=c=x", "free0r=x", "ladspa=x", " lv2=p=x", "zmq"] {
             assert!(!ffmpeg_chain_allowed(bad), "{bad}");
         }
         assert!(ffmpeg_chain_allowed("gblur=sigma=2,eq=brightness=0.04*{intensity}"));
@@ -893,7 +893,7 @@ license = "CC-BY-4.0"
         for bad in ["../x.wav", "/x.wav", "C:/x.wav", r"C:x.wav", "sub/../../x.wav"] {
             let t = PACK.replace("file = \"ding.wav\"", &format!("file = '{bad}'"));
             let err = Manifest::parse(&t, Path::new("x")).unwrap().validate(Some(&pack)).unwrap_err().to_string();
-            assert!(err.contains("innerhalb"), "{bad}: {err}");
+            assert!(err.contains("inside the plugin"), "{bad}: {err}");
         }
         for (f, ok) in [("ding.exe", false), ("ding.gif", false), ("ding", false), ("DING.WAV", true)] {
             let t = PACK.replace("ding.wav", f);
@@ -948,8 +948,8 @@ license = "CC-BY-4.0"
         assert_eq!(install_zip(&zp, &root, true).unwrap(), Installed::Done("test.sounds".into()));
         assert_eq!(std::fs::read(root.join("test.sounds/ding.wav")).unwrap(), b"RIFF2");
         // downloaded: the ID must match, otherwise everything stays as it was
-        assert!(install_zip_id(&zp, &root, "test.andere").unwrap_err().contains("passt nicht"));
-        assert!(!root.join("test.andere").exists());
+        assert!(install_zip_id(&zp, &root, "test.other").unwrap_err().contains("does not match"));
+        assert!(!root.join("test.other").exists());
         assert_eq!(std::fs::read(root.join("test.sounds/ding.wav")).unwrap(), b"RIFF2");
         install_zip_id(&zp, &root, "test.sounds").unwrap();
         // malicious path: nothing is adopted
@@ -998,7 +998,7 @@ permissions=['net']
         assert_eq!(reg.plugins.len(), 1);
         assert!(reg.plugins[0].dir.ends_with("a"));
         assert_eq!(reg.errors.len(), 1, "{:?}", reg.errors);
-        assert!(reg.errors[0].contains("bereits geladen"), "{:?}", reg.errors);
+        assert!(reg.errors[0].contains("already loaded"), "{:?}", reg.errors);
         // the same root twice (e.g. data folder = program folder): no crash, only messages
         let reg = Registry::scan([dir.path(), dir.path()]);
         assert_eq!(reg.plugins.len(), 1);
@@ -1035,7 +1035,7 @@ permissions=['net']
         use std::io::Write;
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("Plugins");
-        let zp = dir.path().join("viele.zip");
+        let zp = dir.path().join("many.zip");
         let mut w = zip::ZipWriter::new(std::fs::File::create(&zp).unwrap());
         w.start_file("plugin.toml", zip::write::SimpleFileOptions::default()).unwrap();
         w.write_all(PACK.as_bytes()).unwrap();
@@ -1044,11 +1044,11 @@ permissions=['net']
         }
         w.finish().unwrap();
         let e = install_zip(&zp, &root, true).unwrap_err();
-        assert!(e.contains("zu viele"), "{e}");
+        assert!(e.contains("too many"), "{e}");
         assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0, "nichts entpackt");
         // a link in the archive becomes an ordinary file (does not point outside)
-        let secret = dir.path().join("geheim.txt");
-        std::fs::write(&secret, "geheim").unwrap();
+        let secret = dir.path().join("secret.txt");
+        std::fs::write(&secret, "secret").unwrap();
         let lz = dir.path().join("link.zip");
         let mut w = zip::ZipWriter::new(std::fs::File::create(&lz).unwrap());
         w.start_file("plugin.toml", zip::write::SimpleFileOptions::default()).unwrap();
@@ -1058,11 +1058,11 @@ permissions=['net']
         install_zip(&lz, &root, true).expect("a link entry installs as an ordinary file");
         let f = root.join("test.sounds/ding.wav");
         assert!(!std::fs::symlink_metadata(&f).unwrap().file_type().is_symlink());
-        assert_ne!(std::fs::read_to_string(&f).unwrap(), "geheim");
-        assert_eq!(std::fs::read_to_string(&secret).unwrap(), "geheim");
+        assert_ne!(std::fs::read_to_string(&f).unwrap(), "secret");
+        assert_eq!(std::fs::read_to_string(&secret).unwrap(), "secret");
         // no ZIP / empty file / truncated ZIP: error, root stays clean
-        let bad = dir.path().join("kaputt.zip");
-        for data in [&b""[..], b"PK\x03\x04kaputt", &std::fs::read(&zp).unwrap()[..1000]] {
+        let bad = dir.path().join("broken.zip");
+        for data in [&b""[..], b"PK\x03\x04broken", &std::fs::read(&zp).unwrap()[..1000]] {
             std::fs::write(&bad, data).unwrap();
             assert!(install_zip(&bad, &root, true).is_err());
         }
@@ -1074,16 +1074,16 @@ permissions=['net']
     #[test]
     fn a_failed_update_keeps_the_old_pack() {
         let t = tempfile::tempdir().unwrap();
-        let (new, target, old) = (t.path().join("neu"), t.path().join("pack"), t.path().join(".alt"));
+        let (new, target, old) = (t.path().join("new"), t.path().join("pack"), t.path().join(".old"));
         std::fs::create_dir_all(target.join("sfx")).unwrap();
-        std::fs::write(target.join("sfx/a.wav"), b"alt").unwrap();
+        std::fs::write(target.join("sfx/a.wav"), b"old").unwrap();
         // `new` missing: renaming into place fails (the same on Windows and Linux)
         assert!(swap_dir(&new, &target, &old).is_err());
-        assert_eq!(std::fs::read(target.join("sfx/a.wav")).unwrap(), b"alt");
+        assert_eq!(std::fs::read(target.join("sfx/a.wav")).unwrap(), b"old");
         assert!(!old.exists());
         // success: new package in place, old one gone
         std::fs::create_dir_all(&new).unwrap();
-        std::fs::write(new.join("b.wav"), b"neu").unwrap();
+        std::fs::write(new.join("b.wav"), b"new").unwrap();
         swap_dir(&new, &target, &old).unwrap();
         assert!(target.join("b.wav").is_file() && !target.join("sfx").exists());
         assert!(!old.exists() && !new.exists());

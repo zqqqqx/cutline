@@ -960,7 +960,7 @@ pub(crate) fn transition_groups(tr: &Track) -> Vec<Vec<&Clip>> {
                 && matches!(c.content, ClipContent::Media { .. })
         });
         if joined {
-            groups.last_mut().expect("vorhanden").push(c);
+            groups.last_mut().expect("present").push(c);
         } else {
             groups.push(vec![c]);
         }
@@ -1034,7 +1034,7 @@ fn transition_chain(ctx: &mut Ctx, p: &Project, group: &[&Clip]) -> Result<Optio
         acc = Some(match acc {
             None => (layer, layer_len),
             Some((a, a_len)) => {
-                let tr = group[k - 1].transition_out.as_ref().expect("Gruppe");
+                let tr = group[k - 1].transition_out.as_ref().expect("group");
                 let out = ctx.label("xf");
                 // the id comes unchecked from project file/MCP: the catalog only delivers built-in
                 // xfade names (package transitions: their fallback), everything else becomes `fade`
@@ -1216,7 +1216,7 @@ pub(crate) fn video_part(ctx: &mut Ctx, p: &Project, end: Time, dur: Time) -> Re
         }
         for group in transition_groups(tr) {
             let g_start = group[0].start;
-            let g_end = group.last().expect("nicht leer").end();
+            let g_end = group.last().expect("not empty").end();
             if g_end <= ctx.start || g_start >= end {
                 continue;
             }

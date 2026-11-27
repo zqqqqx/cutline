@@ -232,7 +232,7 @@ fn last_typed(typed: Option<f32>, changed_now: bool, undo: Option<f32>) -> Optio
 }
 
 /// The app assigned Esc to a field in this frame and consumed the key for it (so that the
-/// „Auswahl aufheben" shortcut does not fire) – otherwise the field itself would no longer see it.
+/// "Clear selection" shortcut does not fire) – otherwise the field itself would no longer see it.
 pub fn mark_field_esc(ctx: &egui::Context) {
     let now = ctx.cumulative_pass_nr(); // before data_mut: both lock the context
     ctx.data_mut(|d| d.insert_temp(egui::Id::new("field_esc"), now));
@@ -338,8 +338,8 @@ pub fn kf_button(ui: &mut egui::Ui, state: Kf) -> egui::Response {
         Kf::None => theme::diamond(ui.painter(), c, 4.5, None, Stroke::new(1.0_f32, col)),
     }
     resp.on_hover_text(crate::tr(match state {
-        Kf::Here => "Keyframe entfernen",
-        _ => "Keyframe am Playhead setzen",
+        Kf::Here => "Remove keyframe",
+        _ => "Add keyframe at playhead",
     }))
 }
 
@@ -990,7 +990,7 @@ mod tests {
                 eframe::egui::CentralPanel::default().show(ctx, |ui| {
                     super::busy_row(ui, eframe::egui::Id::new("b"), true);
                     super::grid(ui, &items, 84.0, 16.0 / 9.0, 16.0, |ui, r, i| {
-                        super::tile(ui, eframe::egui::Id::new(("t", *i)), r, "Kachel", false, |p, a| {
+                        super::tile(ui, eframe::egui::Id::new(("t", *i)), r, "Tile", false, |p, a| {
                             super::tile_image(p, eframe::egui::Id::new(("t", *i)), a, None, "")
                         });
                     });
@@ -1003,7 +1003,7 @@ mod tests {
         }
         times.sort_by(f64::total_cmp);
         let (med, max) = (times[times.len() / 2], times[times.len() - 1]);
-        println!("Platzhalter-Raster 300 Kacheln: Median {med:.2} ms, Max {max:.2} ms je Bild");
+        println!("placeholder grid 300 tiles: median {med:.2} ms, max {max:.2} ms per frame");
         assert!(med < 8.0, "{med}");
     }
 

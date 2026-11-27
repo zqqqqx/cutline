@@ -25,7 +25,7 @@
         "height": 0,
         "id": "#1",
         "kind": "Audio",
-        "path": "<dir>/fehlt.wav",
+        "path": "<dir>/missing.wav",
         "video_codec": null,
         "width": 0
       },
@@ -56,7 +56,7 @@
         "height": 36,
         "id": "#3",
         "kind": "Image",
-        "path": "<dir>/bild.png",
+        "path": "<dir>/frame.png",
         "video_codec": "png",
         "width": 64
       },
@@ -70,14 +70,14 @@
         "height": 0,
         "id": "#4",
         "kind": "Video",
-        "path": "<dir>/fehlt.mp4",
+        "path": "<dir>/missing.mp4",
         "video_codec": null,
         "width": 0
       }
     ],
-    "name": "Aus Datei",
+    "name": "From file",
     "project_fonts": [],
-    "schema_version": 6,
+    "schema_version": 7,
     "settings": {
       "aspect": {
         "Ratio": [
@@ -1639,7 +1639,7 @@
                   ],
                   "shadow": false,
                   "size": 46.0,
-                  "text": "Zwei",
+                  "text": "Two",
                   "uppercase": false
                 }
               },
@@ -1785,7 +1785,7 @@
                   ],
                   "shadow": true,
                   "size": 92.0,
-                  "text": "Eins",
+                  "text": "One",
                   "uppercase": false
                 }
               },
@@ -1912,7 +1912,7 @@
                   "outline": null,
                   "shadow": false,
                   "size": 89.7,
-                  "text": "Drei",
+                  "text": "Three",
                   "uppercase": false
                 }
               },
@@ -2484,36 +2484,36 @@
       "<dir>/Poppins-ExtraBold.ttf"
     ],
     "missing": [
-      "<dir>/fehlt.wav",
-      "<dir>/fehlt.mp4"
+      "<dir>/missing.wav",
+      "<dir>/missing.mp4"
     ],
     "skipped": [
       [
-        "Animation (als Blende übernommen)",
+        "Animation (imported as a fade)",
         8
       ],
       [
-        "Online-Material",
+        "Online media",
         1
       ],
       [
-        "Online-Musik / Sprachausgabe",
+        "Online music / text-to-speech",
         1
       ],
       [
-        "Sticker",
+        "Stickers",
         1
       ],
       [
-        "Effekte",
+        "Effects",
         2
       ],
       [
-        "Filter",
+        "Filters",
         2
       ],
       [
-        "Sonstiges",
+        "Other",
         1
       ]
     ],

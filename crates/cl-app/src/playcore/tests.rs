@@ -412,14 +412,14 @@ const DT: f64 = 1.0 / 120.0;
 fn play_from_stand_buffers_then_runs_with_audio_clock() {
     let mut w = World::new(vec![clip(1, 0.0, 10.0)]);
     w.step(DT);
-    assert_eq!(w.core.mode(), Mode::Stand);
+    assert_eq!(w.core.mode(), Mode::Stopped);
     w.play();
-    assert_eq!(w.core.mode(), Mode::Puffern);
+    assert_eq!(w.core.mode(), Mode::Buffering);
     assert!(w.core.waiting());
     // sound prepared but not yet come in
     assert!(matches!(w.aud.st, AState::Prep { anchor: None, .. }));
     w.run(0.2, DT);
-    assert_eq!(w.core.mode(), Mode::Spielen);
+    assert_eq!(w.core.mode(), Mode::Playing);
     assert!(!w.core.waiting());
     let t_play = w.shown.first().unwrap().0;
     assert!(t_play < 0.1, "first frame after {t_play} s");
@@ -443,10 +443,10 @@ fn clock_waits_for_late_first_audio() {
     w.aud.latency = 3.0;
     w.play();
     w.run(2.9, DT);
-    assert_eq!(w.core.mode(), Mode::Puffern, "clock runs without sound");
+    assert_eq!(w.core.mode(), Mode::Buffering, "clock runs without sound");
     assert_eq!(w.core.pos(), Time::ZERO);
     w.run(0.2, DT);
-    assert_eq!(w.core.mode(), Mode::Spielen);
+    assert_eq!(w.core.mode(), Mode::Playing);
     assert!(matches!(w.aud.input(w.now()), AudioIn::Running(_)), "sound comes in with the clock");
 }
 
@@ -457,7 +457,7 @@ fn clock_starts_without_audio_after_wait_limit() {
     w.aud.latency = 1e9;
     w.play();
     w.run(AUDIO_WAIT_MAX + 0.1, DT);
-    assert_eq!(w.core.mode(), Mode::Spielen);
+    assert_eq!(w.core.mode(), Mode::Playing);
 }
 
 #[test]
@@ -467,9 +467,9 @@ fn warmup_ends_after_deadline_if_decoder_never_delivers() {
     let mut w = World::new(vec![c]);
     w.play();
     w.run(0.4, DT);
-    assert_eq!(w.core.mode(), Mode::Puffern);
+    assert_eq!(w.core.mode(), Mode::Buffering);
     w.run(0.2, DT);
-    assert_eq!(w.core.mode(), Mode::Spielen, "no hang: the clock runs after 0.5 s");
+    assert_eq!(w.core.mode(), Mode::Playing, "no hang: the clock runs after 0.5 s");
     w.run(2.0, DT);
     assert!(w.core.pos().as_secs_f64() > 1.5);
 }
@@ -485,7 +485,7 @@ fn never_delivering_stream_holds_last_frame_and_is_reopened() {
     w.clips[0].ver = 1; // new key → replacement stream that never delivers
     w.run(3.0, DT);
     assert!(w.core.held().is_some(), "held frame instead of black");
-    assert_eq!(w.core.mode(), Mode::Spielen);
+    assert_eq!(w.core.mode(), Mode::Playing);
     // old stream keeps showing until the replacement delivers: frames keep running
     assert!(w.frames(1.5, 4.0) > 50);
 }
@@ -500,7 +500,7 @@ fn stalled_stream_is_reopened_at_current_position() {
     let st = w.core.take_stats();
     assert!(st.stalls >= 1, "{st:?}");
     assert!(w.opens >= 2);
-    assert_eq!(w.core.mode(), Mode::Spielen);
+    assert_eq!(w.core.mode(), Mode::Playing);
 }
 
 #[test]
@@ -511,10 +511,10 @@ fn click_during_play_rebuffers_at_new_position() {
     let starts = w.aud.starts;
     w.playhead = Time::from_secs_f64(12.0); // click in the timeline
     w.step(DT);
-    assert_eq!(w.core.mode(), Mode::Puffern);
+    assert_eq!(w.core.mode(), Mode::Buffering);
     assert_eq!(w.aud.starts, starts + 1, "sound from the new place");
     w.run(0.5, DT);
-    assert_eq!(w.core.mode(), Mode::Spielen);
+    assert_eq!(w.core.mode(), Mode::Playing);
     let (_, p, _, f) = *w.shown.last().unwrap();
     assert!(p >= 12.0 && f >= 12.0 && p - f < 0.1, "frame {f} at {p}");
 }
@@ -683,7 +683,7 @@ fn project_end_stops_on_last_frame() {
     let mut w = World::new(vec![clip(1, 0.0, 2.0)]);
     w.play();
     w.run(3.0, DT);
-    assert_eq!(w.core.mode(), Mode::Stand);
+    assert_eq!(w.core.mode(), Mode::Stopped);
     assert_eq!(w.playhead, last_frame(Time::from_secs_f64(2.0), 30.0));
     assert!(w.core.streams().is_empty());
     assert_eq!(w.aud.st, AState::Off);
@@ -696,7 +696,7 @@ fn loop_range_jumps_back_and_keeps_playing() {
     w.playhead = Time::from_secs_f64(1.0);
     w.play();
     w.run(3.5, DT);
-    assert_eq!(w.core.mode(), Mode::Spielen);
+    assert_eq!(w.core.mode(), Mode::Playing);
     let p = w.core.pos().as_secs_f64();
     assert!((1.0..2.0).contains(&p), "{p}");
     assert!(w.core.jumps() >= 3);
@@ -735,7 +735,7 @@ fn pause_and_resume_at_same_place_opens_no_new_streams() {
     w.run(1.0, DT);
     assert_eq!(w.core.pos(), at, "clock stands in the pause");
     w.play();
-    assert_eq!(w.core.mode(), Mode::Spielen, "straight on, without buffering");
+    assert_eq!(w.core.mode(), Mode::Playing, "straight on, without buffering");
     let t = w.now();
     w.run(1.0, DT);
     assert_eq!(w.opens, opens, "no new streams");
@@ -751,10 +751,10 @@ fn pause_then_move_frees_streams_and_play_rebuffers() {
     w.pause();
     w.playhead = Time::from_secs_f64(5.0); // moved
     w.step(DT);
-    assert_eq!(w.core.mode(), Mode::Stand);
+    assert_eq!(w.core.mode(), Mode::Stopped);
     assert!(w.core.streams().is_empty());
     w.play();
-    assert_eq!(w.core.mode(), Mode::Puffern);
+    assert_eq!(w.core.mode(), Mode::Buffering);
     w.run(0.5, DT);
     assert!(w.shown.last().unwrap().3 >= 5.0);
 }
@@ -767,7 +767,7 @@ fn pause_after_edit_does_not_resume() {
     w.pause();
     w.rev += 1;
     w.step(DT);
-    assert_eq!(w.core.mode(), Mode::Stand);
+    assert_eq!(w.core.mode(), Mode::Stopped);
 }
 
 #[test]
@@ -777,7 +777,7 @@ fn pause_without_audio_stops() {
     w.play();
     w.run(1.0, DT);
     w.pause();
-    assert_eq!(w.core.mode(), Mode::Stand);
+    assert_eq!(w.core.mode(), Mode::Stopped);
 }
 
 #[test]
@@ -797,7 +797,7 @@ fn project_change_mid_play_drops_everything_of_the_old_project() {
     w.core.new_project(); // … then the project changes
     w.cmds();
     assert_eq!(w.core.gen(), gen + 1);
-    assert_eq!(w.core.mode(), Mode::Stand);
+    assert_eq!(w.core.mode(), Mode::Stopped);
     assert!(w.core.held().is_none());
     w.ever_shown = false;
     w.step(DT); // attaches the old one: is rejected (assertion in the driver)
@@ -811,7 +811,7 @@ fn audio_failure_lets_picture_run_on_system_clock() {
     w.aud.cut_at = Some(1.0); // sound aborts after 1 s
     w.play();
     w.run(3.0, DT);
-    assert_eq!(w.core.mode(), Mode::Spielen);
+    assert_eq!(w.core.mode(), Mode::Playing);
     let p = w.core.pos().as_secs_f64();
     assert!((p - 3.0).abs() < 0.15, "clock {p}");
     assert!(w.gap(1, 0.5, 3.0) <= 2.0 / 30.0 + 0.01);
@@ -842,7 +842,7 @@ fn shuttle_runs_on_stills_at_rate_and_stops_at_zero_backwards() {
     w.core.shuttle(-2.0, w.playhead, w.now());
     w.cmds();
     w.run(2.5, DT);
-    assert_eq!(w.core.mode(), Mode::Stand);
+    assert_eq!(w.core.mode(), Mode::Stopped);
     assert_eq!(w.core.pos(), Time::ZERO);
 }
 
@@ -955,10 +955,10 @@ fn open_failure_retries_after_a_while() {
     w.play();
     w.run(2.5, DT);
     assert!((2..=4).contains(&w.opens), "{} attempts", w.opens);
-    assert_eq!(w.core.mode(), Mode::Spielen);
+    assert_eq!(w.core.mode(), Mode::Playing);
 }
 
-/// Stand (scrubbing), changed deliberately with "newest wins": the core still requests every new
+/// Stopped (scrubbing), changed deliberately with "newest wins": the core still requests every new
 /// position (the dispatcher lets the running decode finish and keeps only the newest waiting), and an
 /// overtaken frame is shown as neighbour instead of being thrown away. The request stays open until
 /// its exact frame comes: the wait line does not flicker, a neighbour never covers the exact frame.
@@ -1113,18 +1113,18 @@ fn play_during_buffering_seek_and_stop_from_every_state() {
     w.play();
     w.core.stop();
     w.cmds();
-    assert_eq!(w.core.mode(), Mode::Stand);
+    assert_eq!(w.core.mode(), Mode::Stopped);
     // pause → stop
     w.play();
     w.run(1.0, DT);
     w.pause();
     w.core.stop();
     w.cmds();
-    assert_eq!(w.core.mode(), Mode::Stand);
+    assert_eq!(w.core.mode(), Mode::Stopped);
     assert!(w.core.streams().is_empty());
     // jump when stopped moves only the place
     w.core.seek(Time::from_secs_f64(3.0), w.now());
-    assert_eq!(w.core.mode(), Mode::Stand);
+    assert_eq!(w.core.mode(), Mode::Stopped);
     assert_eq!(w.core.pos(), Time::from_secs_f64(3.0));
     // jump in the pause ends it
     w.playhead = w.core.pos();
@@ -1132,7 +1132,7 @@ fn play_during_buffering_seek_and_stop_from_every_state() {
     w.run(0.5, DT);
     w.pause();
     w.core.seek(Time::from_secs_f64(8.0), w.now());
-    assert_eq!(w.core.mode(), Mode::Stand);
+    assert_eq!(w.core.mode(), Mode::Stopped);
     // renew sound at once (solo, device) only during playback
     let s = w.aud.starts;
     w.core.restart_audio(w.now());
@@ -1303,7 +1303,7 @@ fn split_during_play_takes_over_the_running_stream() {
     let gap = w.shown.iter().filter(|s| s.0 >= t - 0.1).map(|s| s.0).collect::<Vec<_>>().windows(2).map(|x| x[1] - x[0]).fold(0.0, f64::max);
     assert!(gap <= 2.0 / 30.0 + 0.01, "gap {gap} s after splitting");
 }
-/// Source switch proxy parts -> original during Play (PL_gross, ~2 s after Play): the parts stream
+/// Source switch proxy parts -> original during Play (PL_large, ~2 s after Play): the parts stream
 /// runs on until the parts end, the original needs far longer to start (here 1.5 s) than the parts
 /// stream's lead. Before, the replacement opened at clock + old lead, was taken over after
 /// REPLACE_AFTER 1.4 s behind the sound, and the quality dropped. Now it opens where it is needed.
@@ -1330,7 +1330,7 @@ fn source_switch_opens_the_replacement_where_it_is_needed() {
     assert!(w.gap(1, t, w.now()) <= 2.0 / 30.0 + 0.01, "gap {} s", w.gap(1, t, w.now()));
 }
 /// A stream opened ahead (source switch) measures its real startup, not the wait for its turn: the next
-/// replacement (quality level) opens at clock + this lead. With the wait (2.9 s in PL_gross) the slow
+/// replacement (quality level) opens at clock + this lead. With the wait (2.9 s in PL_large) the slow
 /// original ran on until then and fell 2.6 s behind.
 #[test]
 fn stream_opened_ahead_measures_its_real_startup() {

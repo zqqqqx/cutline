@@ -6,32 +6,32 @@ use cl_core::AudioFx;
 /// Voice filters: (id, name, FFmpeg chain).
 pub static VOICES: &[(&str, &str, &str)] = &[
     ("chipmunk", "Chipmunk", "rubberband=pitch=1.7:formant=preserved"),
-    ("high", "Hoch", "rubberband=pitch=1.3"),
-    ("deep", "Tief", "rubberband=pitch=0.75"),
+    ("high", "High", "rubberband=pitch=1.3"),
+    ("deep", "Deep", "rubberband=pitch=0.75"),
     ("monster", "Monster", "rubberband=pitch=0.6,aecho=0.8:0.6:40:0.4"),
-    ("robot", "Roboter", "afftfilt=real='hypot(re,im)*sin(0)':imag='hypot(re,im)*cos(0)':win_size=512:overlap=0.75,volume=2"),
+    ("robot", "Robot", "afftfilt=real='hypot(re,im)*sin(0)':imag='hypot(re,im)*cos(0)':win_size=512:overlap=0.75,volume=2"),
     ("alien", "Alien", "rubberband=pitch=1.25,vibrato=f=7:d=0.6"),
     ("echo", "Echo", "aecho=0.8:0.7:280:0.45"),
-    ("hall", "Halle", "aecho=0.8:0.85:60|120|190|270:0.45|0.35|0.25|0.15"),
+    ("hall", "Hall", "aecho=0.8:0.85:60|120|190|270:0.45|0.35|0.25|0.15"),
     ("radio", "Radio", "highpass=f=450,lowpass=f=3200,acrusher=bits=10:mix=0.25,volume=1.6"),
-    ("phone", "Telefon", "highpass=f=320,lowpass=f=3400,volume=1.8"),
-    ("megaphone", "Megafon", "highpass=f=700,lowpass=f=3000,acrusher=bits=6:mix=0.35,volume=2"),
-    ("vibrato", "Zittern", "vibrato=f=6:d=0.5"),
-    ("underwater", "Unter Wasser", "lowpass=f=700,aecho=0.7:0.6:30:0.5,vibrato=f=1.5:d=0.3"),
+    ("phone", "Phone", "highpass=f=320,lowpass=f=3400,volume=1.8"),
+    ("megaphone", "Megaphone", "highpass=f=700,lowpass=f=3000,acrusher=bits=6:mix=0.35,volume=2"),
+    ("vibrato", "Tremble", "vibrato=f=6:d=0.5"),
+    ("underwater", "Underwater", "lowpass=f=700,aecho=0.7:0.6:30:0.5,vibrato=f=1.5:d=0.3"),
 ];
 
 /// Audio filters: (id, name, FFmpeg chain).
 pub static FILTERS: &[(&str, &str, &str)] = &[
     ("podcast", "Podcast", "highpass=f=80,acompressor=threshold=0.1:ratio=3:attack=10:release=150:makeup=2,equalizer=f=3000:t=q:w=1.4:g=3"),
-    ("warm", "Wärmer", "bass=g=4:f=150,treble=g=-3:f=6000"),
-    ("clear", "Klarer", "highpass=f=100,equalizer=f=3500:t=q:w=1.2:g=4,treble=g=2:f=8000"),
-    ("bassboost", "Bass-Boost", "bass=g=8:f=90"),
-    ("lofi", "Lo-Fi", "lowpass=f=3500,acrusher=bits=8:mix=0.3"),
+    ("warm", "Warmer", "bass=g=4:f=150,treble=g=-3:f=6000"),
+    ("clear", "Clearer", "highpass=f=100,equalizer=f=3500:t=q:w=1.2:g=4,treble=g=2:f=8000"),
+    ("bassboost", "Bass boost", "bass=g=8:f=90"),
+    ("lofi", "Lo-fi", "lowpass=f=3500,acrusher=bits=8:mix=0.3"),
     ("laptop", "Laptop", "highpass=f=400,lowpass=f=6000"),
-    ("stadium", "Stadion", "aecho=0.8:0.8:120|240:0.3|0.2"),
-    ("nextroom", "Nebenraum", "lowpass=f=500,volume=1.4"),
+    ("stadium", "Stadium", "aecho=0.8:0.8:120|240:0.3|0.2"),
+    ("nextroom", "Next room", "lowpass=f=500,volume=1.4"),
     ("vintage", "Vintage", "highpass=f=200,lowpass=f=5000,acrusher=bits=12:mix=0.15"),
-    ("wide", "Breiter", "extrastereo=m=2"),
+    ("wide", "Wider", "extrastereo=m=2"),
 ];
 
 /// Chain for audio editing (empty if nothing is set).

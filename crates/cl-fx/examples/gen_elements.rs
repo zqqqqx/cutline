@@ -1,11 +1,11 @@
-//! Generates the package `plugins/cutline-elemente` (own animated elements, CC0-1.0).
+//! Generates the package `plugins/cutline-elements` (own animated elements, CC0-1.0).
 //!
 //! Every element is a function "time → SVG"; the app's SVG renderer renders the frames
 //! (resvg with the font Anton), FFmpeg builds an APNG from them (extension `.png`). Endless loops
 //! are stored with `-plays 0`, one-off animations with `-plays 1` – that is how the app tells
 //! whether to repeat or to stop on the last frame. Deterministic (no randomness).
 //!
-//! Usage: `cargo run --release -p cl-fx --example gen_elemente [-- <id-part>]`
+//! Usage: `cargo run --release -p cl-fx --example gen_elements [-- <id-part>]`
 
 use std::fmt::Write as _;
 use std::io::Write as _;
@@ -193,7 +193,7 @@ fn heart(cx: f32, cy: f32, s: f32, rot: f32, fill: &str, opacity: f32) -> String
 
 // ------------------------------------------------------------------ Calls to action
 
-/// Button springs in, mouse pointer clicks (ripple), then „abonniert“
+/// Button springs in, mouse pointer clicks (ripple), then "subscribed"
 fn sub_button(t: f32, p: Pal, label: &str, done: &str) -> String {
     let (cx, cy) = (150.0, 50.0);
     let pop = back(seg(t, 0.0, 0.45));
@@ -665,61 +665,61 @@ fn frame_full(t: f32, p: Pal) -> String {
 
 fn elements() -> Vec<El> {
     let pal = |main, on| Pal { main, on };
-    let red = ("rot", "rot", "red", pal(RED, WHITE));
-    let yellow = ("gelb", "gelb", "yellow", pal(YELLOW, INK));
-    let white = ("weiss", "weiß", "white", pal(WHITE, INK));
-    let blue = ("blau", "blau", "blue", pal(BLUE, WHITE));
-    let pink = ("rosa", "rosa", "pink", pal(PINK, WHITE));
+    let red = ("red", "rot", "red", pal(RED, WHITE));
+    let yellow = ("yellow", "gelb", "yellow", pal(YELLOW, INK));
+    let white = ("white", "weiß", "white", pal(WHITE, INK));
+    let blue = ("blue", "blau", "blue", pal(BLUE, WHITE));
+    let pink = ("pink", "rosa", "pink", pal(PINK, WHITE));
     let one = |p: Pal| vec![("", "", "", p)];
     let sq = |id, de, en, cat, secs, looping, variants, draw| El { id, de, en, cat, w: 360, h: 360, secs, looping, variants, draw };
     vec![
         // calls to action
-        El { id: "abonnieren", de: "Abonnieren", en: "Subscribe, German", cat: "Aufrufe", w: 480, h: 160, secs: 1.7, looping: false,
+        El { id: "subscribe-german", de: "Abonnieren", en: "Subscribe, German", cat: "Calls to action", w: 480, h: 160, secs: 1.7, looping: false,
             variants: vec![red, white], draw: |t, p| sub_button(t, p, "ABONNIEREN", "ABONNIERT") },
-        El { id: "subscribe", de: "Subscribe", en: "Subscribe", cat: "Aufrufe", w: 480, h: 160, secs: 1.7, looping: false,
+        El { id: "subscribe", de: "Subscribe", en: "Subscribe", cat: "Calls to action", w: 480, h: 160, secs: 1.7, looping: false,
             variants: vec![red, white], draw: |t, p| sub_button(t, p, "SUBSCRIBE", "SUBSCRIBED") },
-        sq("glocke", "Glocke", "Bell", "Aufrufe", 1.4, true, vec![white, yellow], bell),
-        sq("daumen-hoch", "Daumen hoch", "Thumbs up", "Aufrufe", 1.0, false, vec![blue, red], thumbs_up),
-        sq("herz-puls", "Herz pulsiert", "Beating heart", "Aufrufe", 1.0, true, vec![red, pink], heart_beat),
-        sq("teilen", "Teilen", "Share", "Aufrufe", 1.0, false, vec![white, yellow], share),
-        El { id: "link-unten", de: "Link in der Beschreibung", en: "Link in description, German", cat: "Aufrufe", w: 400, h: 200, secs: 1.0, looping: true,
+        sq("bell", "Glocke", "Bell", "Calls to action", 1.4, true, vec![white, yellow], bell),
+        sq("thumbs-up", "Daumen hoch", "Thumbs up", "Calls to action", 1.0, false, vec![blue, red], thumbs_up),
+        sq("beating-heart", "Herz pulsiert", "Beating heart", "Calls to action", 1.0, true, vec![red, pink], heart_beat),
+        sq("share", "Teilen", "Share", "Calls to action", 1.0, false, vec![white, yellow], share),
+        El { id: "link-below-german", de: "Link in der Beschreibung", en: "Link in description, German", cat: "Calls to action", w: 400, h: 200, secs: 1.0, looping: true,
             variants: one(yellow.3), draw: |t, p| link_below(t, p, "LINK IN DER", "BESCHREIBUNG") },
-        El { id: "link-below", de: "Link in description", en: "Link in description", cat: "Aufrufe", w: 400, h: 200, secs: 1.0, looping: true,
+        El { id: "link-below", de: "Link in description", en: "Link in description", cat: "Calls to action", w: 400, h: 200, secs: 1.0, looping: true,
             variants: one(yellow.3), draw: |t, p| link_below(t, p, "LINK IN THE", "DESCRIPTION") },
-        sq("neu", "Neu", "New, German", "Aufrufe", 1.0, false, vec![yellow, red], |t, p| badge(t, p, "NEU")),
-        sq("new", "New", "New", "Aufrufe", 1.0, false, vec![yellow, red], |t, p| badge(t, p, "NEW")),
+        sq("new-german", "Neu", "New, German", "Calls to action", 1.0, false, vec![yellow, red], |t, p| badge(t, p, "NEU")),
+        sq("new", "New", "New", "Calls to action", 1.0, false, vec![yellow, red], |t, p| badge(t, p, "NEW")),
         // pointing
-        sq("pfeil-gerade", "Pfeil zeichnet sich", "Drawn arrow", "Zeigen", 0.9, false, vec![red, yellow, white], arrow_straight),
-        sq("pfeil-geschwungen", "Pfeil geschwungen", "Curved arrow", "Zeigen", 0.9, false, vec![red, yellow, white], arrow_curved),
-        sq("kreis-markierung", "Einkreisen", "Circle it", "Zeigen", 0.8, false, vec![red, yellow], circle_mark),
-        El { id: "unterstreichen", de: "Unterstreichen", en: "Underline", cat: "Zeigen", w: 480, h: 160, secs: 0.8, looping: false,
+        sq("drawn-arrow", "Pfeil zeichnet sich", "Drawn arrow", "Pointers", 0.9, false, vec![red, yellow, white], arrow_straight),
+        sq("curved-arrow", "Pfeil geschwungen", "Curved arrow", "Pointers", 0.9, false, vec![red, yellow, white], arrow_curved),
+        sq("circle-it", "Einkreisen", "Circle it", "Pointers", 0.8, false, vec![red, yellow], circle_mark),
+        El { id: "underline", de: "Unterstreichen", en: "Underline", cat: "Pointers", w: 480, h: 160, secs: 0.8, looping: false,
             variants: vec![red, yellow], draw: underline },
-        sq("ausrufezeichen", "Ausrufezeichen", "Exclamation mark", "Zeigen", 1.0, false, vec![red, yellow], |t, p| pop_glyph(t, p, "!")),
-        sq("fragezeichen", "Fragezeichen", "Question mark", "Zeigen", 1.0, false, vec![red, yellow], |t, p| pop_glyph(t, p, "?")),
-        sq("fokus", "Fokus-Ecken", "Focus corners", "Zeigen", 0.8, false, vec![white, yellow], focus_corners),
-        sq("zielkreuz", "Zielkreuz", "Crosshair", "Zeigen", 0.9, false, vec![red, white], target),
+        sq("exclamation-mark", "Ausrufezeichen", "Exclamation mark", "Pointers", 1.0, false, vec![red, yellow], |t, p| pop_glyph(t, p, "!")),
+        sq("question-mark", "Fragezeichen", "Question mark", "Pointers", 1.0, false, vec![red, yellow], |t, p| pop_glyph(t, p, "?")),
+        sq("focus-corners", "Fokus-Ecken", "Focus corners", "Pointers", 0.8, false, vec![white, yellow], focus_corners),
+        sq("crosshair", "Zielkreuz", "Crosshair", "Pointers", 0.9, false, vec![red, white], target),
         // time
-        sq("countdown-3", "Countdown 3-2-1", "Countdown 3-2-1", "Zeit", 3.0, false, vec![red], |t, p| countdown(t, p, 3)),
-        sq("countdown-5", "Countdown 5-4-3-2-1", "Countdown 5-4-3-2-1", "Zeit", 5.0, false, vec![red], |t, p| countdown(t, p, 5)),
-        El { id: "fortschritt-5", de: "Fortschritt 5 s", en: "Progress 5 s", cat: "Zeit", w: 640, h: 80, secs: 5.0, looping: false,
+        sq("countdown-3", "Countdown 3-2-1", "Countdown 3-2-1", "Timing", 3.0, false, vec![red], |t, p| countdown(t, p, 3)),
+        sq("countdown-5", "Countdown 5-4-3-2-1", "Countdown 5-4-3-2-1", "Timing", 5.0, false, vec![red], |t, p| countdown(t, p, 5)),
+        El { id: "progress-5s", de: "Fortschritt 5 s", en: "Progress 5 s", cat: "Timing", w: 640, h: 80, secs: 5.0, looping: false,
             variants: vec![red, white], draw: |t, p| progress(t, p, 5.0) },
-        El { id: "fortschritt-10", de: "Fortschritt 10 s", en: "Progress 10 s", cat: "Zeit", w: 640, h: 80, secs: 10.0, looping: false,
+        El { id: "progress-10s", de: "Fortschritt 10 s", en: "Progress 10 s", cat: "Timing", w: 640, h: 80, secs: 10.0, looping: false,
             variants: vec![red, white], draw: |t, p| progress(t, p, 10.0) },
-        El { id: "rec", de: "REC", en: "REC", cat: "Zeit", w: 400, h: 200, secs: 1.0, looping: true, variants: one(red.3), draw: rec },
-        sq("laden", "Lade-Kreis", "Loading circle", "Zeit", 1.0, true, vec![white, blue], spinner),
+        El { id: "rec", de: "REC", en: "REC", cat: "Timing", w: 400, h: 200, secs: 1.0, looping: true, variants: one(red.3), draw: rec },
+        sq("loading-circle", "Lade-Kreis", "Loading circle", "Timing", 1.0, true, vec![white, blue], spinner),
         // particles
-        sq("konfetti-regen", "Konfetti-Regen", "Confetti rain", "Partikel", 2.0, true, one(red.3), confetti_rain),
-        sq("konfetti-knall", "Konfetti-Knall", "Confetti pop", "Partikel", 1.6, false, one(red.3), confetti_pop),
-        sq("funken", "Funken", "Sparks", "Partikel", 0.9, false, vec![yellow, blue], sparks),
-        sq("glitzer", "Sterne-Glitzer", "Twinkling stars", "Partikel", 1.5, true, vec![yellow, white], glitter),
-        sq("herzen", "Herzen steigen auf", "Rising hearts", "Partikel", 2.0, true, one(red.3), hearts_rise),
+        sq("confetti-rain", "Konfetti-Regen", "Confetti rain", "Particles", 2.0, true, one(red.3), confetti_rain),
+        sq("confetti-pop", "Konfetti-Knall", "Confetti pop", "Particles", 1.6, false, one(red.3), confetti_pop),
+        sq("sparks", "Funken", "Sparks", "Particles", 0.9, false, vec![yellow, blue], sparks),
+        sq("twinkling-stars", "Sterne-Glitzer", "Twinkling stars", "Particles", 1.5, true, vec![yellow, white], glitter),
+        sq("rising-hearts", "Herzen steigen auf", "Rising hearts", "Particles", 2.0, true, one(red.3), hearts_rise),
         // speech bubbles, frames
-        sq("sprechblase", "Sprechblase", "Speech bubble", "Sprechblasen", 0.8, false, vec![white, yellow], bubble),
-        sq("denkblase", "Denkblase", "Thought bubble", "Sprechblasen", 0.9, false, vec![white], thought),
-        El { id: "bauchbinde", de: "Bauchbinde", en: "Lower third", cat: "Rahmen", w: 800, h: 200, secs: 1.0, looping: false,
+        sq("speech-bubble", "Sprechblase", "Speech bubble", "Speech bubbles", 0.8, false, vec![white, yellow], bubble),
+        sq("thought-bubble", "Denkblase", "Thought bubble", "Speech bubbles", 0.9, false, vec![white], thought),
+        El { id: "lower-third", de: "Bauchbinde", en: "Lower third", cat: "Frame", w: 800, h: 200, secs: 1.0, looping: false,
             variants: vec![red, blue, yellow], draw: lower_third },
-        sq("ecken", "Bildecken", "Frame corners", "Rahmen", 0.9, false, vec![white, yellow], frame_corners),
-        sq("rahmen", "Bildrahmen", "Picture frame", "Rahmen", 0.9, false, vec![white, red], frame_full),
+        sq("frame-corners", "Bildecken", "Frame corners", "Frame", 0.9, false, vec![white, yellow], frame_corners),
+        sq("picture-frame", "Bildrahmen", "Picture frame", "Frame", 0.9, false, vec![white, red], frame_full),
     ]
 }
 
@@ -832,7 +832,7 @@ fn encode(e: &El, p: Pal, out: &Path) {
         .arg(out)
         .stdin(Stdio::piped())
         .spawn()
-        .expect("FFmpeg starten");
+        .expect("start FFmpeg");
     let mut stdin = child.stdin.take().unwrap();
     for f in &frames {
         let idx: Vec<u8> = f
@@ -852,21 +852,21 @@ fn toml_str(s: &str) -> String {
 
 fn main() {
     let only = std::env::args().nth(1);
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/cutline-elemente");
-    let files = root.join("elemente");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/cutline-elements");
+    let files = root.join("elements");
     std::fs::create_dir_all(&files).unwrap();
     let mut toml = String::from(
-        "# Generated by crates/cl-fx/examples/gen_elemente.rs – do not edit by hand.\n\
+        "# Generated by crates/cl-fx/examples/gen_elements.rs – do not edit by hand.\n\
          # Looping or one-shot is stored in the file itself (APNG repetitions); the tag\n\
          # \"schleife\" (loop) is only for search.\n\
          [plugin]\n\
-         id = \"cutline.elemente\"\n\
+         id = \"cutline.elements\"\n\
          version = \"1.0.0\"\n\
          api = 1\n\
          kind = \"asset-pack\"\n\
          name = { de = \"Bewegte Elemente\", en = \"Animated elements\" }\n\
          description = { de = \"Eigene bewegte Elemente zum Drüberlegen\", en = \"Original animated overlay elements\" }\n\
-         authors = [\"Cutline-Projekt\"]\n\
+         authors = [\"Cutline project\"]\n\
          license = \"CC0-1.0\"\n\
          source = \"https://github.com/zqqqqx/cutline\"\n",
     );
@@ -874,7 +874,7 @@ fn main() {
         for (vid, vde, ven, p) in &e.variants {
             let id = if vid.is_empty() { e.id.to_string() } else { format!("{}-{vid}", e.id) };
             let name = |base: &str, v: &str| if v.is_empty() { base.to_string() } else { format!("{base} ({v})") };
-            let file = format!("elemente/{id}.png");
+            let file = format!("elements/{id}.png");
             if only.as_deref().is_none_or(|o| id.contains(o)) {
                 encode(&e, *p, &root.join(&file));
                 println!("{id}: {} KB", std::fs::metadata(root.join(&file)).unwrap().len() / 1024);

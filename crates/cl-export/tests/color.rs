@@ -70,7 +70,7 @@ fn sources(dir: &Path) -> [MediaRef; 4] {
 /// video, 4–5 s full-range video: with two inputs per section the first section has no tagged
 /// input, the second only tagged ones.
 fn project(m: &[MediaRef; 4]) -> Project {
-    let mut p = Project::new("Farbe");
+    let mut p = Project::new("Color");
     p.settings.width = W;
     p.settings.height = H;
     p.settings.fps = Rational::new(30, 1);
@@ -218,7 +218,7 @@ fn sections_and_single_pass_tag_every_frame_bt709() {
     assert_none(fails);
 }
 
-/// Range export (what „In Teile aufteilen“ runs per part) and the target size (two passes).
+/// Range export (what „Split into parts“ runs per part) and the target size (two passes).
 #[test]
 fn range_and_target_size_tag_bt709() {
     let m = sources(&media_dir());

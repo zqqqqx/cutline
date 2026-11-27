@@ -35,17 +35,17 @@ fn text_mat(id: &str, t: &str) -> Value {
 
 /// Draft with media (present, missing, unreadable), texts and effects
 fn draft(dir: &Path, v: &Path) -> Value {
-    let junk = dir.join("kaputt.mp4");
-    std::fs::write(&junk, b"kein video").unwrap();
+    let junk = dir.join("broken.mp4");
+    std::fs::write(&junk, b"no video").unwrap();
     let mut vids = vec![json!({"id": "V", "path": v.to_string_lossy()}), json!({"id": "J", "path": junk.to_string_lossy()})];
     let mut segs = vec![seg("V", 0, S, 0), seg("J", S, S, 0)];
     for i in 0..20 {
         let id = format!("X{i}");
-        vids.push(json!({"id": id, "path": dir.join(format!("fehlt{i}.mp4")).to_string_lossy()}));
+        vids.push(json!({"id": id, "path": dir.join(format!("missing{i}.mp4")).to_string_lossy()}));
         segs.push(seg(&id, (2 + i) * S, S, 0));
     }
     json!({
-        "materials": {"videos": vids, "texts": [text_mat("T", "Hallo")], "video_effects": [{"id": "E"}]},
+        "materials": {"videos": vids, "texts": [text_mat("T", "Hello")], "video_effects": [{"id": "E"}]},
         "tracks": [
             {"type": "video", "segments": segs},
             {"type": "text", "segments": [seg("T", 0, S, 0)]},
@@ -85,7 +85,7 @@ fn every_step_reports_monotonic_progress_and_errors_are_collected() {
     assert!(f.windows(2).all(|w| w[0] <= w[1] + 1e-6), "{f:?}");
     assert!(f.iter().all(|x| (0.0..=1.0).contains(x)));
     // one broken and 20 missing files hold nothing up
-    assert_eq!(rep.failed, vec![dir.path().join("kaputt.mp4")]);
+    assert_eq!(rep.failed, vec![dir.path().join("broken.mp4")]);
     assert_eq!(rep.missing.len(), 20);
     // missing files: clips stay (placeholder for relinking), the broken one drops out
     assert_eq!((rep.clips, rep.texts), (21, 1));
@@ -132,7 +132,7 @@ fn probe_all_keeps_order_and_limits_workers() {
         }
         now.fetch_sub(1, Ordering::SeqCst);
         if path == Path::new("7") {
-            Err("kaputt".into())
+            Err("broken".into())
         } else {
             Err(path.to_string_lossy().into_owned())
         }
@@ -141,7 +141,7 @@ fn probe_all_keeps_order_and_limits_workers() {
     assert_eq!(peak.load(Ordering::SeqCst), 3, "three workers at once, never more");
     assert_eq!(p.status().done, 40);
     for (i, r) in out.iter().enumerate() {
-        let want = if i == 7 { "kaputt".to_string() } else { i.to_string() };
+        let want = if i == 7 { "broken".to_string() } else { i.to_string() };
         assert_eq!(r.as_ref().unwrap_err(), &want);
     }
     // cancelled: error instead of a half list
@@ -154,7 +154,7 @@ fn probe_all_keeps_order_and_limits_workers() {
 fn nested_drafts_are_resolved_level_by_level() {
     // inside: text 0–4 s; outside: compound clip shows inside 1–3 s at 10 s
     let inner = json!({
-        "materials": {"texts": [text_mat("IT", "innen")]},
+        "materials": {"texts": [text_mat("IT", "inner")]},
         "tracks": [{"type": "text", "segments": [seg("IT", 0, 4 * S, 0)]}]
     });
     // second level: draft in the draft
@@ -166,7 +166,7 @@ fn nested_drafts_are_resolved_level_by_level() {
     fast["speed"] = json!(2.0);
     let d = json!({
         "materials": {
-            "texts": [text_mat("T", "außen")],
+            "texts": [text_mat("T", "outside")],
             "drafts": [{"id": "D1", "type": "combination", "draft": outer_inner}, {"id": "D0", "type": "combination"}]
         },
         "tracks": [
@@ -178,15 +178,15 @@ fn nested_drafts_are_resolved_level_by_level() {
     assert_eq!(rep.nested, 2, "{rep:?}");
     assert_eq!(rep.texts, 2);
     let n = |w: &str| rep.skipped.iter().find(|(k, _)| k == w).map_or(0, |x| x.1);
-    assert_eq!(n("Zusammengesetzte Clips"), 1, "without inner draft");
-    assert_eq!(n("Zusammengesetzte Clips mit Tempo"), 1);
+    assert_eq!(n("Compound clips"), 1, "without inner draft");
+    assert_eq!(n("Compound clips with speed change"), 1);
     let inner: Vec<_> = p
         .timeline
         .tracks
         .iter()
         .filter(|t| t.kind == TrackKind::Text)
         .flat_map(|t| &t.clips)
-        .filter(|c| matches!(&c.content, ClipContent::Text(s) if s.text == "innen"))
+        .filter(|c| matches!(&c.content, ClipContent::Text(s) if s.text == "inner"))
         .collect();
     assert_eq!(inner.len(), 1);
     assert_eq!((inner[0].start, inner[0].duration), (Time(10 * S), Time(2 * S)));

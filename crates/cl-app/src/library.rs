@@ -43,7 +43,7 @@ pub fn link_label(name: &str) -> String {
 
 impl Kind {
     pub const ALL: [(Kind, &'static str); 3] =
-        [(Kind::Media, "Medien"), (Kind::Sticker, "Sticker"), (Kind::Sound, "Sounds")];
+        [(Kind::Media, "Media"), (Kind::Sticker, "Stickers"), (Kind::Sound, "Sounds")];
     pub fn dir(self) -> PathBuf {
         paths::data_dir().join("Library").join(match self {
             Kind::Sticker => "Stickers",
@@ -59,7 +59,7 @@ impl Kind {
         }
     }
     /// Default folder for imports without a folder choice
-    pub const DEFAULT_FOLDER: &'static str = "Eigene";
+    pub const DEFAULT_FOLDER: &'static str = "Mine";
 }
 
 /// One library entry (built in or own file).
@@ -111,26 +111,26 @@ pub struct AreaLayout {
     pub hidden: BTreeSet<String>,
     /// Collection folder → entry keys
     pub virt: std::collections::BTreeMap<String, Vec<String>>,
-    /// Folder → entry keys that come first there: own order („Favoriten“ and
-    /// own folders) or entries pinned to the top (other folders and „Alle“), see [`order_kind`]
+    /// Folder → entry keys that come first there: own order („Favorites“ and
+    /// own folders) or entries pinned to the top (other folders and „All“), see [`order_kind`]
     pub seq: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 /// How a folder determines its order
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Order {
-    /// Own order, all entries movable („Favoriten“, own folders)
+    /// Own order, all entries movable („Favorites“, own folders)
     Own,
-    /// Normal order, pinned entries first (built-in/linked folders, „Alle“)
+    /// Normal order, pinned entries first (built-in/linked folders, „All“)
     Pins,
-    /// Fixed order („Zuletzt“)
+    /// Fixed order („Recent“)
     Fixed,
 }
 
 pub fn order_kind(cat: &str) -> Order {
     match cat {
-        "Favoriten" => Order::Own,
-        "Zuletzt" => Order::Fixed,
+        "Favorites" => Order::Own,
+        "Recent" => Order::Fixed,
         c if c.starts_with("v:") => Order::Own,
         c if c.strip_prefix("p:").is_some_and(|n| !n.starts_with(crate::theme::icon::LINK_SIMPLE)) => Order::Own,
         _ => Order::Pins,
@@ -240,7 +240,7 @@ fn walk(dir: &Path, exts: &[&str], depth: u8, out: &mut Vec<PathBuf>) {
 
 impl Library {
     pub fn load() -> Self {
-        let s: Stored = paths::read_json_or_quarantine(&store());
+        let s: Stored = paths::read_json_converted(&store(), &crate::legacy::library_key);
         Self {
             favorites: s.favorites,
             recent: s.recent,
@@ -266,14 +266,14 @@ impl Library {
         let _ = crate::paths::write_atomic(&p, serde_json::to_string_pretty(&s).unwrap_or_default());
     }
 
-    /// Remember an entry as „zuletzt verwendet“ (at most 40, newest first).
+    /// Remember an entry as "recently used" (at most 40, newest first).
     pub fn mark_used(&mut self, key: &str) {
         self.recent.retain(|k| k != key);
         self.recent.insert(0, key.to_string());
         self.recent.truncate(40);
         self.save();
     }
-    /// Rank in „Zuletzt verwendet“ (0 = most recent), if present.
+    /// Rank in „Recently used“ (0 = most recent), if present.
     pub fn recent_rank(&self, key: &str) -> Option<usize> {
         self.recent.iter().position(|k| k == key)
     }
@@ -289,7 +289,7 @@ impl Library {
     /// Remove from the favorites, including its place in their order (re-added goes to the end).
     fn unfavorite(&mut self, key: &str) -> bool {
         for l in self.areas.values_mut() {
-            if let Some(s) = l.seq.get_mut("Favoriten") {
+            if let Some(s) = l.seq.get_mut("Favorites") {
                 s.retain(|k| k != key);
             }
         }
@@ -483,7 +483,7 @@ impl Library {
         let new = sanitize(new);
         let mut moved = None;
         if new.is_empty() {
-            return Err("Ungültiger Name".into());
+            return Err("Invalid name".into());
         }
         let l = self.areas.entry(area.to_string()).or_default();
         let new_key = match key.split_once(':') {
@@ -493,17 +493,17 @@ impl Library {
             }
             Some(("v", old)) => {
                 if l.virt.contains_key(&new) {
-                    return Err("Ordner gibt es schon".into());
+                    return Err("Folder already exists".into());
                 }
                 let items = l.virt.remove(old).unwrap_or_default();
                 l.virt.insert(new.clone(), items);
                 format!("v:{new}")
             }
             Some(("p", old)) => {
-                let k = phys.ok_or("Kein Dateiordner")?;
+                let k = phys.ok_or("Not a file folder")?;
                 let (a, b) = (k.dir().join(old), k.dir().join(&new));
                 if b.exists() {
-                    return Err("Ordner gibt es schon".into());
+                    return Err("Folder already exists".into());
                 }
                 std::fs::rename(&a, &b).map_err(|e| e.to_string())?;
                 // take along favorites, folders and orders of the files
@@ -516,7 +516,7 @@ impl Library {
                 moved = Some((a, b));
                 format!("p:{new}")
             }
-            _ => return Err("Unbekannte Kategorie".into()),
+            _ => return Err("Unknown category".into()),
         };
         let l = self.areas.entry(area.to_string()).or_default();
         for k in &mut l.order {
@@ -544,15 +544,15 @@ impl Library {
             }
             // linked folder: only remove the link, files stay
             Some(("p", name)) if name.starts_with(crate::theme::icon::LINK_SIMPLE) => {
-                let k = phys.ok_or("Kein Dateiordner")?;
+                let k = phys.ok_or("Not a file folder")?;
                 if let Some(d) = self.linked(k).into_iter().find(|d| {
                     link_label(&d.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()) == name
                 }) {
                     self.unlink_folder(k, &d);
                 }
             }
-            Some(("p", name)) => self.delete_folder(phys.ok_or("Kein Dateiordner")?, name, used)?,
-            _ => return Err("Eingebaute Kategorien lassen sich nur verbergen".into()),
+            Some(("p", name)) => self.delete_folder(phys.ok_or("Not a file folder")?, name, used)?,
+            _ => return Err("Built-in categories can only be hidden".into()),
         }
         let l = self.areas.entry(area.to_string()).or_default();
         l.order.retain(|k| k != key);
@@ -564,7 +564,7 @@ impl Library {
     pub fn create_virtual(&mut self, area: &str, name: &str) -> Result<String, String> {
         let name = sanitize(name);
         if name.is_empty() {
-            return Err("Ungültiger Ordnername".into());
+            return Err("Invalid folder name".into());
         }
         self.areas
             .entry(area.to_string())
@@ -616,16 +616,16 @@ impl Library {
     /// Does an entry (`key`, built-in category or file folder `folder`) belong to the category?
     pub fn in_cat(&self, area: &str, cat: &str, key: &str, folder: &str) -> bool {
         match cat {
-            "Alle" => {
-                // entries from hidden categories do not appear under „Alle“ either
+            "All" => {
+                // entries from hidden categories do not appear under „All“ either
                 let l = self.areas.get(area);
                 !l.is_some_and(|l| {
                     l.hidden.contains(&format!("b:{folder}"))
                         || l.hidden.contains(&format!("p:{folder}"))
                 })
             }
-            "Favoriten" => self.is_favorite(key),
-            "Zuletzt" => self.recent_rank(key).is_some(),
+            "Favorites" => self.is_favorite(key),
+            "Recent" => self.recent_rank(key).is_some(),
             c => match c.split_once(':') {
                 Some(("b", n)) | Some(("p", n)) => n == folder,
                 Some(("v", n)) => self
@@ -665,7 +665,7 @@ impl Library {
     ) -> bool {
         let q = q.trim().to_lowercase();
         // search text searches all folders (hidden folders stay hidden)
-        let cat = if q.is_empty() { cat } else { "Alle" };
+        let cat = if q.is_empty() { cat } else { "All" };
         !self.is_hidden(key)
             && self.in_cat(area, cat, key, folder)
             && (q.is_empty()
@@ -779,7 +779,7 @@ impl Library {
     pub fn create_folder(&mut self, k: Kind, name: &str) -> Result<(), String> {
         let name = sanitize(name);
         if name.is_empty() {
-            return Err("Ungültiger Ordnername".into());
+            return Err("Invalid folder name".into());
         }
         std::fs::create_dir_all(k.dir().join(&name)).map_err(|e| e.to_string())?;
         self.invalidate();
@@ -791,7 +791,7 @@ impl Library {
         let d = k.dir().join(sanitize(name));
         // as with single entries: what the open project uses stays
         if used.iter().any(|u| u.starts_with(&d)) {
-            return Err(format!("„{}“ enthält Dateien, die im offenen Projekt verwendet werden, und bleibt deshalb erhalten", name.trim()));
+            return Err(format!("\"{}\" contains files used by the open project and is kept", name.trim()));
         }
         to_trash(&d)?;
         // the files are gone: their favorites, pins and orders too
@@ -831,7 +831,7 @@ impl Library {
     /// Move an own entry to another folder; returns the new path.
     pub fn move_to(&mut self, item: &Item, k: Kind, folder: &str) -> Result<PathBuf, String> {
         let Some(p) = &item.path else {
-            return Err("Eingebaute Einträge lassen sich nicht verschieben".into());
+            return Err("Built-in entries cannot be moved".into());
         };
         let dir = k.dir().join(sanitize(folder));
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -856,11 +856,11 @@ impl Library {
     /// Rename an own entry (file name, the extension stays); returns the new path.
     pub fn rename(&mut self, item: &Item, new_name: &str) -> Result<PathBuf, String> {
         let Some(p) = &item.path else {
-            return Err("Eingebaute Einträge lassen sich nicht umbenennen".into());
+            return Err("Built-in entries cannot be renamed".into());
         };
         let name = sanitize(new_name);
         if name.is_empty() {
-            return Err("Ungültiger Name".into());
+            return Err("Invalid name".into());
         }
         let ext = p
             .extension()
@@ -928,7 +928,7 @@ pub fn unique(dir: &Path, file: String) -> PathBuf {
 
 /// Move to the Cutline trash (nothing is deleted permanently).
 fn to_trash(p: &Path) -> Result<(), String> {
-    let trash = paths::data_dir().join("Papierkorb").join("Library");
+    let trash = paths::data_dir().join("Trash").join("Library");
     std::fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
     let dest = unique(
         &trash,
@@ -958,10 +958,10 @@ mod tests {
     fn search_spans_all_folders_but_not_hidden_ones() {
         let _home = crate::paths::TestHome::new();
         let mut lib = Library::default();
-        let v = |lib: &Library, q: &str| lib.visible("effect", "b:Intro", q, "fx:shake", "Handkamera", "Bewegung");
+        let v = |lib: &Library, q: &str| lib.visible("effect", "b:Intro", q, "fx:shake", "Handkamera", "Motion");
         assert!(!v(&lib, ""), "without search only the active folder");
         assert!(v(&lib, "hand"), "search across all folders");
-        lib.hide_cat("effect", "b:Bewegung");
+        lib.hide_cat("effect", "b:Motion");
         assert!(!v(&lib, "hand"), "hidden stays hidden");
     }
 
@@ -1021,13 +1021,13 @@ mod tests {
 
     #[test]
     fn order_kinds() {
-        assert_eq!(order_kind("Favoriten"), Order::Own);
+        assert_eq!(order_kind("Favorites"), Order::Own);
         assert_eq!(order_kind("v:Intro"), Order::Own);
-        assert_eq!(order_kind("p:Eigene"), Order::Own);
+        assert_eq!(order_kind("p:Own"), Order::Own);
         assert_eq!(order_kind(&format!("p:{}", link_label("Clips"))), Order::Pins);
-        assert_eq!(order_kind("Alle"), Order::Pins);
-        assert_eq!(order_kind("b:Bewegung"), Order::Pins);
-        assert_eq!(order_kind("Zuletzt"), Order::Fixed);
+        assert_eq!(order_kind("All"), Order::Pins);
+        assert_eq!(order_kind("b:Motion"), Order::Pins);
+        assert_eq!(order_kind("Recent"), Order::Fixed);
     }
 
     #[test]
@@ -1040,44 +1040,44 @@ mod tests {
             lib.toggle_favorite(k);
         }
         let mut v = all.clone();
-        lib.arrange("effect", "Favoriten", "", &mut v, id);
+        lib.arrange("effect", "Favorites", "", &mut v, id);
         assert_eq!(v, all, "without an own order as before");
-        lib.move_entry("effect", "Favoriten", &all, "fx:c", Some("fx:a"));
+        lib.move_entry("effect", "Favorites", &all, "fx:c", Some("fx:a"));
         let mut v = all.clone();
-        lib.arrange("effect", "Favoriten", "", &mut v, id);
+        lib.arrange("effect", "Favorites", "", &mut v, id);
         assert_eq!(v, keys(&["fx:c", "fx:a", "fx:b"]));
         let mut v = all.clone();
-        lib.arrange("effect", "Favoriten", "x", &mut v, id);
+        lib.arrange("effect", "Favorites", "x", &mut v, id);
         assert_eq!(v, all, "search: normal order");
         // a removed and re-added favorite goes to the end
         lib.toggle_favorite("fx:c");
         lib.toggle_favorite("fx:c");
         let mut v = all.clone();
-        lib.arrange("effect", "Favoriten", "", &mut v, id);
+        lib.arrange("effect", "Favorites", "", &mut v, id);
         assert_eq!(v, keys(&["fx:a", "fx:b", "fx:c"]));
         // pins separate per folder
-        lib.toggle_pin("effect", "Alle", "fx:c");
-        lib.toggle_pin("effect", "Alle", "fx:b");
-        lib.toggle_pin("effect", "Favoriten", "fx:a");
-        assert!(lib.is_pinned("effect", "Alle", "fx:c"));
-        assert!(!lib.is_pinned("effect", "b:Bewegung", "fx:c"));
-        assert!(!lib.is_pinned("effect", "Favoriten", "fx:a"), "no pinning in favorites");
+        lib.toggle_pin("effect", "All", "fx:c");
+        lib.toggle_pin("effect", "All", "fx:b");
+        lib.toggle_pin("effect", "Favorites", "fx:a");
+        assert!(lib.is_pinned("effect", "All", "fx:c"));
+        assert!(!lib.is_pinned("effect", "b:Motion", "fx:c"));
+        assert!(!lib.is_pinned("effect", "Favorites", "fx:a"), "no pinning in favorites");
         let mut v = all.clone();
-        lib.arrange("effect", "Alle", "", &mut v, id);
+        lib.arrange("effect", "All", "", &mut v, id);
         assert_eq!(v, keys(&["fx:c", "fx:b", "fx:a"]));
-        lib.move_entry("effect", "Alle", &v, "fx:b", Some("fx:c"));
+        lib.move_entry("effect", "All", &v, "fx:b", Some("fx:c"));
         let mut v = all.clone();
-        lib.arrange("effect", "Alle", "", &mut v, id);
+        lib.arrange("effect", "All", "", &mut v, id);
         assert_eq!(v, keys(&["fx:b", "fx:c", "fx:a"]));
         let mut v = all.clone();
-        lib.arrange("effect", "b:Bewegung", "", &mut v, id);
+        lib.arrange("effect", "b:Motion", "", &mut v, id);
         assert_eq!(v, all);
-        lib.toggle_pin("effect", "Alle", "fx:b");
-        assert!(!lib.is_pinned("effect", "Alle", "fx:b"));
+        lib.toggle_pin("effect", "All", "fx:b");
+        assert!(!lib.is_pinned("effect", "All", "fx:b"));
         // hidden: the pin stays (comes back with „wieder anzeigen“), the favorite goes
         lib.hide("fx:c");
-        assert!(lib.is_pinned("effect", "Alle", "fx:c"));
-        assert!(!lib.order("effect", "Favoriten").contains(&"fx:c".to_string()));
+        assert!(lib.is_pinned("effect", "All", "fx:c"));
+        assert!(!lib.order("effect", "Favorites").contains(&"fx:c".to_string()));
     }
 
     #[test]
@@ -1087,9 +1087,9 @@ mod tests {
         assert!(s.favorites.contains("fx:a"));
         assert!(s.areas["effect"].seq.is_empty());
         let mut s = s;
-        s.areas.get_mut("effect").unwrap().seq.insert("Alle".into(), keys(&["fx:b"]));
+        s.areas.get_mut("effect").unwrap().seq.insert("All".into(), keys(&["fx:b"]));
         let back: Stored = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
-        assert_eq!(back.areas["effect"].seq["Alle"], keys(&["fx:b"]));
+        assert_eq!(back.areas["effect"].seq["All"], keys(&["fx:b"]));
     }
 
     #[test]
@@ -1119,16 +1119,16 @@ mod tests {
         let it = lib.own_items(Kind::Sound);
         let k: Vec<String> = it.iter().map(|i| i.key.clone()).collect();
         lib.move_entry("sfx", "p:Gaming", &k[..2], &k[1], Some(&k[0]));
-        lib.toggle_pin("sfx", "Alle", &k[2]);
+        lib.toggle_pin("sfx", "All", &k[2]);
         lib.rename_cat("sfx", "p:Gaming", "Games", Some(Kind::Sound)).unwrap();
         let renamed: Vec<String> = lib.order("sfx", "p:Games").to_vec();
         assert_eq!(renamed.len(), 2);
         assert!(renamed[0].ends_with("b.wav") && renamed[0].contains("Games"));
-        assert!(lib.is_pinned("sfx", "Alle", &k[2]), "Gaming2 stays untouched");
-        lib.toggle_pin("sfx", "Alle", &renamed[0]);
+        assert!(lib.is_pinned("sfx", "All", &k[2]), "Gaming2 stays untouched");
+        lib.toggle_pin("sfx", "All", &renamed[0]);
         lib.delete_cat("sfx", "p:Games", Some(Kind::Sound), &[]).unwrap();
         assert!(lib.order("sfx", "p:Games").is_empty());
-        assert_eq!(lib.order("sfx", "Alle"), std::slice::from_ref(&k[2]), "pin of the deleted file gone");
+        assert_eq!(lib.order("sfx", "All"), std::slice::from_ref(&k[2]), "pin of the deleted file gone");
     }
 
     #[test]
@@ -1174,7 +1174,7 @@ mod tests {
         );
         let it = lib.own_items(Kind::Sound).remove(0);
         lib.toggle_favorite(&it.key);
-        assert!(lib.visible("sfx", "Favoriten", "", &it.key, &it.name, &it.folder));
+        assert!(lib.visible("sfx", "Favorites", "", &it.key, &it.name, &it.folder));
         // the open project follows renames and moves (instead of losing its files)
         let medium = |p: &Path| -> cl_core::MediaRef {
             serde_json::from_value(serde_json::json!({
@@ -1208,7 +1208,7 @@ mod tests {
         assert_eq!(renamed.name, "Explosion");
         assert!(lib.visible(
             "sfx",
-            "Alle",
+            "All",
             "explo",
             &renamed.key,
             &renamed.name,
@@ -1218,52 +1218,52 @@ mod tests {
         assert!(lib.own_items(Kind::Sound).is_empty());
         assert!(home
             .path()
-            .join("Papierkorb/Library/Explosion.wav")
+            .join("Trash/Library/Explosion.wav")
             .is_file());
         // built-in entries are only hidden
         let b = Item {
             key: "builtin:sfx:pop".into(),
             name: "Pop".into(),
-            folder: "Oberfläche".into(),
+            folder: "Interface".into(),
             builtin: Some("pop"),
             path: None,
             linked: false,
-            tags: vec!["Knall".into()],
+            tags: vec!["Bang".into()],
         };
         lib.remove(&b).unwrap();
-        assert!(!lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder));
+        assert!(!lib.visible("sfx", "All", "", &b.key, &b.name, &b.folder));
         lib.unhide_all(|k| k.starts_with("builtin:sfx:"));
         // search via tags
-        assert!(lib.visible_tagged("sfx", "Alle", "knall", &b.key, &b.name, &b.folder, &b.tags));
-        assert!(!lib.visible("sfx", "Alle", "knall", &b.key, &b.name, &b.folder));
-        assert!(lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder));
+        assert!(lib.visible_tagged("sfx", "All", "bang", &b.key, &b.name, &b.folder, &b.tags));
+        assert!(!lib.visible("sfx", "All", "bang", &b.key, &b.name, &b.folder));
+        assert!(lib.visible("sfx", "All", "", &b.key, &b.name, &b.folder));
         // Categories: rename (display name), move, hide, collection folder
-        let cats = lib.cats("sfx", &["Natur", "Oberfläche"], Some(Kind::Sound));
+        let cats = lib.cats("sfx", &["Nature", "Interface"], Some(Kind::Sound));
         assert_eq!(
             cats.iter().map(|c| c.key.as_str()).collect::<Vec<_>>(),
-            ["b:Natur", "b:Oberfläche", "p:Gaming", "p:Memes"]
+            ["b:Nature", "b:Interface", "p:Gaming", "p:Memes"]
         );
-        lib.rename_cat("sfx", "b:Natur", "Draußen", Some(Kind::Sound))
+        lib.rename_cat("sfx", "b:Nature", "Outside", Some(Kind::Sound))
             .unwrap();
         lib.move_cat(
             "sfx",
             "p:Memes",
             -3,
-            &["Natur", "Oberfläche"],
+            &["Nature", "Interface"],
             Some(Kind::Sound),
         );
-        lib.hide_cat("sfx", "b:Oberfläche");
-        let cats = lib.cats("sfx", &["Natur", "Oberfläche"], Some(Kind::Sound));
+        lib.hide_cat("sfx", "b:Interface");
+        let cats = lib.cats("sfx", &["Nature", "Interface"], Some(Kind::Sound));
         assert_eq!(cats[0].key, "p:Memes");
-        assert!(cats.iter().any(|c| c.label == "Draußen"));
-        assert!(!cats.iter().any(|c| c.key == "b:Oberfläche"));
+        assert!(cats.iter().any(|c| c.label == "Outside"));
+        assert!(!cats.iter().any(|c| c.key == "b:Interface"));
         assert!(
-            !lib.visible("sfx", "Alle", "", &b.key, &b.name, &b.folder),
+            !lib.visible("sfx", "All", "", &b.key, &b.name, &b.folder),
             "entry from a hidden category"
         );
         let v = lib.create_virtual("sfx", "Intro").unwrap();
         lib.add_to_virtual("sfx", "Intro", "builtin:sfx:pop");
-        assert!(lib.in_cat("sfx", &v, "builtin:sfx:pop", "Oberfläche"));
+        assert!(lib.in_cat("sfx", &v, "builtin:sfx:pop", "Interface"));
         lib.rename_cat("sfx", &v, "Intros", None).unwrap();
         assert!(lib.in_cat("sfx", "v:Intros", "builtin:sfx:pop", ""));
         std::fs::write(Kind::Sound.dir().join("Gaming/y.wav"), b"y").unwrap();

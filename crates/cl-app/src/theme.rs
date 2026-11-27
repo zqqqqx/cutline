@@ -38,10 +38,10 @@ const fn rgb(h: u32) -> Color32 {
 }
 
 pub const PALETTES: [Palette; 4] = [
-    Palette { name: "Dunkel", id: "dark", dark: true, bg_app: rgb(0x0C0C0E), bg_card: rgb(0x17171A), bg_raised: rgb(0x222226), bg_hover: rgb(0x2B2B30), bg_input: rgb(0x101012), border: rgb(0x29292E), text: rgb(0xECECEE), text_dim: rgb(0x8C8C93), text_faint: rgb(0x58585F), accent: rgb(0xF4F4F6), accent_ink: rgb(0x101012), warn_text: WARN },
-    Palette { name: "Dunkelgrau", id: "darkgray", dark: true, bg_app: rgb(0x1A1A1C), bg_card: rgb(0x252528), bg_raised: rgb(0x303034), bg_hover: rgb(0x3A3A3F), bg_input: rgb(0x1E1E21), border: rgb(0x37373C), text: rgb(0xEDEDEF), text_dim: rgb(0x9C9CA3), text_faint: rgb(0x68686F), accent: rgb(0xF4F4F6), accent_ink: rgb(0x141416), warn_text: WARN },
-    Palette { name: "Grau", id: "gray", dark: true, bg_app: rgb(0x38383C), bg_card: rgb(0x444449), bg_raised: rgb(0x505055), bg_hover: rgb(0x5C5C62), bg_input: rgb(0x313135), border: rgb(0x58585E), text: rgb(0xF4F4F6), text_dim: rgb(0xC8C8CE), text_faint: rgb(0x8A8A91), accent: rgb(0xFFFFFF), accent_ink: rgb(0x202024), warn_text: rgb(0xF5BA88) },
-    Palette { name: "Hell", id: "light", dark: false, bg_app: rgb(0xE9E9EC), bg_card: rgb(0xFBFBFC), bg_raised: rgb(0xEFEFF2), bg_hover: rgb(0xE2E2E7), bg_input: rgb(0xF4F4F6), border: rgb(0xD8D8DE), text: rgb(0x18181B), text_dim: rgb(0x5A5A62), text_faint: rgb(0x96969E), accent: rgb(0x18181B), accent_ink: rgb(0xFFFFFF), warn_text: rgb(0x9A5210) },
+    Palette { name: "Dark", id: "dark", dark: true, bg_app: rgb(0x0C0C0E), bg_card: rgb(0x17171A), bg_raised: rgb(0x222226), bg_hover: rgb(0x2B2B30), bg_input: rgb(0x101012), border: rgb(0x29292E), text: rgb(0xECECEE), text_dim: rgb(0x8C8C93), text_faint: rgb(0x58585F), accent: rgb(0xF4F4F6), accent_ink: rgb(0x101012), warn_text: WARN },
+    Palette { name: "Dark gray", id: "darkgray", dark: true, bg_app: rgb(0x1A1A1C), bg_card: rgb(0x252528), bg_raised: rgb(0x303034), bg_hover: rgb(0x3A3A3F), bg_input: rgb(0x1E1E21), border: rgb(0x37373C), text: rgb(0xEDEDEF), text_dim: rgb(0x9C9CA3), text_faint: rgb(0x68686F), accent: rgb(0xF4F4F6), accent_ink: rgb(0x141416), warn_text: WARN },
+    Palette { name: "Gray", id: "gray", dark: true, bg_app: rgb(0x38383C), bg_card: rgb(0x444449), bg_raised: rgb(0x505055), bg_hover: rgb(0x5C5C62), bg_input: rgb(0x313135), border: rgb(0x58585E), text: rgb(0xF4F4F6), text_dim: rgb(0xC8C8CE), text_faint: rgb(0x8A8A91), accent: rgb(0xFFFFFF), accent_ink: rgb(0x202024), warn_text: rgb(0xF5BA88) },
+    Palette { name: "Light~bright", id: "light", dark: false, bg_app: rgb(0xE9E9EC), bg_card: rgb(0xFBFBFC), bg_raised: rgb(0xEFEFF2), bg_hover: rgb(0xE2E2E7), bg_input: rgb(0xF4F4F6), border: rgb(0xD8D8DE), text: rgb(0x18181B), text_dim: rgb(0x5A5A62), text_faint: rgb(0x96969E), accent: rgb(0x18181B), accent_ink: rgb(0xFFFFFF), warn_text: rgb(0x9A5210) },
 ];
 
 static CURRENT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -223,15 +223,15 @@ pub fn select(ctx: &egui::Context, id: &str) {
 /// Lighter/desaturated on dark areas (saturated colors "glow" there), all ≥ 3:1 against
 /// `bg_card`; „auto“ is the palette's neutral accent.
 pub const ACCENTS: [(&str, &str, Color32, Color32); 8] = [
-    ("auto", "Weiß", PALETTES[0].accent, PALETTES[3].accent),
-    ("blue", "Blau", rgb(0x5B9DFF), rgb(0x2B63D9)),
-    ("teal", "Türkis", rgb(0x3CC8C0), rgb(0x0E7C80)),
-    ("green", "Grün", rgb(0x5CC98A), rgb(0x1F8048)),
-    ("violet", "Violett", rgb(0xA98BFA), rgb(0x7445D6)),
+    ("auto", "White", PALETTES[0].accent, PALETTES[3].accent),
+    ("blue", "Blue", rgb(0x5B9DFF), rgb(0x2B63D9)),
+    ("teal", "Teal", rgb(0x3CC8C0), rgb(0x0E7C80)),
+    ("green", "Green", rgb(0x5CC98A), rgb(0x1F8048)),
+    ("violet", "Violet", rgb(0xA98BFA), rgb(0x7445D6)),
     ("pink", "Pink", rgb(0xF27AB6), rgb(0xC2317A)),
     ("orange", "Orange", rgb(0xF59A55), rgb(0xB85A12)),
     // coral instead of pure red, so the accent does not look like `DANGER`
-    ("red", "Rot", rgb(0xFF7E6E), rgb(0xBF5039)),
+    ("red", "Red", rgb(0xFF7E6E), rgb(0xBF5039)),
 ];
 
 /// 0 = auto, 1.. = preset, CUSTOM|rgb = own color
@@ -273,7 +273,7 @@ pub fn accent_for(p: &Palette) -> Color32 {
             if p.dark { a.2 } else { a.3 }
         }
     };
-    // presets mostly fit already; in the „Grau“ design blue/violet get lightened slightly this way
+    // presets mostly fit already; in the „Gray“ design blue/violet get lightened slightly this way
     let to = if p.dark { Color32::WHITE } else { Color32::BLACK };
     for _ in 0..60 {
         if contrast(c, p.bg_card) >= 3.0 && contrast(c, p.bg_raised) >= 3.0 {
@@ -653,8 +653,8 @@ pub fn keycaps(ui: &mut egui::Ui, keys: &str) {
 
 /// Icon for special keys (shared by [`keycaps`] and [`key_hint`])
 fn key_symbol(k: &str) -> Option<&'static str> {
-    Some(match k {
-        "Umschalt" | "Shift" => icon::ARROW_FAT_UP,
+    Some(match cl_i18n::key_english(k).as_str() {
+        "Shift" => icon::ARROW_FAT_UP,
         "←" => icon::ARROW_LEFT,
         "→" => icon::ARROW_RIGHT,
         "↑" => icon::ARROW_UP,
@@ -1184,8 +1184,8 @@ mod tests {
 
     #[test]
     fn diagonal_arrows_use_icon_font() {
-        let s = icon_arrows("Wischen ↖ ↗ ↙ ↘");
-        assert!(!s.contains(['↖', '↗', '↙', '↘']) && s.starts_with("Wischen "), "{s}");
+        let s = icon_arrows("Wipe ↖ ↗ ↙ ↘");
+        assert!(!s.contains(['↖', '↗', '↙', '↘']) && s.starts_with("Wipe "), "{s}");
     }
 
     #[test]
@@ -1202,14 +1202,15 @@ mod tests {
         assert_eq!(crate::props::fmt_bytes(1_920_000_000), "1,79 GB");
         assert_eq!(crate::props::fmt_bytes(5 << 20), "5,0 MB");
         assert_eq!(secs(1.0, 1), "1,0 s");
+        cl_i18n::set_ui_lang(cl_i18n::Lang::En);
     }
 
     #[test]
     fn count_text_uses_singular_for_one() {
-        assert_eq!(count_text(1, "{} Spur", "{} Spuren"), "1 Spur");
-        assert_eq!(count_text(0, "{} Spur", "{} Spuren"), "0 Spuren");
-        assert_eq!(count_text(2, "{} Highlight als Marker gesetzt", "{} Highlights als Marker gesetzt"), "2 Highlights als Marker gesetzt");
-        assert_eq!(count_text(1, "{} Inhalt fehlt: {}", "{} Inhalte fehlen: {}"), "1 Inhalt fehlt: {}");
+        assert_eq!(count_text(1, "{} track", "{} tracks"), "1 track");
+        assert_eq!(count_text(0, "{} track", "{} tracks"), "0 tracks");
+        assert_eq!(count_text(2, "{} highlight added as a marker", "{} highlights added as markers"), "2 highlights added as markers");
+        assert_eq!(count_text(1, "{} item is missing: {}", "{} items are missing: {}"), "1 item is missing: {}");
     }
 
     #[test]
@@ -1223,7 +1224,7 @@ mod tests {
     #[test]
     fn elide_and_fit_stay_inside() {
         let w = |s: &str| s.chars().count() as f32 * 7.0;
-        assert_eq!(elide("Daumen", 100.0, w), "Daumen");
+        assert_eq!(elide("Thumb", 100.0, w), "Thumb");
         let e = elide("Subscribe, German (red)", 80.0, w);
         assert!(e.ends_with('…') && w(&e) <= 80.0 && e.starts_with("Subscribe"), "{e}");
         // the space before „…“ is dropped
@@ -1231,7 +1232,7 @@ mod tests {
         assert_eq!(elide("abc", 3.0, w), "");
         let m = elide_middle("C:/Users/zero/Videos/Urlaub", 70.0, w);
         assert!(m.starts_with("C:/U") && m.ends_with("laub") && m.contains('…') && w(&m) <= 70.0, "{m}");
-        assert_eq!(elide_middle("kurz", 70.0, w), "kurz");
+        assert_eq!(elide_middle("short", 70.0, w), "short");
         assert_eq!(fit_size(20.0, 100.0, 150.0), 20.0);
         let s = fit_size(20.0, 200.0, 150.0);
         assert!((s - 15.0).abs() < 1e-4 && 200.0 * s / 20.0 <= 150.0 + 1e-3);

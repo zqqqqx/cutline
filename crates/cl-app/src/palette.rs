@@ -30,14 +30,19 @@ impl Palette {
     }
 }
 
-/// Searchable commands: (action, [name in the UI language, German name if different])
+/// Searchable commands: (action, [name in the UI language, name in the other language if different])
 fn items() -> Vec<(&'static str, Vec<String>)> {
     keymap::ACTIONS
         .iter()
         .filter(|a| a.0 != "command_search")
-        .map(|(id, de, _)| {
-            let shown = crate::tr(de);
-            let names = if shown == *de { vec![shown] } else { vec![shown, de.to_string()] };
+        .map(|(id, name, _)| {
+            let mut names = vec![crate::tr(name)];
+            for lang in [cl_i18n::Lang::En, cl_i18n::Lang::De] {
+                let other = cl_i18n::tr_in(lang, name);
+                if !names.contains(&other) {
+                    names.push(other);
+                }
+            }
             (*id, names)
         })
         .collect()
@@ -78,7 +83,7 @@ impl App {
                     ui.set_width(width);
                     let field = ui.add(
                         egui::TextEdit::singleline(&mut self.palette.query)
-                            .hint_text(crate::tr("Befehl suchen"))
+                            .hint_text(crate::tr("Search commands"))
                             .font(egui::FontId::proportional(theme::FS_TITLE))
                             .frame(false)
                             .margin(egui::Margin::symmetric(8, 6))

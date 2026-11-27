@@ -1,0 +1,2078 @@
+# Interface texts: English<TAB>German. Placeholder {} = any value, {1} {2} … for another order.
+# A context after ~ (as in "Track~verb") tells apart texts that are the same in English; it is never shown.
+# Allgemein
+New project	Neues Projekt
+Project	Projekt
+Projects	Projekte
+Clip	Clip
+Clips	Clips
+{} clips	{} Clips
+Folder	Ordner
+Cancel	Abbrechen
+Close	Schließen
+Close (Esc)	Schließen (Esc)
+Open	Öffnen
+Open …	Öffnen …
+Save	Speichern
+Save as …	Speichern unter …
+Delete	Löschen
+Remove	Entfernen
+Duplicate	Duplizieren
+Rename	Umbenennen
+Copy	Kopieren
+Cut	Ausschneiden
+Paste	Einfügen
+Split	Teilen
+Edit	Bearbeiten
+Reset	Zurücksetzen
+Reset all	Alles zurücksetzen
+All	Alle
+None	Keine
+None~m	Kein
+None~without	Ohne
+On	Ein
+Off	Aus
+Name	Name
+Format	Format
+Video	Video
+Audio	Audio
+Text	Text
+Audio~sound	Ton
+Stickers	Sticker
+Effects	Effekte
+Effect	Effekt
+Filters	Filter
+Transitions	Übergänge
+Transition	Übergang
+Captions	Untertitel
+Plugins	Plugins
+Media	Medien
+Music	Musik
+Settings	Einstellungen
+Settings …	Einstellungen …
+Settings (Ctrl+,)	Einstellungen (Strg+,)
+Version	Version
+Status	Status
+Address	Adresse
+Port	Port
+Preview	Vorschau
+Original	Original
+Automatic	Automatisch
+Custom	Eigenes
+Normal	Normal
+Linear	Linear
+Curve	Kurve
+Show in Explorer	Im Explorer zeigen
+Open in Explorer	Im Explorer öffnen
+Show in folder	Im Ordner zeigen
+Choose folder	Ordner wählen
+Saved	Gespeichert
+Saved {}	Gespeichert {}
+{} saved	{} Gespeichert
+Not saved yet	Noch nicht gespeichert
+Saving …	Wird gespeichert …
+Canceled	Abgebrochen
+File can't be read	Datei nicht lesbar
+Click to cancel	Klicken bricht ab
+# Startseite
+Projects~overview	Projektübersicht
+Back to projects	Zur Projektübersicht
+Open project …	Projekt öffnen …
+Project folder	Projektordner
+Cutline {} · Open source · MPL-2.0	Cutline {} · Open Source · MPL-2.0
+List	Liste
+Grid	Kacheln
+Search projects	Projekte suchen
+Or drop files here	Oder Dateien hierher ziehen
+No projects found	Keine Projekte gefunden
+{} min ago	vor {} Min.
+{} h ago	vor {} Std.
+{} days ago	vor {} Tagen
+just now	gerade eben
+Project duplicated	Projekt dupliziert
+Rename project	Projekt umbenennen
+Delete project?	Projekt löschen?
+“{}” will be moved to the Cutline trash. Your media files stay untouched.	„{}“ wird in den Cutline-Papierkorb verschoben. Deine Medien-Dateien bleiben unverändert.
+Trash	Papierkorb
+Project moved to trash	Projekt in den Papierkorb verschoben
+Cutline project	Cutline-Projekt
+Project saved: {}	Projekt gespeichert: {}
+Missing fonts: {}	Fehlende Schriften: {}
+# Kopfzeile
+Interface {} %	Oberfläche {} %
+Interface size	Oberflächengröße
+Interface size  ({} %)	Oberflächengröße  ({} %)
+MCP server active (Settings → MCP interface)	MCP-Server aktiv (Einstellungen → MCP-Schnittstelle)
+Export	Exportieren
+Import~verb	Importieren
+Search	Suchen
+# Medien-Leiste
+Insert at playhead	Am Playhead einfügen
+Click + or double-click to insert at the playhead	Klick auf + oder Doppelklick fügt am Playhead ein
+Sound effects	Soundeffekte
+Recordings	Aufnahmen
+Scanning music folder …	Musikordner wird durchsucht …
+No music found	Keine Musik gefunden
+Put files in your Music folder or import them	Lege Dateien in deinen Musik-Ordner oder importiere sie
+{} tracks from your Music folder	{} Titel aus deinem Musik-Ordner
+No recordings in this project yet	Noch keine Aufnahmen in diesem Projekt
+Drag or press + to insert at the playhead	Ziehen oder + fügt am Playhead ein
+Import font	Schrift importieren
+Import font …	Schrift importieren …
+Templates	Vorlagen
+Text effects	Texteffekte
+Fonts	Schriften
+Default text	Standardtext
+Click to apply the effect to the selected text	Klick wendet den Effekt auf den ausgewählten Text an
+Click to add a new text with this effect	Klick fügt einen neuen Text mit diesem Effekt ein
+{} system fonts	{} Systemschriften
+Drop TTF, OTF, TTC, WOFF here	TTF, OTF, TTC, WOFF hierher ziehen
+No custom fonts yet	Noch keine eigenen Schriften
+Import font files or drop them here	Importiere Schriftdateien oder ziehe sie hierher
+Use for selected text	Für ausgewählten Text verwenden
+Apply a LUT (.cube) to the selected clip	LUT (.cube) auf den ausgewählten Clip anwenden
+Select a video or image clip first	Wähle zuerst einen Video- oder Bildclip
+Click to apply to the selected clip, or drag onto a clip in the timeline	Klick wendet auf den ausgewählten Clip an, Ziehen auf einen Clip in der Zeitleiste
+Select a clip or drag an effect onto a clip	Clip auswählen oder Effekt auf einen Clip ziehen
+Select a video or image clip in the timeline first	Wähle zuerst einen Video- oder Bildclip in der Zeitleiste
+Drag onto a cut or click (next cut at the playhead or after the selected clip)	Auf einen Schnitt ziehen oder anklicken (nächster Schnitt am Playhead bzw. nach dem ausgewählten Clip)
+No captions found	Keine Untertitel gefunden
+{} captions imported	{} Untertitel importiert
+Open plugin folder	Plugin-Ordner öffnen
+{} assets	{} Assets
+Drag the effect onto a clip	Ziehe den Effekt auf einen Clip
+Drag the filter onto a clip	Ziehe den Filter auf einen Clip
+Effects work on video, image and sticker clips	Effekte wirken auf Video-, Bild- und Sticker-Clips
+Filters work on video and image clips	Filter wirken auf Video- und Bild-Clips
+Transitions sit between two adjacent clips	Übergänge liegen zwischen zwei direkt aufeinanderfolgenden Clips
+No cut between two clips found	Kein Schnitt zwischen zwei Clips gefunden
+This clip has no audio	Dieser Clip hat keinen Ton
+Audio extracted	Ton extrahiert
+{} audio extracted	{} Ton extrahiert
+Freeze frames only work on video clips	Standbilder gibt es nur von Videoclips
+Couldn't create freeze frame	Standbild konnte nicht erzeugt werden
+preview	vorhören
+No audio output device	Kein Audio-Ausgabegerät
+Sample format {} not supported	Sample-Format {} nicht unterstützt
+# Export
+Export finished ({} s)	Export fertig ({} s)
+{} s	{} s
+approx. {} MB	ca. {} MB
+Save to	Speichern in
+Resolution	Auflösung
+Project ({}×{})	Projekt ({}×{})
+Codec	Codec
+Quality	Qualität
+Smaller file	Kleinere Datei
+Recommended	Empfohlen
+Higher	Höher
+Custom bitrate	Benutzerdefinierte Bitrate
+Frame rate	Bildrate
+Encoder	Encoder
+Software (best quality)	Software (beste Qualität)
+NVIDIA NVENC (fast)	NVIDIA NVENC (schnell)
+Intel Quick Sync (fast)	Intel Quick Sync (schnell)
+AMD AMF (fast)	AMD AMF (schnell)
+Export audio (AAC 256 kbit/s, Opus for WebM)	Ton exportieren (AAC 256 kbit/s, bei WebM Opus)
+Also save texts as a subtitle file (SRT)	Texte zusätzlich als Untertiteldatei (SRT) speichern
+# Inspektor
+Basic	Basis
+Animation	Animation
+Speed	Tempo
+Adjust	Anpassen
+History	Verlauf
+{} clips selected	{} Clips ausgewählt
+Clear selection (Esc)	Auswahl aufheben (Esc)
+Dragging moves them all together. Ctrl+click adds or removes single clips.	Ziehen verschiebt alle gemeinsam. Strg+Klick ergänzt oder entfernt einzelne Clips.
+Disable / enable	Deaktivieren / Aktivieren
+Type	Art
+Duration	Dauer
+Other type: click one under “Transitions” on the left	Andere Art: im Bereich „Übergänge“ links anklicken
+{} s · from {}	{} s · ab {}
+Transform	Transformieren
+Scale	Skalierung
+Position X	Position X
+Position Y	Position Y
+Rotate	Drehen
+Keyframe all	Keyframe alle
+Keyframe position, size and rotation at the playhead	Position, Größe und Drehung am Playhead festhalten
+Blend	Mischen
+Opacity	Deckkraft
+Flip	Spiegeln
+Horizontal	Horizontal
+Vertical	Vertikal
+Mask	Maske
+Mirror	Spiegel
+Circle	Kreis
+Rectangle	Rechteck
+Width	Breite
+Height	Höhe
+Center X	Mitte X
+Center Y	Mitte Y
+Feather	Weiche Kante
+Invert	Umkehren
+Disabled	Deaktiviert
+Enter text	Text eingeben
+Font	Schrift
+Typeface	Schriftart
+System	System
+Size	Größe
+Style	Stil
+Bold	Fett
+Italic	Kursiv
+Uppercase	Großbuchstaben
+Auto wrap	Automatischer Umbruch
+Alignment	Ausrichtung
+Line spacing	Zeilenabstand
+Color	Farbe
+Outline	Kontur
+Strength	Stärke
+Background and shadow	Fläche und Schatten
+Background box	Hintergrundfläche
+Box color	Flächenfarbe
+Shadow	Schatten
+Remove filter	Filter entfernen
+Choose filter	Filter wählen
+Remove effect	Effekt entfernen
+Add effect	Effekt hinzufügen
+Remove LUT	LUT entfernen
+Light	Licht
+Brightness	Helligkeit
+Contrast	Kontrast
+Highlights~tones	Lichter
+Fade	Verblassen
+Saturation	Sättigung
+Temperature	Temperatur
+Tint	Tönung
+Hue	Farbton
+Details	Details
+Sharpness	Schärfe
+Vignette	Vignette
+Grain	Körnung
+Combo	Kombi
+New duration	Neue Dauer
+Curves redistribute time within the clip; the length stays the same. Audio is muted with curves.	Kurven verteilen die Zeit im Clip um, die Länge bleibt gleich. Ton wird bei Kurven stummgeschaltet.
+Direction	Richtung
+Volume	Lautstärke
+Fade in	Einblenden
+Fade out	Ausblenden
+Extract audio	Ton extrahieren
+Put the audio on an audio track as its own clip	Ton als eigenen Clip auf eine Audiospur legen
+Extended: {} s of silence at the end	Verlängert: {} s Stille am Ende
+Location	Speicherort
+Overview	Übersicht
+Content	Inhalt
+{} tracks · {} clips · {} media	{} Spuren · {} Clips · {} Medien
+{} tracks	{} Spuren
+{} media	{} Medien
+Length	Länge
+Every change shows up here, including those from MCP and plugins	Jede Änderung erscheint hier, auch die von MCP und Plugins
+Aspect ratio	Seitenverhältnis
+Background	Hintergrund
+Color space	Farbraum
+Project settings	Projekteinstellungen
+# Player
+Normal view (F)	Normale Ansicht (F)
+Large player (F)	Großer Player (F)
+Full	Voll
+Half	Halb
+Quarter	Viertel
+Preview quality: {}	Vorschauqualität: {}
+Handle belongs to the selection	Griff gehört zur Auswahl
+Play	Abspielen
+Pause	Pause
+Space	Leertaste
+# KI-Werkzeuge
+German	Deutsch
+English	Englisch
+French	Französisch
+Spanish	Spanisch
+Italian	Italienisch
+Dutch	Niederländisch
+Polish	Polnisch
+Requires: {} (Settings → Models)	Benötigt: {} (Einstellungen → Modelle)
+Background removed	Hintergrund entfernt
+No scene changes found	Keine Szenenwechsel gefunden
+{} scenes detected and split	{} Szenen erkannt und geteilt
+{} beats detected ({} BPM)	{} Beats erkannt ({} BPM)
+No speech detected	Keine Sprache erkannt
+{} captions created ({})	{} Untertitel erzeugt ({})
+Motion tracked ({} points)	Bewegung verfolgt ({} Punkte)
+Auto reframe applied	Auto-Reframe angewendet
+Recognizing speech …	Untertitel werden erkannt …
+The project is empty	Das Projekt ist leer
+Background removal works on video clips	Hintergrund entfernen geht bei Videoclips
+Removing background: {}	Hintergrund wird entfernt: {}
+Detecting scenes …	Szenen werden erkannt …
+Detecting beats …	Beats werden erkannt …
+Auto reframe is analyzing …	Auto-Reframe analysiert …
+Cutout	Freistellen
+Remove background	Hintergrund entfernen
+Chroma key (green screen)	Chroma-Key (Greenscreen)
+Pick color in the player	Farbe im Player aufnehmen
+Tolerance	Toleranz
+Spill	Farbsaum
+Motion	Bewegung
+Stabilize	Stabilisieren
+Stabilization is skipped while the background is removed	Bei entferntem Hintergrund wird nicht stabilisiert
+Auto reframe	Auto-Reframe
+Keeps the important part in frame for the current aspect ratio (sets keyframes)	Hält das Wichtige im aktuellen Seitenverhältnis im Bild (setzt Keyframes)
+The format already fits – choose a different aspect ratio first (e.g. 9:16)	Das Format passt schon – erst ein anderes Seitenverhältnis wählen (z. B. 9:16)
+Split scenes	Szenen teilen
+Detect scene changes and split the clip there	Szenenwechsel erkennen und den Clip dort teilen
+Motion tracking	Bewegung verfolgen
+Drag a box in the player around the object this clip should follow (Esc cancels)	Ziehe im Player einen Rahmen um das Objekt, dem dieser Clip folgen soll (Esc bricht ab)
+Track object	Objekt verfolgen
+Clip follows an object in the video below (from the playhead)	Clip folgt einem Objekt im Video darunter (ab Playhead)
+There is no video below this clip at the playhead	Unter diesem Clip liegt am Playhead kein Video
+Enhance audio	Ton verbessern
+Reduce noise	Entrauschen
+Enhance voice	Stimme hervorheben
+Normalize loudness (−14 LUFS)	Lautheit angleichen (−14 LUFS)
+Bass	Bass
+Treble	Höhen
+Voice changer	Stimmfilter
+Beats	Beats
+Detect beats	Beats erkennen
+Marks the beats on the clip; clips and the playhead snap to them	Markiert die Schläge auf dem Clip; Clips und Playhead rasten daran ein
+{} beats	{} Beats
+Remove beat markers	Beat-Markierungen entfernen
+Auto captions	Automatische Untertitel
+Runs locally with {} – nothing leaves your computer	Lokal mit {} – nichts verlässt deinen Rechner
+No speech recognition model installed yet	Noch kein Spracherkennungsmodell installiert
+Download model …	Modell laden …
+Language	Sprache
+Source	Quelle
+Whole project	Ganzes Projekt
+Selected clip	Ausgewählter Clip
+Generate captions	Untertitel erzeugen
+Select a video or audio clip	Wähle einen Video- oder Audioclip
+Import SRT	SRT importieren
+Export SRT	SRT exportieren
+Captions saved	Untertitel gespeichert
+Edit captions ({})	Untertitel bearbeiten ({})
+Generated or imported captions show up here for correction	Erzeugte oder importierte Untertitel erscheinen hier zum Korrigieren
+Apply selected style to all	Stil der Auswahl auf alle übertragen
+Jump to caption	Zum Untertitel springen
+Click the color that should disappear	Klicke auf die Farbe, die verschwinden soll
+Drag a box around the object	Ziehe einen Rahmen um das Objekt
+Color #{} keyed out	Farbe #{} freigestellt
+The video below isn't visible at the playhead	Das Video darunter ist am Playhead nicht sichtbar
+Tracking motion …	Bewegung wird verfolgt …
+Captions and cutouts run on AI models directly on your computer. They are downloaded once and then stay local; no data is uploaded.	Untertitel und Freistellen laufen mit KI-Modellen direkt auf deinem Rechner. Sie werden einmal geladen und liegen dann lokal; es werden keine Daten hochgeladen.
+Speech recognition: Parakeet TDT 0.6B v3 is preferred (best accuracy for European languages, word-level timing); Whisper is the fallback for other languages.	Spracherkennung: Parakeet TDT 0.6B v3 wird bevorzugt (beste Genauigkeit für Deutsch, Wort-genaue Zeiten), Whisper ist der Rückfall für weitere Sprachen.
+Included with the app	Im Programmpaket enthalten
+Download · {} MB	Laden · {} MB
+Open model folder	Modellordner öffnen
+Downloading {} …	{} wird geladen …
+Installed	Installiert
+Runtime for Parakeet and cutouts (Microsoft, MIT license)	Laufzeit für Parakeet und Freistellen (Microsoft, MIT-Lizenz)
+Best speech recognition for 25 European languages, word-level timing (NVIDIA, CC-BY-4.0)	Beste Spracherkennung für Deutsch und 24 weitere europäische Sprachen, Wort-genaue Zeiten (NVIDIA, CC-BY-4.0)
+Fallback speech recognition, 99 languages (OpenAI, MIT license)	Rückfall-Spracherkennung, 99 Sprachen (OpenAI, MIT-Lizenz)
+Audio can't be read	Ton nicht lesbar
+No image in this file	Kein Bild in dieser Datei
+Couldn't write the matte video	Maskenvideo konnte nicht geschrieben werden
+Background removal (RVM)	Hintergrund entfernen (RVM)
+# Aufnahme
+No microphone found	Kein Mikrofon gefunden
+Stop recording	Aufnahme beenden
+Start recording	Aufnahme starten
+Recording~running	Aufnahme läuft
+Starting in a moment …	Gleich geht's los …
+Ready, starts at the playhead	Bereit, startet am Playhead
+Level and waveform appear while recording	Pegel und Waveform erscheinen bei der Aufnahme
+Default microphone	Standardmikrofon
+Input	Eingang
+Mute project while recording	Projekt stumm während der Aufnahme
+3-2-1 countdown	3-2-1-Countdown
+Voiceover	Einsprechen
+Recording {} s	Aufnahme {} s
+# Einstellungen
+General	Allgemein
+Performance	Leistung
+MCP interface	MCP-Schnittstelle
+Keyboard shortcuts	Tastenkürzel
+Models (local AI)	Modelle (lokale KI)
+Models	Modelle
+Updates	Updates
+About Cutline	Über Cutline
+Play / pause	Abspielen / Pause
+Split at playhead	Am Playhead teilen
+Delete left / right of the playhead	Links / rechts vom Playhead löschen
+Delete selection	Auswahl löschen
+Copy / cut / paste	Kopieren / Ausschneiden / Einfügen
+Select all clips	Alle Clips auswählen
+Disable clip	Clip deaktivieren
+Undo / redo	Rückgängig / Wiederholen
+One frame back / forward	Ein Bild zurück / vor
+Start / end	Anfang / Ende
+Magnet / snapping	Magnet / Einrasten
+Large player	Großer Player
+Zoom timeline	Zeitleiste zoomen
+Scroll timeline horizontally	Zeitleiste waagerecht
+Fit player	Player: ganzes Bild
+Import / save / open / export	Importieren / Speichern / Öffnen / Exportieren
+Interface	Oberfläche
+Show projects on startup	Beim Start die Projektübersicht zeigen
+Auto save	Automatisch speichern
+Image duration	Bilddauer
+Text duration	Textdauer
+A lower preview resolution makes playback with effects smoother. Export always uses full resolution.	Geringere Vorschauauflösung macht die Wiedergabe mit Effekten flüssiger. Der Export nutzt immer die volle Auflösung.
+Effect cache	Effekt-Cache
+Rebuild thumbnails	Vorschaubilder neu erzeugen
+Enable MCP server	MCP-Server aktivieren
+Read only (allow no changes)	Nur lesen (keine Änderungen erlauben)
+Connection	Verbindung
+active on port {}	aktiv auf Port {}
+read only	nur lesen
+Generate new token (old clients lose access)	Neues Token erzeugen (alte Clients verlieren den Zugriff)
+Copy client configuration	Client-Konfiguration kopieren
+MCP configuration copied	MCP-Konfiguration kopiert
+Also saved in {}	Auch gespeichert in {}
+Server starting …	Server startet …
+Without the running app (stdio)	Ohne laufende App (stdio)
+Tools: read project, import media, insert, split, trim and delete clips, set format, arbitrary EditOps, undo/redo.	Werkzeuge: Projekt lesen, Medien importieren, Clips einfügen, teilen, trimmen, löschen, Format setzen, beliebige EditOps, Rückgängig/Wiederholen.
+Version {} · MPL-2.0	Version {} · MPL-2.0
+{} effects · {} filters · {} transitions · {} stickers · {} sound effects · {} text templates	{} Effekte · {} Filter · {} Übergänge · {} Sticker · {} Soundeffekte · {} Textvorlagen
+{} effects	{} Effekte
+{} filters	{} Filter
+{} transitions	{} Übergänge
+{} stickers	{} Sticker
+{} sound effects	{} Soundeffekte
+{} text templates	{} Textvorlagen
+{} plugins loaded	{} Plugins geladen
+Interface language	Sprache der Oberfläche
+# Zeitleiste
+Freeze frame (3 s at playhead)	Standbild (3 s am Playhead)
+Rotate 90°	90° drehen
+Fit timeline	Ganze Zeitleiste zeigen
+Zoom in (Ctrl+wheel)	Vergrößern (Strg+Mausrad)
+Zoom out~smaller	Verkleinern
+New track	Neue Spur
+Lock	Sperren
+Mute	Stumm
+Drop the transition on a cut between two clips	Lege den Übergang auf einen Schnitt zwischen zwei Clips
+Delete left of playhead	Links vom Playhead löschen
+Delete right of playhead	Rechts vom Playhead löschen
+Freeze frame	Standbild
+Play forward	Vorwärts abspielen
+Reverse	Rückwärts
+Flip horizontally	Horizontal spiegeln
+Flip vertically	Vertikal spiegeln
+Reset transform	Transformation zurücksetzen
+Remove transition	Übergang entfernen
+Add transition (cross dissolve)	Übergang einfügen (Überblenden)
+Enable clip	Clip aktivieren
+Insert track above	Spur darüber einfügen
+Insert track below	Spur darunter einfügen
+Unlock	Entsperren
+Unmute	Stumm aufheben
+Select all clips on track	Alle Clips der Spur auswählen
+Close gaps	Lücken schließen
+Track height	Spurhöhe
+Small	Klein
+Large	Groß
+Extra large	Sehr groß
+Clear main track	Hauptspur leeren
+Delete track	Spur löschen
+Select all	Alle auswählen
+Close gaps on this track	Lücken dieser Spur schließen
+Close all gaps	Alle Lücken schließen
+Add video track	Videospur hinzufügen
+Add text track	Textspur hinzufügen
+Add audio track	Audiospur hinzufügen
+Text at playhead	Text am Playhead
+Show track	Spur einblenden
+Hide track	Spur verbergen
+Undo	Rückgängig
+Redo	Wiederholen
+# Updates
+Update {}	Update {}
+New version available	Neue Version verfügbar
+Restart ({})	Neu starten ({})
+Update installed. Restart Cutline	Update ist installiert. Cutline neu starten
+Check for updates on startup	Beim Start automatisch nach Updates suchen
+Not checked yet	Noch nicht gesucht
+Checking for updates …	Suche nach Updates …
+Cutline is up to date	Cutline ist aktuell
+Version {} is available	Version {} ist verfügbar
+{} MB	{} MB
+Download and install	Herunterladen und installieren
+Development build: please update via Git	Entwicklungs-Build: bitte über Git aktualisieren
+View on GitHub	Auf GitHub ansehen
+Skip this version	Diese Version überspringen
+Version {} is installed	Version {} ist installiert
+Restart now	Jetzt neu starten
+Check for updates now	Jetzt nach Updates suchen
+# Tastenkürzel / Keyframes
+Remove keyframe	Keyframe entfernen
+Add keyframe at playhead	Keyframe am Playhead setzen
+# Stimmfilter
+Chipmunk	Chipmunk
+High	Hoch
+Deep	Tief
+Monster	Monster
+Robot	Roboter
+Alien	Alien
+Echo	Echo
+Hall	Halle
+Radio	Radio
+Phone	Telefon
+Megaphone	Megafon
+Tremble	Zittern
+Underwater	Unter Wasser
+# Effekte
+Retro	Retro
+Blur	Unschärfe
+Sharpen	Schärfen
+Black & white	Schwarzweiß
+Negative	Negativ
+Pixelate	Verpixeln
+Film grain	Filmkorn
+Edges	Konturen
+Old film	Alter Film
+Sepia	Sepia
+Scanlines	Bildschirmzeilen
+Posterize	Poster
+Comic	Comic
+Shake	Wackeln
+Motion blur	Bewegungsunschärfe
+Trails	Nachzieher
+Glitch	Glitch
+Rainbow	Regenbogen
+Strobe	Stroboskop
+Flash	Blitz
+Dreamy	Verträumt
+Glow edges	Leuchtkanten
+Light leak	Lichteinfall
+Color shift	Farbversatz
+Thermal	Wärmebild
+Night vision	Nachtsicht
+Duotone	Duoton
+Emboss	Relief
+Lens	Linse
+Letterbox	Kinobalken
+# Filter
+Natural	Natürlich
+Portrait	Porträt
+Vivid	Lebendig
+Pastel	Pastell
+Light~bright	Hell
+Warm	Warm
+Landscape	Landschaft
+Cool	Kühl
+Golden hour	Goldene Stunde
+Forest	Wald
+Sunset	Sonnenuntergang
+Cinema	Kino
+Film	Film
+Vintage	Vintage
+Cross process	Crossentwicklung
+Matte	Matt
+Bleach bypass	Bleach Bypass
+Instant	Sofortbild
+Mono	Mono
+Noir	Noir
+Silver	Silber
+Moody	Düster
+Mood	Stimmung
+Cyber	Cyber
+# Übergänge
+Cross dissolve	Überblenden
+Dissolve	Auflösen
+Fade to black	Über Schwarz
+Fade to white	Über Weiß
+Fade to gray	Über Grau
+Quick fade	Schnell blenden
+Slow fade	Langsam blenden
+Distance	Abstand
+Wipe left	Wischen links
+Wipe	Wischen
+Wipe right	Wischen rechts
+Wipe up	Wischen hoch
+Wipe down	Wischen runter
+Smooth left	Weich links
+Smooth right	Weich rechts
+Smooth up	Weich hoch
+Smooth down	Weich runter
+Slide left	Schieben links
+Slide right	Schieben rechts
+Slide up	Schieben hoch
+Slide down	Schieben runter
+Cover left	Überdecken links
+Cover right	Überdecken rechts
+Reveal left	Aufdecken links
+Reveal right	Aufdecken rechts
+Zoom in~into	Hineinzoomen
+Squeeze horizontal	Stauchen horizontal
+Wind left	Wind links
+Wind right	Wind rechts
+Circle open	Kreis öffnen
+Shape	Form
+Circle close	Kreis schließen
+Circle crop	Kreisblende
+Rectangle crop	Rechteckblende
+Radial	Radial
+Vertical open	Vertikal öffnen
+Vertical close	Vertikal schließen
+Horizontal open	Horizontal öffnen
+Horizontal close	Horizontal schließen
+Slice left	Streifen links
+Slice right	Streifen rechts
+Slice up	Streifen hoch
+Slice down	Streifen runter
+Smear	Verwischen
+# Soundeffekte
+Tension	Spannung
+Nature	Natur
+Whoosh	Whoosh
+Short swoosh	Swoosh kurz
+Riser	Anstieg
+Impact	Einschlag
+Laser	Laser
+Pop	Pop
+Click	Klick
+Ding	Ding
+Notification	Hinweiston
+Coin	Münze
+Error	Fehler
+Typing	Tippen
+Ticking	Ticken
+Heartbeat	Herzschlag
+Hum	Brummen
+Wind	Wind
+Rain	Regen
+Waves	Wellen
+Applause	Applaus
+# Sticker
+Shapes	Formen
+Arrows	Pfeile
+Speech bubbles	Sprechblasen
+Decor	Deko
+Heart	Herz
+Star	Stern
+Frame	Rahmen
+Check	Haken
+Cross	Kreuz
+Sun	Sonne
+Moon	Mond
+Cloud	Wolke
+Arrow right	Pfeil rechts
+Arrow down	Pfeil runter
+Curved arrow	Bogenpfeil
+Hand-drawn arrow	Handpfeil
+Pointer	Zeiger
+Speech bubble	Sprechblase
+Round	Rund
+Thought	Gedanke
+Shout	Ausruf
+Sparkle	Funkeln
+Crown	Krone
+Music note	Musiknote
+Smile	Lächeln
+Underline	Unterstrich
+Highlighter	Textmarker
+Markers	Marker
+Confetti	Konfetti
+# Textvorlagen
+Title	Titel
+Social	Social
+Note	Hinweis
+Headline	Schlagzeile
+Movie title	Kinotitel
+Minimal	Minimal
+Neon	Neon
+Chapter	Kapitel
+Clear	Klar
+This is how captions look	So sehen Untertitel aus
+With box	Mit Fläche
+Captions with a box	Untertitel mit Fläche
+Yellow	Gelb
+Yellow captions	Gelbe Untertitel
+Karaoke	Karaoke
+Sing along	Sing mit
+Follow	Folgen
+Follow for more	Folgen für mehr
+Comment	Kommentar
+Price	Preis
+Lower third	Bauchbinde
+Location~place	Ort
+Attention	Achtung
+Plain	Schlicht
+Light outline	Kontur hell
+Neon pink	Neon Pink
+Neon blue	Neon Blau
+Dark box	Fläche dunkel
+Light box	Fläche hell
+Red box	Fläche rot
+Gold	Gold
+# Animationen und Farben
+Red	Rot
+Green	Grün
+Cyan	Cyan
+Blue	Blau
+Magenta	Magenta
+From left	Von links
+From right	Von rechts
+From bottom	Von unten
+From top	Von oben
+Zoom in	Heranzoomen
+Zoom out	Herauszoomen
+Pop up	Aufploppen
+Rise	Aufsteigen
+Drop	Fallen
+Swing	Schwingen
+Pulse	Pulsieren
+Float	Schweben
+Spin	Rotieren
+Montage	Montage
+Hero	Held
+Sphere	Kugel
+Jump	Sprung
+Flash in	Blitz rein
+Flash out	Blitz raus
+Ease in	Langsam rein
+Ease out	Langsam raus
+In	Rein
+Out	Raus
+Loop	Schleife
+# Bearbeitungsschritte (Verlauf)
+Track is locked	Spur ist gesperrt
+Split point is outside the clip	Schnittpunkt liegt nicht innerhalb des Clips
+Invalid duration	Ungültige Dauer
+Nothing to undo	Nichts zum Rückgängigmachen
+Nothing to redo	Nichts zum Wiederherstellen
+Media missing	Medium fehlt
+Import media	Medium importieren
+Add track	Spur hinzufügen
+Add clip	Clip hinzufügen
+Delete clip	Clip löschen
+Trim	Trimmen
+Move clip	Clip verschieben
+Edit text	Text bearbeiten
+Add project font	Projektschrift hinzufügen
+Keyframe	Keyframe
+Edit clip	Clip bearbeiten
+Move to new track	Auf neue Spur verschieben
+Delete clips	Clips löschen
+Move clips	Clips verschieben
+Paste clips	Clips einfügen
+Multiple changes	Mehrere Änderungen
+Replace clip	Clip ersetzen
+Fades	Ein- und Ausblenden
+# Nachträge
+Fit	Ganzes Bild
+Load LUT	LUT laden
+Wipe ↖	Wischen ↖
+Wipe ↗	Wischen ↗
+Wipe ↘	Wischen ↘
+Wipe ↙	Wischen ↙
+Censor beep	Zensur-Piep
+Zoom pulse	Zoom-Puls
+Aspect ratio: {}	Seitenverhältnis: {}
+installed	installiert
+Cut out people without a green screen (GPL-3.0)	Personen freistellen ohne Greenscreen (GPL-3.0)
+# Phase 4
+Transparent	Transparent
+Blur background	Hintergrund weich
+Background color	Hintergrundfarbe
+Outline~cutout	Umriss
+Image quality	Bildqualität
+Remove flicker	Flackern ausgleichen
+Slow motion	Zeitlupe
+Smooth slow motion	Flüssige Zeitlupe
+Generates in-between frames from motion. The preview only blends; the export computes them precisely (takes longer).	Berechnet Zwischenbilder aus der Bewegung. Die Vorschau blendet nur über, der Export rechnet genau (dauert länger).
+Transparent (ProRes 4444)	Transparent (ProRes 4444)
+Transparent (VP9 with alpha)	Transparent (VP9 mit Alpha)
+Empty areas and cut-out people stay transparent, e.g. for overlays in other apps	Leere Bereiche und freigestellte Personen bleiben durchsichtig, z. B. für Overlays in anderen Programmen
+audio only	nur Ton
+# Integrationen und Bibliothek
+Plugins and accounts	Plugins und Konten
+Integration	Integration
+Sign-in	Anmeldung
+Epidemic account	Epidemic-Konto
+API key	API-Schlüssel
+Sign out	Abmelden
+Connected	Verbunden
+Connected as {}	Verbunden als {}
+Connect …	Verbinden …
+Connect to Epidemic Sound	Mit Epidemic Sound verbinden
+Connected to Epidemic Sound	Mit Epidemic Sound verbunden
+Finish signing in in your browser …	Anmeldung im Browser abschließen …
+Integrations connect Cutline to services that need your own account. They stay off until you turn them on under Plugins.	Integrationen verbinden Cutline mit Diensten, für die du ein eigenes Konto brauchst. Sie sind ausgeschaltet, bis du sie unter Plugins aktivierst.
+Epidemic Sound isn't connected yet	Epidemic Sound ist noch nicht verbunden
+Sign in under Settings → Plugins and accounts	Melde dich unter Einstellungen → Plugins und Konten an
+Discover	Entdecken
+Favorites	Favoriten
+Liked	Gefällt mir
+Instrumental	Instrumental
+Title, mood, genre …	Titel, Stimmung, Genre …
+No tracks found	Keine Titel gefunden
+Try another search or fewer filters	Andere Suche oder weniger Filter probieren
+No favorites yet	Noch keine Favoriten
+Mark tracks with the star	Markiere Titel mit dem Stern
+Load more	Mehr laden
+Preview~listen	Vorhören
+Stop	Stopp
+Add to favorites	Zu Favoriten
+Remove from favorites	Aus Favoriten entfernen
+This track is preview-only	Dieser Titel ist nur zum Vorhören freigegeben
+“{}” added	„{}“ eingefügt
+No API key entered	Kein API-Schlüssel eingetragen
+Not connected to Epidemic Sound	Nicht mit Epidemic Sound verbunden
+Sign-in expired or invalid	Anmeldung abgelaufen oder ungültig
+No access (check your subscription or partner agreement)	Kein Zugriff (Abo oder Partnervertrag prüfen)
+Too many requests, please wait a moment	Zu viele Anfragen, bitte kurz warten
+Can't reach Epidemic Sound ({})	Keine Verbindung zu Epidemic Sound ({})
+Sign-in canceled (timed out)	Anmeldung abgebrochen (Zeit abgelaufen)
+Client ID missing	Client-ID fehlt
+Mine	Eigene
+Images	Bilder
+New folder	Neuer Ordner
+New folder …	Neuer Ordner …
+Remove folder	Ordner entfernen
+Remove folder?	Ordner entfernen?
+“{}” and its contents will be moved to the Cutline trash.	„{}“ und sein Inhalt werden in den Cutline-Papierkorb verschoben.
+Move to	Verschieben nach
+Hide	Verbergen
+{} hidden · show again	{} verborgen · wieder anzeigen
+Add your own stickers or images (or drop them here)	Eigene Sticker oder Bilder hinzufügen (auch per Ablegen)
+Add your own sounds (or drop them here)	Eigene Sounds hinzufügen (auch per Ablegen)
+No stickers found	Keine Sticker gefunden
+Add your own images with the button or by dropping them	Eigene Bilder per Knopf oder Ablegen hinzufügen
+No sounds found	Keine Sounds gefunden
+Add your own sounds with the button or by dropping them	Eigene Sounds per Knopf oder Ablegen hinzufügen
+No matching files	Keine passenden Dateien
+{} added to “{}”	{} in „{}“ hinzugefügt
+“{}” moved to trash	„{}“ in den Papierkorb verschoben
+“{}” is used in the open project and is kept	„{}“ wird im offenen Projekt verwendet und bleibt deshalb erhalten
+Invalid folder name	Ungültiger Ordnername
+Invalid name	Ungültiger Name
+# Presets
+Looks ({})	Looks ({})
+Apply to selection	Auf die Auswahl anwenden
+Name, e.g. Gaming look	Name, z. B. Gaming-Look
+Saves adjustments, filter, effects, LUT, animations, opacity and audio – for text also the text style.	Gespeichert werden Anpassen, Filter, Effekte, LUT, Animationen, Deckkraft und Ton – bei Text auch der Textstil.
+Please enter a name	Bitte einen Namen eingeben
+# Import
+Import	Import
+Import project	Projekt importieren
+Import project …	Projekt importieren …
+From CapCut, Final Cut Pro or DaVinci Resolve	Aus CapCut, Final Cut Pro oder DaVinci Resolve
+Brings over clips, timing, position, size, speed, volume and texts. Effects and templates specific to the other app are left out.	Übernimmt Clips, Zeiten, Position, Größe, Tempo, Lautstärke und Texte. Programmeigene Effekte und Vorlagen bleiben außen vor.
+CapCut drafts on this computer	CapCut-Entwürfe auf diesem Rechner
+No drafts found	Keine Entwürfe gefunden
+Choose file …	Datei wählen …
+draft_content.json (CapCut) or FCPXML (Final Cut Pro, DaVinci Resolve)	draft_content.json (CapCut) oder FCPXML (Final Cut Pro, DaVinci Resolve)
+Importing “{}” …	„{}“ wird importiert …
+“{}” imported: {} clips, {} texts	„{}“ importiert: {} Clips, {} Texte
+“{}” imported	„{}“ importiert
+Not transferred (only available in the original app):	Nicht übertragen (gibt es nur im Ursprungsprogramm):
+{} media files were not found:	{} Mediendateien wurden nicht gefunden:
+Bring over projects from other editors. Enabled formats appear on the home screen under “Import project …”.	Projekte aus anderen Schnittprogrammen übernehmen. Eingeschaltete Formate erscheinen auf der Startseite unter „Projekt importieren …“.
+CapCut drafts	CapCut-Entwürfe
+FCPXML (Final Cut Pro, DaVinci Resolve)	FCPXML (Final Cut Pro, DaVinci Resolve)
+No CapCut draft folder found; you can still pick a draft as a file.	Kein CapCut-Entwurfsordner gefunden; Entwürfe lassen sich trotzdem als Datei wählen.
+Draft folder found	Entwurfsordner gefunden
+Online media	Online-Material
+Online music / text-to-speech	Online-Musik / Sprachausgabe
+Other	Sonstiges
+The draft is encrypted or damaged and can't be read	Der Entwurf ist verschlüsselt oder beschädigt und kann nicht gelesen werden
+No transferable clips found in the draft	Im Entwurf wurden keine übertragbaren Clips gefunden
+Unknown project format	Unbekanntes Projektformat
+# Phase 5.1
+Play backward (press again: faster)	Rückwärts abspielen (mehrfach: schneller)
+Play forward (press again: faster)	Vorwärts abspielen (mehrfach: schneller)
+Stop~halt	Anhalten
+Set In point	In-Punkt setzen
+Set Out point	Out-Punkt setzen
+Clear In/Out	In/Out löschen
+Loop the range	Bereich in Schleife abspielen
+Add marker	Marker setzen
+Next marker	Nächster Marker
+Previous marker	Vorheriger Marker
+Delete and close gap	Löschen und Lücke schließen
+Previous edit	Zum vorherigen Schnitt
+Next edit	Zum nächsten Schnitt
+Go to start	Zum Anfang
+Go to end	Zum Ende
+Main track magnet	Hauptspur-Magnet
+Snapping	Einrasten
+Save as	Speichern unter
+Larger interface	Oberfläche größer
+Smaller interface	Oberfläche kleiner
+Interface 100 %	Oberfläche 100 %
+Clear selection	Auswahl aufheben
+Preset	Vorlage
+Premiere-like	Premiere-ähnlich
+Resolve-like	Resolve-ähnlich
+Press a key …	Taste drücken …
+Restore default	Standard wiederherstellen
+Also: Ctrl+C / X / V copy, cut, paste · Ctrl+wheel zooms the timeline · Shift+wheel scrolls horizontally · Alt+Shift+Z fits the player	Außerdem: Strg+C / X / V kopieren, ausschneiden, einfügen · Strg+Mausrad zoomt die Zeitleiste · Umschalt+Mausrad scrollt waagerecht · Alt+Umschalt+Z passt den Player ein
+Loop on	Schleife an
+Loop off	Schleife aus
+In/Out range only ({} – {})	Nur In/Out-Bereich ({} – {})
+e.g. Intro, Scene 2	z. B. Intro, Szene 2
+Note~memo	Notiz
+Done	Fertig
+Add markers with M (at the playhead)	Setze Marker mit M (am Playhead)
+Untitled	Ohne Namen
+Copy chapters	Kapitel kopieren
+Chapter list from the markers for the video description	Kapitelliste aus den Markern für die Videobeschreibung
+Chapters copied to the clipboard	Kapitel in die Zwischenablage kopiert
+Solo (hear only this track)	Solo (nur diese Spur hören)
+Rename track	Spur umbenennen
+Rename track …	Spur umbenennen …
+e.g. Speaker 1, Music, Camera B	z. B. Sprecher 1, Musik, Kamera B
+Orange	Orange
+Pink	Pink
+Purple	Lila
+Gray	Grau
+Archive project …	Projekt archivieren …
+Copy the project with all media and fonts into one folder	Projekt mit allen Medien und Schriften in einen Ordner kopieren
+Relink media …	Medien neu verknüpfen …
+Relink media	Medien neu verknüpfen
+Backups …	Sicherungen …
+Backups	Sicherungen
+Destination folder for the archive	Zielordner für das Archiv
+Archiving project …	Projekt wird archiviert …
+Archive created: {}	Archiv erstellt: {}
+Archiving failed: {}	Archivieren fehlgeschlagen: {}
+Cutline backs up open projects every 5 minutes when something changed. The last 30 versions are kept.	Cutline sichert geöffnete Projekte alle 5 Minuten, wenn sich etwas geändert hat. Die letzten 30 Stände bleiben erhalten.
+The project hasn't been saved yet.	Das Projekt ist noch nicht gespeichert.
+Back up now	Jetzt sichern
+No backups yet	Noch keine Sicherungen
+Restore	Wiederherstellen
+Backup restored	Sicherung wiederhergestellt
+All media are available	Alle Medien sind vorhanden
+{} media files were not found (moved or renamed).	{} Mediendateien wurden nicht gefunden (verschoben oder umbenannt).
+Search folder …	Ordner durchsuchen …
+Looks for all missing files by name in a folder and its subfolders	Sucht alle fehlenden Dateien nach Namen in einem Ordner und seinen Unterordnern
+Found {} of {} files	{} von {} Dateien gefunden
+Level L {} dB · R {} dB	Pegel L {} dB · R {} dB
+Relink media~one	Medium neu verknüpfen
+# Asset-Verwaltung
+Move forward	Nach vorne
+Move back	Nach hinten
+Add to folder	Zu Ordner hinzufügen
+Remove from “{}”	Aus „{}“ entfernen
+Added to “{}”	Zu „{}“ hinzugefügt
+Folder already exists	Ordner gibt es schon
+The folder “{}” will be removed. The items in it are kept.	Der Ordner „{}“ wird entfernt. Die Einträge darin bleiben erhalten.
+Built-in categories can only be hidden	Eingebaute Kategorien lassen sich nur verbergen
+Unknown category	Unbekannte Kategorie
+Not a file folder	Kein Dateiordner
+# 5.1 Rest
+Timing	Zeit
+Start	Start
+Source from	Quelle ab
+Drag or type; frames as m:ss.ff	Ziehen oder tippen; Bilder als m:ss.ff
+Slip: different part of the source, position and length stay (Alt+drag on the clip)	Slippen: anderer Ausschnitt der Quelle, Lage und Länge bleiben (Alt+Ziehen im Clip)
+Roll	Rollen
+Slip: source from {} s	Slippen: Quelle ab {} s
+No more media at the start of the right clip	Am Anfang des rechten Clips gibt es keine weiteren Medien
+No more media at the end of the left clip	Am Ende des linken Clips gibt es keine weiteren Medien
+Paste attributes	Attribute einfügen
+Copy a clip first (Ctrl+C)	Erst einen Clip kopieren (Strg+C)
+Transfer from “{}” to the selection:	Von „{}“ auf die Auswahl übertragen:
+Look (adjustments, filter, effects, LUT, mask, key color)	Look (Anpassen, Filter, Effekte, LUT, Maske, Freistellen-Farbe)
+Position, scale, rotation and keyframes	Position, Größe, Drehung und Keyframes
+Audio (volume, processing, fades)	Ton (Lautstärke, Bearbeitung, Ein-/Ausblenden)
+Speed curve and direction	Tempokurve und Richtung
+Text style (for texts)	Textstil (bei Texten)
+Attributes pasted	Attribute eingefügt
+Select at least two clips to group	Für eine Gruppe mindestens zwei Clips auswählen
+{} clips grouped	{} Clips gruppiert
+Group removed	Gruppe aufgelöst
+Nudge clip 1 frame left	Clip 1 Bild nach links
+Nudge clip 1 frame right	Clip 1 Bild nach rechts
+Nudge clip 10 frames left	Clip 10 Bilder nach links
+Nudge clip 10 frames right	Clip 10 Bilder nach rechts
+Group	Gruppieren
+Ungroup	Gruppe auflösen
+Clip timing	Clip-Zeit
+From template	Aus Vorlage
+Save as template …	Als Vorlage speichern …
+Save as template	Als Vorlage speichern
+Rename template	Vorlage umbenennen
+e.g. Episode with intro and end card	z. B. Folge mit Intro und Endcard
+Saves format, tracks, clips, texts, effects and markers. New projects from the template start from this state.	Gespeichert werden Format, Spuren, Clips, Texte, Effekte und Marker. Neue Projekte aus der Vorlage starten mit diesem Stand.
+Template “{}” saved	Vorlage „{}“ gespeichert
+New project from template	Neues Projekt aus Vorlage
+Template moved to trash	Vorlage in den Papierkorb verschoben
+Proxies	Proxys
+Use proxies for large videos	Proxys für große Videos verwenden
+For videos above 1080p, above 30 fps or in HEVC/AV1/ProRes, Cutline creates small copies (540p) in the background. Preview gets smoother; export always uses the originals.	Für Videos über 1080p, über 30 fps oder in HEVC/AV1/ProRes erstellt Cutline im Hintergrund kleine Kopien (540p). Die Vorschau wird flüssiger, der Export nutzt immer die Originale.
+{} proxies · {} MB	{} Proxys · {} MB
+Delete proxies	Proxys löschen
+Creating proxy: {}	Proxy wird erstellt: {}
+Preview in its own window (second screen, double-click or F11 = fullscreen)	Vorschau in eigenem Fenster (zweiter Bildschirm, Doppelklick oder F11 = Vollbild)
+Undo: {}	Rückgängig: {}
+Story	Story
+Story tools	Story-Werkzeuge
+Dialogue box: {}	Dialogbox: {}
+Name tag: {}	Namensschild: {}
+Character	Figur
+Create characters …	Figuren anlegen …
+Dialogue box for {} inserted – enter the text in the inspector	Dialogbox für {} eingefügt – Text im Inspektor eingeben
+Name tag for {} inserted	Namensschild für {} eingefügt
+Characters with name, color and portrait; dialogue boxes and name tags in one click (“Tools” menu).	Figuren mit Name, Farbe und Porträt; Dialogboxen und Namensschilder mit einem Klick (Menü „Werkzeuge“).
+Portrait …	Porträt …
+Remove character	Figur entfernen
+Add character	Figur hinzufügen
+Sound and speech	Ton und Sprache
+Remove pauses (jump cuts)	Pausen entfernen (Jump Cuts)
+Cuts silent parts out of the selected clip	Schneidet stille Stellen aus dem ausgewählten Clip
+Remove filler words (uh, um)	Füllwörter entfernen (äh, ähm, uh, um)
+Detects filler words locally (Parakeet) and cuts them out	Erkennt Füllwörter lokal (Parakeet) und schneidet sie heraus
+Lower music under speech (auto-ducking)	Musik unter Sprache absenken (Auto-Ducking)
+The selected music clip gets quieter wherever someone speaks on other tracks	Ausgewählter Musik-Clip wird leiser, wo auf anderen Spuren gesprochen wird
+Find highlights (loud moments → markers)	Highlights finden (laute Momente → Marker)
+Adds markers at screams, explosions and cheers in the selected clip	Setzt Marker an Schreien, Explosionen, Jubel im ausgewählten Clip
+Sync selection by audio	Auswahl per Ton synchronisieren
+Aligns all selected clips to the audio of the first one selected (e.g. several angles of the same scene)	Richtet alle ausgewählten Clips am Ton des zuerst gewählten aus (z. B. mehrere Blickwinkel derselben Szene)
+Start multicam edit	Multicam-Schnitt starten
+Synced clips on their own tracks: pick the angle with 1–9 during playback	Synchronisierte Clips auf eigenen Spuren: während der Wiedergabe mit 1–9 den Blickwinkel wählen
+Import speaker recordings …	Sprecher-Aufnahmen importieren …
+One file per person (e.g. from a call recording, ZIP works too): one named audio track each at the playhead	Eine Datei pro Person (z. B. aus einer Call-Aufnahme, auch als ZIP): je eine benannte Tonspur am Playhead
+Picture and format	Bild und Format
+Zoom punch-in	Zoom-Punch-in
+Short zoom to 125 % with keyframes (adjustable afterwards)	Kurzer Zoom auf 125 % mit Keyframes (danach anpassbar)
+Vertical layout (9:16, facecam on top)	Hochkant-Layout (9:16, Facecam oben)
+Switches to 1080×1920: gameplay at the bottom, a copy of the clip on top as facecam crop	Stellt auf 1080×1920 um: Gameplay unten, Kopie des Clips oben als Facecam-Ausschnitt
+Export thumbnail (current frame)	Thumbnail exportieren (aktuelles Bild)
+Saves the frame at the playhead as PNG (1280×720 for 16:9)	Speichert das Bild am Playhead als PNG (1280×720 bei 16:9)
+Create recap from markers	Rückblick aus Markern erstellen
+New project with 3 s around each marker, with crossfades (“previously on”)	Neues Projekt mit je 3 s um jeden Marker, mit Überblendungen („Was bisher geschah“)
+Looking for pauses …	Pausen werden gesucht …
+No longer pauses found	Keine längeren Pausen gefunden
+Remove pauses	Pausen entfernen
+{} pauses removed ({} s)	{} Pausen entfernt ({} s)
+Requires: Parakeet TDT 0.6B v3 (Settings → Models)	Benötigt: Parakeet TDT 0.6B v3 (Einstellungen → Modelle)
+Looking for filler words …	Füllwörter werden gesucht …
+No filler words found	Keine Füllwörter gefunden
+Remove filler words	Füllwörter entfernen
+{} filler words removed	{} Füllwörter entfernt
+No other audio tracks under the music clip	Keine anderen Tonspuren unter dem Musik-Clip
+Detecting speech …	Sprache wird erkannt …
+No speech found under the music	Keine Sprache unter der Musik gefunden
+Music lowered in {} places (−12 dB)	Musik an {} Stellen abgesenkt (−12 dB)
+Looking for highlights …	Highlights werden gesucht …
+No notably loud moments found	Keine auffällig lauten Momente gefunden
+{} highlights added as markers	{} Highlights als Marker gesetzt
+The first selected clip needs audio	Der zuerst gewählte Clip braucht Ton
+Syncing recordings …	Aufnahmen werden synchronisiert …
+No shared audio found	Kein gemeinsamer Ton gefunden
+{} recordings synced	{} Aufnahmen synchronisiert
+Multicam: start playback and pick the angle with 1–9, stopping applies the edit	Multicam: Wiedergabe starten und mit 1–9 den Blickwinkel wählen, Stopp übernimmt den Schnitt
+Multicam edit applied with {} switches	Multicam-Schnitt mit {} Wechseln übernommen
+Audio or ZIP	Audio oder ZIP
+{} speaker tracks created	{} Sprecherspuren angelegt
+Zoom punch-in added (keyframes adjustable in the Basic tab)	Zoom-Punch-in gesetzt (Keyframes im Basis-Reiter anpassbar)
+Vertical layout: align the facecam on top to your face with position X/Y	Hochkant-Layout: Facecam oben mit Position X/Y auf dein Gesicht ausrichten
+Creating thumbnail …	Thumbnail wird erstellt …
+Thumbnail could not be saved	Thumbnail konnte nicht gespeichert werden
+Thumbnail saved: {}	Thumbnail gespeichert: {}
+Recap created from {} markers	Rückblick aus {} Markern erstellt
+Key invalid or without access	Schlüssel ungültig oder ohne Zugriff
+Service responded with {}	Dienst antwortet mit {}
+No connection ({})	Keine Verbindung ({})
+API key missing	API-Schlüssel fehlt
+Enter it under Settings → Plugins and accounts	Unter Einstellungen → Plugins und Konten eintragen
+Set up …	Einrichten …
+Type a search term and press Enter	Suchbegriff eingeben und Enter drücken
+Download and insert at the playhead	Laden und am Playhead einfügen
+Request a key	Schlüssel beantragen
+Shorts / TikTok / Reels (1080×1920)	Shorts / TikTok / Reels (1080×1920)
+Instagram post (1080×1350)	Instagram-Beitrag (1080×1350)
+Twitch clip (1080p60)	Twitch-Clip (1080p60)
+Small file for sharing (720p)	Kleine Datei zum Teilen (720p)
+Choose platform …	Plattform wählen …
+The project has a different aspect ratio – for vertical: Tools → Vertical layout	Das Projekt hat ein anderes Seitenverhältnis – für Hochkant: Werkzeuge → Hochkant-Layout
+Remove pauses, filler words, auto-ducking, highlights, sync, multicam, vertical, thumbnail …	Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Synchronisieren, Multicam, Hochkant, Thumbnail …
+Thumbs up	Daumen hoch
+Subscribe button	Abo-Knopf
+Bell	Glocke
+Live	Live
+Webcam frame	Webcam-Rahmen
+Progress bar	Fortschrittsbalken
+Creator	Creator
+Freesound	Freesound
+Pexels	Pexels
+Several recordings	Mehrere Aufnahmen
+Zoom punch-in at the playhead	Zoom-Punch-in am Playhead
+Gaming & let's plays	Gaming & Let's Plays
+Long recordings, highlights, facecam	Lange Aufnahmen, Highlights, Facecam
+Shorts, TikTok & Reels	Shorts, TikTok & Reels
+Vertical, captions, fast cuts	Hochformat, Untertitel, schnelle Schnitte
+Podcasts & interviews	Podcasts & Interviews
+Several speakers, pauses and filler words	Mehrere Sprecher, Pausen und Füllwörter
+Vlogs & lifestyle	Vlogs & Lifestyle
+Looks, music, stock footage	Looks, Musik, Stock-Material
+Story series & audio dramas	Story-Serien & Hörspiele
+Characters, dialogue, several angles	Figuren, Dialoge, mehrere Blickwinkel
+Music videos & edits	Musikvideos & Edits
+Beats, transitions, effects	Beats, Übergänge, Effekte
+School, work & tutorials	Schule, Arbeit & Tutorials
+Captions, voiceover, chapters	Untertitel, Sprachaufnahme, Kapitel
+Download speech recognition	Spracherkennung laden
+Automatic captions and filler word removal. Runs locally.	Automatische Untertitel und Füllwörter entfernen. Läuft lokal.
+approx. 690 MB	ca. 690 MB
+approx. 32 MB	ca. 32 MB
+Background removal without a green screen	Freistellen ohne Greenscreen
+Separate a person from the background, e.g. facecam over gameplay.	Person vom Hintergrund trennen, z. B. Facecam über Gameplay.
+Epidemic Sound	Epidemic Sound
+own account	eigenes Konto
+Music and sound effects right in the Audio tab.	Musik und Soundeffekte direkt im Audio-Reiter.
+free key	kostenloser Schlüssel
+Hundreds of thousands of free sound effects in the Audio tab.	Hunderttausende freie Soundeffekte im Audio-Reiter.
+Free stock videos and photos in the Media tab.	Kostenlose Stock-Videos und Fotos im Medien-Reiter.
+Characters, dialogue boxes and name tags in one click.	Figuren, Dialogboxen und Namensschilder mit einem Klick.
+Quick Actions → Remove pauses cuts silence out of spoken parts.	Schnellaktionen → Pausen entfernen schneidet Stille aus Sprechpassagen.
+Find highlights	Highlights finden
+Quick Actions → Highlights adds markers at loud moments of long recordings.	Schnellaktionen → Highlights setzt Marker an lauten Momenten langer Aufnahmen.
+Vertical layout	Hochkant-Layout
+Quick Actions → Vertical layout turns 16:9 into a 9:16 video with the facecam on top.	Schnellaktionen → Hochkant-Layout macht aus 16:9 ein 9:16-Video mit Facecam oben.
+Multicam	Multicam
+Sync several recordings by audio and cut between them live with 1–9.	Mehrere Aufnahmen per Ton synchronisieren und mit 1–9 live zwischen ihnen schneiden.
+Auto ducking	Auto-Ducking
+Quick Actions → Lower music under speech, no manual keyframes.	Schnellaktionen → Musik unter Sprache absenken, ohne Keyframes von Hand.
+Beat detection	Beat-Erkennung
+Detect the beats of a song, clips snap to them.	Beats eines Songs erkennen lassen, Clips rasten darauf ein.
+Chapters from markers	Kapitel aus Markern
+M adds markers, the Project tab turns them into YouTube chapters.	M setzt Marker, im Projekt-Reiter werden daraus YouTube-Kapitel.
+Recap from markers	Rückblick aus Markern
+Quick Actions → Recap cuts marked moments into a “previously on”.	Schnellaktionen → Rückblick schneidet markierte Momente zu einem „Was bisher geschah“.
+Library	Bibliothek
+Import media or simply drag it here. The toolbar of the media panel holds audio, text, elements, effects, transitions, filters and captions. Star items as favorites and create your own folders.	Medien importieren oder einfach hierher ziehen. In der Symbolleiste des Medien-Menüs findest du Audio, Text, Elemente, Effekte, Übergänge, Filter und Untertitel. Mit dem Stern merkst du dir Favoriten, eigene Ordner legst du selbst an.
+Shows the frame at the playhead. Move, scale and rotate clips right here. Space plays, J/K/L shuttles.	Zeigt das Bild am Playhead. Clips verschiebst, skalierst und drehst du direkt hier. Leertaste spielt ab, J/K/L spult.
+Inspector	Inspektor
+Everything about the selected clip: picture, audio, speed, animations and keyframes. Without a selection you see the project and its markers here.	Alles zum ausgewählten Clip: Bild, Ton, Tempo, Animationen und Keyframes. Ohne Auswahl siehst du hier das Projekt und seine Marker.
+Timeline	Zeitleiste
+This is where your video comes together. The magnet keeps the main track gap-free.	Hier entsteht dein Video. Der Magnet hält die Hauptspur lückenlos.
+Remove pauses, filler words, auto ducking, highlights, multicam, vertical layout and thumbnail in one click.	Pausen entfernen, Füllwörter, Auto-Ducking, Highlights, Multicam, Hochkant-Layout und Thumbnail mit einem Klick.
+Presets for YouTube, Shorts, TikTok, Instagram and Twitch. No watermark, up to 4K.	Vorlagen für YouTube, Shorts, TikTok, Instagram und Twitch. Ohne Wasserzeichen, bis 4K.
+Menu	Menü
+Projects, templates, backups, settings and shortcuts. You can restart the tour here at any time.	Projekte, Vorlagen, Sicherungen, Einstellungen und Tastenkürzel. Den Rundgang findest du hier jederzeit wieder.
+Enter keys or sign in under Settings → Plugins and accounts	Schlüssel bzw. Anmeldung unter Einstellungen → Plugins und Konten eintragen
+Back	Zurück
+Skip	Überspringen
+You can find the introduction later under Menu → Repeat introduction	Die Einführung findest du später unter Menü → Einführung wiederholen
+Let's go	Los geht's
+Next	Weiter
+Start tour	Rundgang starten
+Applies your choices and shows you around the editor	Übernimmt die Auswahl und zeigt dir die Bereiche des Editors
+Finish without tour	Ohne Rundgang fertig
+Picked for you	Passend für dich
+Turn on and download	Einschalten und laden
+already active	bereits aktiv
+Already built in	Schon eingebaut
+Tour · {} of {}	Rundgang · {} von {}
+End~quit	Beenden
+You can find the tour and introduction in the menu at any time	Rundgang und Einführung findest du jederzeit im Menü
+Welcome to Cutline	Willkommen bei Cutline
+Easy to use, fast, and entirely on your machine.	Einfach zu bedienen, schnell, komplett auf deinem Rechner.
+Simple	Einfach schneiden
+Familiar layout: drag in, cut, export. Every function is unlocked from the first start.	Vertraute Bedienung: reinziehen, schneiden, exportieren. Jede Funktion ist ab dem ersten Start freigeschaltet.
+Fast	Schnell arbeiten
+Written in Rust. Smooth preview with proxies, quick exports with hardware encoders.	In Rust geschrieben. Flüssige Vorschau mit Proxys, schnelle Exporte mit Hardware-Encodern.
+Open~state	Offen
+Open source, runs locally, no account, no subscription, no watermark. Projects are open JSON.	Open Source, läuft lokal, ohne Konto, ohne Abo, ohne Wasserzeichen. Projekte sind offenes JSON.
+Set up Cutline for your videos in three short steps.	In drei kurzen Schritten richtest du Cutline für deine Videos ein.
+What do you use Cutline for?	Wofür nutzt du Cutline?
+Pick as many as you like. We'll suggest matching Quick Actions and plugins next.	Mehrfachauswahl. Danach schlagen wir passende Schnellaktionen und Plugins vor.
+Shortcuts like in	Tastenkürzel wie in
+Tour	Rundgang
+Repeat introduction	Einführung wiederholen
+Changes below apply to all selected clips (scale, position, effects, filters, adjust, audio …). Position in time and length stay per clip.	Änderungen unten gelten für alle ausgewählten Clips (Skalierung, Position, Effekte, Filter, Anpassen, Ton …). Lage und Länge bleiben je Clip.
+Affects all tracks below while the element runs. Change its position and length in the timeline.	Wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste.
+Sets size and frame rate; export uses the matching preset	Setzt Größe und Bildrate; der Export übernimmt die passende Vorlage
+Click applies to the selected clip. Drag onto a clip: only that clip; into an empty spot of the timeline: its own element for everything below	Klick wendet auf den ausgewählten Clip an. Ziehen auf einen Clip: nur dieser Clip; ins Freie der Zeitleiste: eigenes Element für alles darunter
+Click adds an element at the playhead that affects all tracks below. Drag onto a clip: only that clip	Klick legt ein Element am Playhead an, das auf alle Spuren darunter wirkt. Auf einen Clip ziehen: nur dieser Clip
+Filter added as a clip – affects all tracks below	Filter als Clip eingefügt – wirkt auf alle Spuren darunter
+Effect added as a clip – affects all tracks below	Effekt als Clip eingefügt – wirkt auf alle Spuren darunter
+The project has a different aspect ratio – change the format in the Project tab or use Quick Actions → Vertical layout	Das Projekt hat ein anderes Seitenverhältnis – Format im Projekt-Reiter umstellen oder Schnellaktionen → Hochkant-Layout
+Platform	Plattform
+Details~more	Einzelheiten
+Limits the element to an area of the picture. The outline shows in the preview while the element is selected.	Begrenzt das Element auf einen Bildbereich. Der Umriss erscheint in der Vorschau, solange das Element ausgewählt ist.
+The filter affects all tracks below while the element runs. Change its position and length in the timeline.	Der Filter wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste.
+The effect affects all tracks below while the element runs. Change its position and length in the timeline.	Der Effekt wirkt auf alle Spuren darunter, solange das Element läuft. Lage und Länge änderst du in der Zeitleiste.
+Recent	Zuletzt
+Recently used	Zuletzt verwendet
+Sounds	Sounds
+Epidemic	Epidemic
+For the video description	Für die Videobeschreibung
+Noise	Störgeräusche
+Rumble & wind	Rumpeln & Wind
+Clicks	Klicks
+Sound	Klang
+Compressor	Kompressor
+Audio filters	Audiofilter
+Recording	Aufnahme
+Starts at the playhead	Startet am Playhead
+Get ready	Gleich geht's los
+Cancel countdown (Esc)	Countdown abbrechen (Esc)
+Mute project	Projekt stumm
+Podcast	Podcast
+Bass boost	Bass-Boost
+Lo-fi	Lo-Fi
+Laptop	Laptop
+Stadium	Stadion
+Next room	Nebenraum
+Warmer	Wärmer
+Clearer	Klarer
+Wider	Breiter
+Remove clicks and crackle	Klicks und Knackser entfernen
+Remove mains hum (50/60 Hz)	Netzbrummen (50/60 Hz) entfernen
+Bring out speech, lower the background	Sprache betonen, Hintergrund absenken
+Remove low noise below 90 Hz	Tiefe Störgeräusche unter 90 Hz entfernen
+Applies to all selected clips	Gilt für alle ausgewählten Clips
+Preview approximated, export exact	Vorschau angenähert, Export exakt
+from {}	ab {}
+Select	Auswählen
+Select all clips to the left	Alle Clips links auswählen
+Select all clips to the right	Alle Clips rechts auswählen
+Remove pauses, filler words, ducking, multicam, vertical …	Pausen entfernen, Füllwörter, Ducking, Multicam, Hochkant …
+Add a new track	Neue Spur hinzufügen
+Move track up	Spur nach oben
+Move track down	Spur nach unten
+Move track	Spur verschieben
+Track	Spur
+Video track	Videospur
+Text track	Textspur
+Effect track	Effektspur
+Filter track	Filterspur
+Audio track	Audiospur
+Tool	Werkzeug
+Tool: select	Werkzeug: Auswählen
+Tool: blade	Werkzeug: Klinge
+Properties	Eigenschaften
+File size	Dateigröße
+Video codec	Video-Codec
+Audio codec	Audio-Codec
+Used	Verwendet
+End	Ende
+Source in	Quellbeginn
+Yes	Ja
+Fade in/out	Ein-/Ausblenden
+main track	Hauptspur
+locked	gesperrt
+hidden	ausgeblendet
+muted	stumm
+Modified	Geändert
+Missing files	Fehlende Dateien
+File missing	Datei fehlt
+Copy path	Pfad kopieren
+Copied	Kopiert
+Image	Bild
+Theme	Design
+Animations	Animationen
+Dark	Dunkel
+Dark gray	Dunkelgrau
+Change …	Ändern …
+Default	Standard
+Back to the data folder	Zurück in den Datenordner
+New projects folder	Neuer Projektordner
+Backup every	Sicherung alle
+New projects	Neue Projekte
+Channels	Kanäle
+Channels (new projects)	Kanäle (neue Projekte)
+Project default	Projekt-Standard
+Stereo	Stereo
+Left only	Nur links
+Right only	Nur rechts
+“Automatic” puts sound recorded only on the left or right on both ears	„Automatisch“ legt Ton, der nur links oder rechts aufgenommen wurde, auf beide Ohren
+Cache	Cache
+Used~occupied	Belegt
+Clear cache	Cache leeren
+Proxies, previews and project images. Created again when needed.	Proxys, Vorschaubilder und Projektbilder. Werden bei Bedarf neu erzeugt.
+Cache cleared	Cache geleert
+Fast · 540p	Schnell · 540p
+Balanced · 720p	Ausgewogen · 720p
+High · 1080p	Hoch · 1080p
+Proxy could not be created	Proxy konnte nicht erstellt werden
+Unlink	Verknüpfung lösen
+Link folder …	Ordner verknüpfen …
+Add downloads to the library	Downloads in die Bibliothek übernehmen
+Add files to the library (or drop them here)	Dateien zur Bibliothek hinzufügen (auch per Ablegen)
+Add to library	Zur Bibliothek hinzufügen
+In every project under Media → Library	In allen Projekten unter Medien → Bibliothek
+Added to library	Zur Bibliothek hinzugefügt
+File not found	Datei nicht gefunden
+Library is empty	Bibliothek ist leer
+Media on the right	Medien rechts
+Long timeline	Lange Zeitleiste
+Click to play · double-click, + or drag to add	Klick spielt ab · Doppelklick, + oder Ziehen fügt ein
+Exporting …	Exportiere …
+about {}:{} left	noch ca. {}:{}
+Done in {} s	Fertig in {} s
+Captions ({})	Untertitel ({})
+Add	Hinzufügen
+New caption at the playhead	Neuer Untertitel am Playhead
+No captions yet	Noch keine Untertitel
+Generate, import an SRT or add by hand	Erzeugen, SRT importieren oder von Hand hinzufügen
+Replace with	Ersetzen durch
+Replace all	Alle ersetzen
+replaced	ersetzt
+Style “{}” for all	Stil „{}“ auf alle
+Split again	Neu aufteilen
+Lines as long as in the selected style	Zeilen so lang wie in der gewählten Vorlage
+Jump there	Hinspringen
+Merge with the next one	Mit dem nächsten zusammenführen
+There is already a caption here	Hier liegt schon ein Untertitel
+Not enough room before the next caption	Zu wenig Platz bis zum nächsten Untertitel
+New caption	Neuer Untertitel
+lines	Zeilen
+This is how it looks	So sieht es aus
+Classic	Klassisch
+Box	Box
+Short & bold	Kurz & fett
+Word by word	Wort für Wort
+Soft	Weich
+Full sentences, calm at the bottom	Ganze Sätze, ruhig unten im Bild
+Easy to read on bright images	Gut lesbar auf hellen Bildern
+A few words, big in the middle – fits vertical video	Wenige Wörter, groß in der Mitte – passt ins Hochformat
+Every word on its own, fast and eye-catching	Jedes Wort einzeln, schnell und auffällig
+Short lines, gently faded in	Kurze Zeilen, sanft eingeblendet
+Slim serif font, elegant	Schmale Serifenschrift, elegant
+Layout	Layout
+Profile name	Name des Profils
+This name belongs to a built-in profile	Dieser Name gehört zu einem mitgelieferten Profil
+Layout saved	Layout gespeichert
+Delete profile	Profil löschen
+To the other side	Auf die andere Seite
+Down	Nach unten
+Up	Nach oben
+Full width	Volle Breite
+Edit layout …	Layout bearbeiten …
+Edit history	Bearbeitungsverlauf
+Now	Jetzt
+Project start	Projektbeginn
+1 step	1 Schritt
+{} steps	{} Schritte
+step	Schritt
+steps	Schritte
+Redo up to here	Bis hier wiederholen
+Go back to this state	Zu diesem Stand zurück
+Undo all steps	Alle Schritte rückgängig
+{} {} projects moved	{} {} Projekte verschoben
+The new folder must not be inside the old one (or the other way round)	Der neue Ordner darf nicht im alten liegen (oder umgekehrt)
+Gaming	Gaming
+Comedy	Comedy
+Reactions	Reaktionen
+Bass drop	Bass-Drop
+Cinematic braam	Kino-Braam
+Reverse cymbal	Rückwärts-Becken
+Tape stop	Bandstopp
+Level up	Level Up
+Victory fanfare	Sieg-Fanfare
+Power down	Power-down
+Hit marker	Treffer
+Countdown	Countdown
+Airhorn	Airhorn
+Ba-dum-tss	Ba-dum-tss
+Boing	Boing
+Record scratch	Plattenkratzer
+Cash register	Kasse
+Camera shutter	Kamera
+Play button	Play-Knopf
+New	Neu
+Circle it	Einkreisen
+Crosshair	Fadenkreuz
+Health bar	Lebensleiste
+Trophy	Pokal
+Controller	Controller
+Flame	Flamme
+Skull	Totenkopf
+Laughing	Lachen
+Shocked	Schock
+Question mark	Fragezeichen
+Exclamation mark	Ausrufezeichen
+Victory	Sieg
+Headshot	Headshot
+Arcade	Arcade
+Thumbnail	Thumbnail
+Episode	Episode
+Esports	E-Sport
+Nice	Nice
+Subscribe callout	Abo-Hinweis
+Quick Actions	Schnellaktionen
+Player zoom {} (Ctrl+wheel, Alt+Shift+Z: fit)	Player-Zoom {} (Strg+Mausrad, Alt+Umschalt+Z: ganzes Bild)
+Click to play	Klick spielt ab
+Turn off animations	Animationen ausschalten
+Go to file	Zur Datei
+Export again	Erneut exportieren
+Exports	Exporte
+Nothing exported yet	Noch nichts exportiert
+Collapse track	Spur einklappen
+Expand track	Spur ausklappen
+Motion between keyframes	Bewegung zwischen Keyframes
+Section	Abschnitt
+Smooth	Sanft
+Ease in~start	Anfahren
+Ease out~brake	Abbremsen
+Snappy	Schnell
+Overshoot	Schwung
+Anticipate	Ausholen
+Hold	Halten
+Same speed from start to end	Gleiches Tempo von Anfang bis Ende
+Start slowly and slow down at the end	Langsam anfahren und abbremsen
+Starts slowly, gets faster	Startet langsam, wird schneller
+Starts fast, arrives gently	Startet schnell, kommt sanft an
+Short, strong push in the middle	Kurzer, kräftiger Ruck in der Mitte
+Shoots a little past the target and springs back	Schießt etwas übers Ziel und federt zurück
+Briefly swings in the opposite direction first	Holt kurz in die Gegenrichtung aus
+Stays put and jumps at the next keyframe	Bleibt stehen und springt am nächsten Keyframe
+Custom curve	Eigene Kurve
+Drag the handles: left is the start, right the arrival. Beyond the lines = anticipation or overshoot.	Griffe ziehen: links der Start, rechts die Ankunft. Über die Linien hinaus = Ausholen bzw. Überschwingen.
+System default	Systemstandard
+Output device	Ausgabegerät
+Sound while dragging the playhead	Ton beim Ziehen des Playheads
+Play a sound when an export is finished	Hinweiston, wenn ein Export fertig ist
+Clear automatically	Automatisch leeren
+Never	Nie
+Older than {} days	Älter als {} Tage
+Animation (imported as a fade)	Animation (als Blende übernommen)
+Clean up	Aufräumen
+This name already exists	Diesen Namen gibt es schon
+Autosave failed: {}	Automatisch speichern fehlgeschlagen: {}
+Could not save the project: {}	Projekt konnte nicht gespeichert werden: {}
+This project is already open in another Cutline window	Dieses Projekt ist schon in einem anderen Cutline-Fenster geöffnet
+"{}" contains files used by the open project and is kept	„{}“ enthält Dateien, die im offenen Projekt verwendet werden, und bleibt deshalb erhalten
+yesterday	gestern
+Cutline – Preview	Cutline – Vorschau
+Blade	Klinge
+Solo	Solo
+Unsolo	Solo aufheben
+Rotation	Drehung
+Smart	Smart
+Add marker here	Marker hier setzen
+Edit marker …	Marker bearbeiten …
+Delete marker	Marker löschen
+Loop range	Bereich wiederholen
+Save still frame …	Standbild speichern …
+Preview in its own window	Vorschau in eigenem Fenster
+Apply look	Look anwenden
+Import project from another app …	Projekt aus anderem Programm importieren …
+Accent color	Akzentfarbe
+Custom color	Eigene Farbe
+White	Weiß
+Teal	Türkis
+Violet	Violett
+Word	Wort
+Look	Look
+Keep	Aufbewahren
+Highlights	Highlights
+Jump to moment	Zum Moment springen
+Strength {} %	Stärke {} %
+Short	Short
+Length per short	Länge je Short
+Apply caption style	Untertitel-Stil anwenden
+No captions in the project – generate captions first	Keine Untertitel im Projekt – erst Untertitel erzeugen
+Create as shorts	Als Shorts anlegen
+Add as markers	Als Marker setzen
+{} shorts created in {}	{} Shorts angelegt in {}
+Refit clips?	Clips neu einpassen?
+The aspect ratio is changing. How should existing footage fit the new format?	Das Seitenverhältnis ändert sich. Wie sollen vorhandene Bilder ins neue Format?
+Fill	Füllen
+Fit~verb	Einpassen
+Leave as is	So lassen
+Image fills the frame, edges are cropped	Bild füllt das Format, Ränder werden beschnitten
+Whole image visible, with bars	Ganzes Bild sichtbar, mit Balken
+Fill and follow what matters in the frame (analysis runs in the background)	Füllen und dem Wichtigen im Bild folgen (Analyse im Hintergrund)
+Safe area	Safe-Area
+Insert from template …	Aus Vorlage einfügen …
+Insert from template	Aus Vorlage einfügen
+At start	Am Anfang
+At playhead	Am Playhead
+At end	Am Ende
+Template inserted	Vorlage eingefügt
+Remove range	Bereich entfernen
+Move everything: ripple edits shift all tracks and markers	Alles mitziehen: Ripple-Schnitte verschieben alle Spuren und Marker
+No gaps	Keine Lücken
+No selected clip with audio	Kein ausgewählter Clip mit Ton
+Threshold	Schwelle
+Minimum length	Mindestlänge
+Margin before	Rand davor
+Margin after	Rand danach
+Words (comma-separated)	Wörter (durch Komma getrennt)
+Reduction	Absenkung
+Ramp	Rampe
+All clips on the track	Alle Clips der Spur
+{} pauses, {} s shorter	{} Pausen, {} s kürzer
+{} filler words, {} s shorter	{} Füllwörter, {} s kürzer
+Nothing found	Nichts gefunden
+Adjust the values and analyze again	Werte anpassen und erneut analysieren
+Jump to this result	Zum Treffer springen
+The clip already has volume keyframes. Replace them?	Der Clip hat schon Lautstärke-Keyframes. Ersetzen?
+Analyze	Analysieren
+Replace	Ersetzen
+Apply	Anwenden
+Lower music under speech	Musik unter Sprache absenken
+Music lowered in {} places (−{} dB)	Musik an {} Stellen abgesenkt (−{} dB)
+Export audio (AAC {} kbit/s, Opus for WebM)	Ton exportieren (AAC {} kbit/s, bei WebM Opus)
+Also save texts as subtitle files (SRT and VTT)	Texte zusätzlich als Untertiteldateien (SRT und VTT) speichern
+YouTube (−14 LUFS)	YouTube (−14 LUFS)
+Speech (−16 LUFS)	Sprache (−16 LUFS)
+Measures the audio first and raises or lowers it evenly, peaks at most −1 dBTP	Misst den Ton vorab und hebt oder senkt ihn gleichmäßig, Spitzen höchstens −1 dBTP
+Measuring loudness …	Lautheit messen …
+Switch project to 9:16	Projekt auf 9:16 umstellen
+File already exists	Datei existiert bereits
+Overwrite	Überschreiben
+Different name	Anderen Namen
+{} clips on other tracks removed as well (move everything)	{} Clips auf anderen Spuren mit entfernt (Alles mitziehen)
+Intro title	Intro-Titel
+End card	Endkarte
+Chapter title	Kapitel-Titel
+Loudness	Lautheit
+Clips with a speed curve are skipped	Clips mit Tempo-Kurve werden übersprungen
+The project has changed – please run again	Projekt hat sich geändert – bitte erneut ausführen
+Could not save companion file	Begleitdatei nicht gespeichert
+Could not measure loudness	Lautheit konnte nicht gemessen werden
+No looks	Keine Looks
+Save as look	Als Look speichern
+Delete look	Look löschen
+Rename look	Look umbenennen
+Look “{}” saved	Look „{}“ gespeichert
+Look “{}” applied	Look „{}“ angewendet
+Look “{}” deleted	Look „{}“ gelöscht
+Select a clip with audio first	Wähle zuerst einen Clip mit Ton
+Select two or more clips	Wähle zwei oder mehr Clips
+Select a video clip	Wähle einen Videoclip
+Add markers first	Setze zuerst Marker
+{} splits	{} teilt
+{} deletes left of the playhead	{} löscht links vom Playhead
+{} deletes right of the playhead	{} löscht rechts vom Playhead
+{} adds a marker	{} setzt einen Marker
+Arrangement	Anordnung
+Swapped	Getauscht
+Top	Oben
+Both	Beides
+Media left, inspector right, timeline at the bottom	Medien links, Inspektor rechts, Zeitleiste unten
+Media right, inspector left, timeline at the bottom	Medien rechts, Inspektor links, Zeitleiste unten
+Media left, inspector right, timeline at the top	Medien links, Inspektor rechts, Zeitleiste oben
+Media right, inspector left, timeline at the top	Medien rechts, Inspektor links, Zeitleiste oben
+Timeline across the full width	Zeitleiste über die ganze Breite
+Toolbar	Symbolleiste
+Side	Seitlich
+Lock layout	Layout sperren
+Layout is locked (Settings → General → Arrangement)	Layout ist gesperrt (Einstellungen → Allgemein → Anordnung)
+Live preview	Live-Vorschau
+Reset this section	Diesen Bereich zurücksetzen
+Section reset	Bereich zurückgesetzt
+Redirect URI	Weiterleitung
+Existing projects are moved along	Vorhandene Projekte werden mit verschoben
+The open video editor for creators. Easy to use, fast, entirely on your computer.	Das offene Schnittprogramm für Creator. Einfach zu bedienen, schnell, komplett auf deinem Rechner.
+Exports with Epidemic music are reported to Epidemic Sound (track IDs only).	Exporte mit Epidemic-Musik werden an Epidemic Sound gemeldet (nur Titel-IDs).
+Applies to the selected music clip	Wirkt auf den ausgewählten Musik-Clip
+Needs two keyframes	Braucht zwei Keyframes
+“Hold” has no curve	„Halten“ hat keine Kurve
+from markers	aus Markern
+Audio from	Ton von
+Everything is optional and can be changed in Settings at any time.	Alles ist optional und jederzeit in den Einstellungen änderbar.
+Drop files here	Dateien hierher ziehen
+Elements	Elemente
+Content~plural	Inhalte
+Essentials	Grundausstattung
+Built-in effects, filters, transitions, sounds and stickers	Eingebaute Effekte, Filter, Übergänge, Sounds und Sticker
+{} sounds	{} Sounds
+Add pack …	Paket hinzufügen …
+Open pack folder	Paket-Ordner öffnen
+Sources and licenses	Quellen und Lizenzen
+Replace pack?	Paket ersetzen?
+“{}” is already installed. Replace it with the new pack?	„{}“ ist schon installiert. Durch das neue Paket ersetzen?
+Remove pack?	Paket entfernen?
+“{}” will be deleted. Projects that use its content will report it as missing.	„{}“ wird gelöscht. Projekte, die seine Inhalte nutzen, melden sie danach als fehlend.
+“{}” already ships with Cutline	„{}“ ist schon mitgeliefert
+Pack “{}” added	Paket „{}“ hinzugefügt
+Pack removed	Paket entfernt
+Copied to the clipboard	In die Zwischenablage kopiert
+{} items are missing: {} – turn on their pack in Settings → Content	{} Inhalte fehlen: {} – Paket in Einstellungen → Inhalte einschalten
+{} items are missing; the export continues without them: {}	{} Inhalte fehlen und werden ohne sie exportiert: {}
+License	Lizenz
+Author	Autor
+Different details	Abweichende Angaben
+{} effect	{} Effekt
+{} transition	{} Übergang
+{} sound	{} Sound
+Bounce	Hüpfen
+Elastic	Elastisch
+Stamp	Stempel
+Punch	Schlag
+Snap from left	Schnell von links
+Snap from right	Schnell von rechts
+Snap from top	Schnell von oben
+Snap from bottom	Schnell von unten
+Unfold	Aufklappen
+Roll in	Hereinrollen
+Whirl	Wirbel
+Tilt in	Einkippen
+Neon flicker	Neon-Start
+Rattle	Rütteln
+Pendulum	Pendeln
+Breathe	Atmen
+Bob	Wippen
+Blink	Blinken
+Rock	Schaukeln
+Slow zoom	Langsamer Zoom
+Glitch loop	Glitch-Schleife
+Yellow on black	Gelb auf Schwarz
+High contrast on any picture	Hoher Kontrast auf jedem Bild
+One to three words that jump in	Ein bis drei Wörter, springen ins Bild
+Light box~box	Helle Box
+Dark text on a white box	Dunkle Schrift auf weißer Fläche
+Bright color with a dark outline	Leuchtfarbe mit dunkler Kontur
+Typewriter	Schreibmaschine
+Monospaced type on a dark box	Festbreitenschrift auf dunkler Fläche
+Documentary	Doku
+Small and subtle	Klein und zurückhaltend
+Two calm lines	Zwei ruhige Zeilen
+Angular and loud	Kantig und grell
+Part 2	Teil 2
+Quote	Zitat
+Handwriting	Handschrift
+Script	Schreibschrift
+Neon sign	Neonschild
+Credits	Abspann
+Boss fight	Bossfight
+New video	Neues Video
+Did you know?	Wusstest du?
+Follow for more!	Folge für mehr
+Big number	Große Zahl
+Price tag	Preisschild
+Name tag	Namensschild
+Caution	Vorsicht
+Place & time	Ort & Zeit
+Calls to action	Aufrufe
+Pointers	Zeigen
+Particles	Partikel
+Symbols	Symbole
+Animals & food	Tiere & Essen
+No elements found	Keine Elemente gefunden
+Invalid value	Ungültiger Wert
+Distort	Verzerren
+Wind up	Wind hoch
+Wind down	Wind runter
+Cover up	Überdecken hoch
+Cover down	Überdecken runter
+Reveal up	Aufdecken hoch
+Reveal down	Aufdecken runter
+Result discarded because another project has been opened since	Ergebnis verworfen, weil inzwischen ein anderes Projekt geöffnet wurde
+Duplicating failed: {}	Duplizieren fehlgeschlagen: {}
+Share arrow	Teilen-Pfeil
+Thumbs up (icon)	Daumen hoch (Symbol)
+Star (icon)	Stern (Symbol)
+Check (icon)	Haken (Symbol)
+Cross (icon)	Kreuz (Symbol)
+Flash (icon)	Blitz (Symbol)
+Arrow right (icon)	Pfeil rechts (Symbol)
+Speech bubble (icon)	Sprechblase (Symbol)
+Sparkle (icon)	Funkeln (Symbol)
+Crown (icon)	Krone (Symbol)
+Smile (icon)	Lächeln (Symbol)
+Bell (icon)	Glocke (Symbol)
+Trophy (icon)	Pokal (Symbol)
+Controller (icon)	Controller (Symbol)
+Skull (icon)	Totenkopf (Symbol)
+Question mark (icon)	Fragezeichen (Symbol)
+Exclamation mark (icon)	Ausrufezeichen (Symbol)
+1 filter	1 Filter
+1 sticker	1 Sticker
+Import failed (internal error)	Import fehlgeschlagen (interner Fehler)
+Export in progress – quit anyway?	Export läuft – wirklich beenden?
+Quit Cutline	Cutline beenden
+File missing: {}	Datei fehlt: {}
+{} files missing: {}	{} Dateien fehlen: {}
+Pack turned off – rendered as “{}”	Paket ausgeschaltet – wird als „{}“ gerechnet
+Pack missing – rendered as “{}”	Paket fehlt – wird als „{}“ gerechnet
+No effects found	Keine Effekte gefunden
+No filters found	Keine Filter gefunden
+No transitions found	Keine Übergänge gefunden
+{} track	{} Spur
+{} clip	{} Clip
+{} media item	{} Medium
+{} highlight added as a marker	{} Highlight als Marker gesetzt
+{} pause removed ({} s)	{} Pause entfernt ({} s)
+{} filler word removed	{} Füllwort entfernt
+{} pause, {} s shorter	{} Pause, {} s kürzer
+{} filler word, {} s shorter	{} Füllwort, {} s kürzer
+{} media file was not found:	{} Mediendatei wurde nicht gefunden:
+{} media file was not found (moved or renamed).	{} Mediendatei wurde nicht gefunden (verschoben oder umbenannt).
+{} clip on other tracks removed as well (move everything)	{} Clip auf anderen Spuren mit entfernt (Alles mitziehen)
+Chapter “{}” is only {} s long – YouTube only shows chapters of 10 s or more	Kapitel „{}“ ist nur {} s lang – YouTube zeigt Kapitel erst ab 10 s an
+Don't show again	Nicht mehr anzeigen
+Hint for chapters under 10 s	Hinweis bei Kapiteln unter 10 s
+Hidden	Ausgeblendet
+Show in tabs	In den Tabs anzeigen
+Edit order	Reihenfolge bearbeiten
+Pin to top	Oben anpinnen
+Unpin	Nicht mehr anpinnen
+Save as element	Als Element speichern
+Save as sound	Als Sound speichern
+Saved as element	Als Element gespeichert
+Saved as sound	Als Sound gespeichert
+{} item is missing: {} – turn on its pack in Settings → Content	{} Inhalt fehlt: {} – Paket in Einstellungen → Inhalte einschalten
+{} item is missing; the export continues without it: {}	{} Inhalt fehlt und wird ohne ihn exportiert: {}
+What's new	Was ist neu
+What's new in {}	Was ist neu in {}
+Update available	Update verfügbar
+Update installed	Update installiert
+Later	Später
+Try again	Erneut versuchen
+Update now	Jetzt aktualisieren
+View update	Update ansehen
+Check now	Jetzt prüfen
+{} tasks	{} Aufgaben
+Adjust preview quality automatically during playback	Vorschauqualität beim Abspielen automatisch anpassen
+Preview quality lowered automatically during playback	Vorschauqualität beim Abspielen automatisch verringert
+Opening “{}”	„{}“ wird geöffnet
+Read project	Projekt lesen
+Check media	Medien prüfen
+Build timeline	Zeitleiste aufbauen
+Read draft	Entwurf lesen
+Find media	Medien finden
+Create project	Projekt anlegen
+Importing “{}”	„{}“ wird importiert
+Project {} of {}	Projekt {} von {}
+Import finished	Import abgeschlossen
+Open project	Projekt öffnen
+{} texts	{} Texte
+{} compound clips resolved	{} zusammengesetzte Clips aufgelöst
+Not imported: {}	Nicht übernommen: {}
+{} media file not found	{} Mediendatei nicht gefunden
+{} media files not found	{} Mediendateien nicht gefunden
+Current state saved to {}	Stand gesichert in {}
+Proxies {} / {}	Proxys {} / {}
+Pause~verb	Pausieren
+Resume	Fortsetzen
+Compound clips	Zusammengesetzte Clips
+Compound clips with speed change	Zusammengesetzte Clips mit Tempo
+Project could not be loaded (internal error)	Projekt konnte nicht geladen werden (interner Fehler)
+Available	Verfügbar
+Reload list	Liste neu laden
+Download	Laden
+Update	Aktualisieren
+Waiting …	Wartet …
+Downloads are turned off	Nachladen ist ausgeschaltet
+Newer version required	Neuere Version nötig
+List not reachable	Liste nicht erreichbar
+All packs are installed	Alle Pakete sind installiert
+Needs a newer version of Cutline	Braucht eine neuere Version von Cutline
+Pack “{}” installed	Paket „{}“ installiert
+Checksum does not match	Prüfsumme stimmt nicht
+Pack is larger than stated	Paket ist größer als angegeben
+Pack ID “{}” does not match the list	Paket-ID „{}“ passt nicht zur Liste
+GitHub responds with {}	GitHub antwortet mit {}
+Can't reach GitHub ({})	Keine Verbindung zu GitHub ({})
+List too large	Liste zu groß
+Available locally	Lokal vorrätig
+No access: this track is not included in your plan or subscription	Kein Zugriff: Der Titel ist in deinem Plan oder Abo nicht enthalten
+Downloads too fast in a row, please wait a moment	Zu schnell hintereinander geladen, bitte kurz warten
+Export log	Protokoll exportieren
+Save the last 24 hours as a text file	Letzte 24 Stunden als Textdatei speichern
+Open log folder	Protokollordner öffnen
+Log saved	Protokoll gespeichert
+Exporting log	Protokoll wird exportiert
+Cutline quit unexpectedly last time	Cutline wurde beim letzten Mal unerwartet beendet
+Text file	Textdatei
+Audio track of the file	Tonspur der Datei
+Track imported muted	Spur stumm übernommen
+Sign-in expired – please reconnect	Anmeldung abgelaufen – bitte neu verbinden
+Limit reached, available again in {} s	Limit erreicht, in {} s wieder möglich
+Limit reached, please try again later	Limit erreicht, bitte später erneut versuchen
+Key invalid	Schlüssel ungültig
+No connection	Keine Verbindung
+Server unreachable	Server nicht erreichbar
+File damaged (checksum)	Datei beschädigt (Prüfsumme)
+Not enough disk space	Nicht genug Speicherplatz
+Not found	Nicht gefunden
+Unexpected error	Unerwarteter Fehler
+Section {}–{}: {}	Abschnitt {}–{}: {}
+Too many simultaneous clips at {} – FFmpeg cannot open them all at once	Zu viele gleichzeitige Clips bei {} – FFmpeg kann sie nicht auf einmal öffnen
+Not enough disk space for the intermediate files: {} needed, {} free	Zu wenig Speicherplatz für die Zwischendateien: {} nötig, {} frei
+Cannot read the audio of “{}” – playing without this file	Ton von „{}“ kann nicht gelesen werden – Wiedergabe ohne diese Datei
+Version without checksum	Version ohne Prüfsumme
+Saving is taking too long	Speichern dauert zu lange
+Draft too large	Entwurf zu groß
+Graphics driver outdated: hardware encoding needs a driver update, encoding in software until then	Grafiktreiber veraltet: Hardware-Kodierung geht erst nach einem Treiber-Update, bis dahin wird in Software kodiert
+Hardware encoding	Hardware-Kodierung
+Windows (Media Foundation)	Windows (Media Foundation)
+FFmpeg {} found – Cutline needs {} or newer	FFmpeg {} gefunden – Cutline braucht {} oder neuer
+Preparing …	Wird vorbereitet …
+Project could not be opened	Projekt konnte nicht geöffnet werden
+Speech recognition	Spracherkennung
+“{}” downloaded	„{}“ geladen
+Track view	Spuransicht
+Command search	Befehlssuche
+Search commands	Befehl suchen
+Previous frame	Ein Bild zurück
+Next frame	Ein Bild vor
+Crop	Zuschnitt
+Left	Links
+Right	Rechts
+Bottom	Unten
+Layout: Side by side	Layout: Nebeneinander
+Side by side	Nebeneinander
+Layout: Stacked	Layout: Übereinander
+Stacked	Übereinander
+Layout: One large, two on the right	Layout: Einer groß, zwei rechts
+One large, two on the right	Einer groß, zwei rechts
+Layout: Three columns	Layout: Drei Spalten
+Three columns	Drei Spalten
+Layout: Grid 2×2	Layout: Raster 2×2
+Grid 2×2	Raster 2×2
+Layout: Picture in picture – top left	Layout: Bild-in-Bild – oben links
+Picture in picture – top left	Bild-in-Bild – oben links
+Layout: Picture in picture – top right	Layout: Bild-in-Bild – oben rechts
+Picture in picture – top right	Bild-in-Bild – oben rechts
+Layout: Picture in picture – bottom left	Layout: Bild-in-Bild – unten links
+Picture in picture – bottom left	Bild-in-Bild – unten links
+Layout: Picture in picture – bottom right	Layout: Bild-in-Bild – unten rechts
+Picture in picture – bottom right	Bild-in-Bild – unten rechts
+Reset layout	Layout zurücksetzen
+Add to queue	In Warteschlange
+Waiting	Wartet
+Remove all waiting	Alle wartenden entfernen
+{} exports pending – quit anyway?	{} Exporte ausstehend – wirklich beenden?
+Name already in the queue	Name schon in der Warteschlange
+At most {} waiting exports	Höchstens {} wartende Exporte
+Thumbnail …	Thumbnail …
+1280×720 thumbnail with cut-out person, outline and text	Vorschaubild 1280×720 mit freigestellter Person, Kontur und Text
+Thumbnail preview …	Thumbnail-Vorschau …
+Frame~place	Stelle
+Cut out person	Person freistellen
+Blurred	Weichgezeichnet
+Darkened	Abgedunkelt
+Placement	Lage
+Save PNG	PNG speichern
+Highlight	Hervorhebung
+Karaoke fill	Karaoke füllen
+The spoken word lights up	Das gesprochene Wort leuchtet auf
+Spoken words stay highlighted	Gesprochene Wörter bleiben hervorgehoben
+Censor …	Zensieren …
+Censor	Zensur
+Blur~soften	Weichzeichnen
+Ellipse	Ellipse
+Track~verb	Verfolgen
+The clip isn't visible at the playhead	Der Clip ist am Playhead nicht sichtbar
+Tracking censor area …	Zensur wird verfolgt …
+Censor area tracked ({} keyframes)	Zensur verfolgt ({} Keyframes)
+Brand Kit	Brand Kit
+Insert logo	Logo einfügen
+Logo	Logo
+Colors	Farben
+Add color	Farbe hinzufügen
+Choose logo …	Logo wählen …
+Remove logo	Logo entfernen
+File type not supported	Dateityp wird nicht unterstützt
+Split into parts	In Teile aufteilen
+Split by	Aufteilen nach
+Count	Anzahl
+Part	Teil
+{} parts · {} each	{} Teile · je {}
+{} parts · {} to {}	{} Teile · {} bis {}
+Part {} of {}	Teil {} von {}
+{} parts	{} Teile
+{} parts finished ({} s)	{} Teile fertig ({} s)
+{} of {} parts finished	{} von {} Teilen fertig
+Exporting part {} of {} …	Exportiere Teil {} von {} …
+Files already exist	Dateien existieren bereits
+At most {} MB	Höchstens {} MB
+Custom …	Eigene …
+Will be exported in {}p	Wird in {}p exportiert
+Will be exported in {}p – the size is tight even for that	Wird in {}p exportiert – auch dafür ist die Größe knapp
+Mute playback	Wiedergabe stumm
+Playback louder	Wiedergabe lauter
+Playback quieter	Wiedergabe leiser
+Playback volume: {} %	Lautstärke der Wiedergabe: {} %
+Playback volume: muted	Lautstärke der Wiedergabe: stumm
+{} older parts will be removed when overwriting	Beim Überschreiben werden {} ältere Teile entfernt
+This project was saved with a newer version of Cutline. Please update Cutline.	Dieses Projekt wurde mit einer neueren Cutline-Version gespeichert. Bitte Cutline aktualisieren.
+Cannot read file: “{}”	Datei kann nicht gelesen werden: „{}“
+Go to projects when closing	Beim Schließen zur Projektübersicht
+Scrollbar in the timeline	Scrollleiste in der Zeitleiste
+Restore audio	Ton zurückholen
+This audio track is already extracted	Diese Tonspur ist schon extrahiert
+Person	Person
+Shift edge	Kantenlage
+No background	Ohne Hintergrund
+Color key also active	Farbe zusätzlich aktiv
+Remove color key	Farbschlüssel entfernen
+Key blend	Farbübergang
+Reverb	Hall
+Room size	Raumgröße
+Angle	Winkel
+Softness	Weichheit
+Send error reports	Fehlerberichte senden
+Send to developer	An Entwickler senden
+Sending report	Bericht wird gesendet
+Report sent	Bericht gesendet
+Report a bug	Fehler melden
+Attach log	Protokoll anhängen
+Attach screenshot	Bildschirmfoto anhängen
+Send	Senden
+Report could not be sent	Bericht konnte nicht gesendet werden
+Mask missing	Maske fehlt
+Range not tracked	Bereich nicht verfolgt
+Mask missing or not finished yet: {}	Maske fehlt oder ist noch nicht fertig: {}
+Object	Objekt
+Mark object	Objekt markieren
+Clear selection~marks	Markierung löschen
+Tracking object …	Objekt wird verfolgt …
+Object cut out	Objekt freigestellt
+Not tracked yet	Noch nicht verfolgt
+Object: {}	Objekt: {}
+Graphics card not usable: {}	Grafikkarte nicht nutzbar: {}
+Active after a restart	Aktiv nach Neustart
+AI models	KI-Modelle
+SAM 2.1 Tiny	SAM 2.1 Tiny
+Cut out and track objects with a click (Meta, Apache-2.0)	Objekte per Klick freistellen und verfolgen (Meta, Apache-2.0)
+Graphics card acceleration	Grafikkarten-Beschleunigung
+Object cut-out on the graphics card (Microsoft DirectML 1.15.4, proprietary license; ONNX Runtime 1.24.4, MIT license)	Objekt freistellen auf der Grafikkarte (Microsoft DirectML 1.15.4, proprietäre Lizenz; ONNX Runtime 1.24.4, MIT-Lizenz)
+Object model missing (Settings → Models)	Objekt-Modell fehlt (Einstellungen → Modelle)
+Nothing marked	Nichts markiert
+Files damaged	Dateien beschädigt
+DirectML.dll cannot be loaded	DirectML.dll nicht ladbar
+Section incomplete	Abschnitt unvollständig
+Frame not readable	Bild nicht lesbar
+Model not loaded	Modell nicht geladen
+# Messages and errors
+No speech recognition model installed (Settings → Models)	Kein Spracherkennungsmodell installiert (Einstellungen → Modelle)
+Parakeet model missing	Parakeet-Modell fehlt
+ONNX Runtime missing (Settings → Models)	ONNX Runtime fehlt (Einstellungen → Modelle)
+{}: {} without checksum	{}: {} ohne Prüfsumme
+Cut-out model missing (Settings → Models)	Freistell-Modell fehlt (Einstellungen → Modelle)
+{} – Recap	{} – Rückblick
+{} parts finished	{} Teile fertig
+{}  Mask is missing or not finished yet: {}	{}  Maske fehlt oder ist noch nicht fertig: {}
+Pack switched off	Paket ausgeschaltet
+Pack missing	Paket fehlt
+{}  {} – rendered as “{}”	{}  {} – wird als „{}“ gerechnet
+{}  Extended: {} of silence at the end	{}  Verlängert: {} Stille am Ende
+Built-in entries cannot be moved	Eingebaute Einträge lassen sich nicht verschieben
+Built-in entries cannot be renamed	Eingebaute Einträge lassen sich nicht umbenennen
+{}  Graphics card not usable: {}	{}  Grafikkarte nicht nutzbar: {}
+{}, {} s shorter	{}, {} s kürzer
+{} filler word	{} Füllwort
+{} filler words	{} Füllwörter
+{}  active on port {}{}	{}  aktiv auf Port {}{}
+· read only	· nur lesen
+Thanks for watching	Danke fürs Zuschauen
+Don't forget to subscribe	Abonnieren nicht vergessen
+Chapter 1	Kapitel 1
+Insert template	Vorlage einfügen
+Clip {} not found	Clip {} nicht gefunden
+Track {} not found	Spur {} nicht gefunden
+Media {} not found	Medium {} nicht gefunden
+Clip type does not fit the track ({} on {})	Clip-Typ passt nicht zur Spur ({} auf {})
+Track properties	Spur-Eigenschaften
+Epidemic Sound responds with {}: {}	Epidemic Sound antwortet mit {}: {}
+No preview address	Keine Vorhör-Adresse
+Port {} is in use ({})	Port {} ist belegt ({})
+Invalid callback	Ungültiger Rückruf
+I/O error: {}	E/A-Fehler: {}
+WAV (audio only)	WAV (nur Ton)
+MP3 (audio only)	MP3 (nur Ton)
+AAC/M4A (audio only)	AAC/M4A (nur Ton)
+FLAC (audio only)	FLAC (nur Ton)
+{} files are missing: {}{}	{} Dateien fehlen: {}{}
+{} – the finished file is at {}	{} – die fertige Datei liegt unter {}
+Shader transition: {}	Shader-Übergang: {}
+WOFF2 is not supported yet. Please import as TTF/OTF.	WOFF2 wird noch nicht unterstützt. Bitte als TTF/OTF importieren.
+Font file is damaged: {}	Schriftdatei ist beschädigt: {}
+POV: you edit with Cutline	POV: du schneidest mit Cutline
+“Good ideas take time.”	„Gute Ideen brauchen Zeit.“
+CapCut project	CapCut-Projekt
+FCPXML not readable: {}	FCPXML nicht lesbar: {}
+Not an FCPXML file	Keine FCPXML-Datei
+No sequence found	Keine Sequenz gefunden
+No main track (spine) found	Keine Hauptspur (spine) gefunden
+No transferable clips found in the FCPXML	In der FCPXML wurden keine übertragbaren Clips gefunden
+FFmpeg/FFprobe not found. Please install it or set CUTLINE_FFMPEG_DIR.	FFmpeg/FFprobe nicht gefunden. Bitte installieren oder CUTLINE_FFMPEG_DIR setzen.
+Cannot read file: {}	Datei kann nicht gelesen werden: {}
+No video or audio stream found	Kein Video- oder Audiostrom gefunden
+Unexpected FFprobe output: {}	Unerwartete FFprobe-Ausgabe: {}
+{}: manifest not readable: {}	{}: Manifest nicht lesbar: {}
+at most {} parameters	höchstens {} Parameter
+Parameter '{}': a shader takes numbers and switches only	Parameter '{}': im Shader nur Zahlen und Schalter
+The ID must have the form 'vendor.name' (lower case, a-z0-9-)	ID muss im Format 'anbieter.name' sein (klein, a-z0-9-)
+Version '{}' is not SemVer (x.y.z)	Version '{}' ist kein SemVer (x.y.z)
+API version {} not supported (expected {})	API-Version {} nicht unterstützt (erwartet {})
+Name is missing	Name fehlt
+Unknown permission '{}'	Unbekanntes Recht '{}'
+Asset packs run no code and may not ask for permissions	Asset-Pakete führen keinen Code aus und dürfen keine Rechte anfordern
+Asset pack without assets	Asset-Paket ohne Assets
+Integrations need 'entry = "builtin:<name>"'	Integrationen brauchen 'entry = "builtin:<name>"'
+Integrations must declare the permission 'net'	Integrationen müssen das Recht 'net' deklarieren
+needs an FFmpeg chain (shaders only for transitions)	braucht eine FFmpeg-Kette (Shader nur bei Übergängen)
+needs a shader (no FFmpeg chain)	braucht einen Shader (keine FFmpeg-Kette)
+may have neither a shader nor an FFmpeg chain	darf weder Shader noch FFmpeg-Kette haben
+has a kind Cutline cannot show yet	hat eine Art, die Cutline noch nicht anzeigen kann
+Transition '{}' needs 'fallback' (a built-in transition, e.g. "fade")	Übergang '{}' braucht 'fallback' (eingebauter Übergang, z. B. "fade")
+Transition '{}': {}	Übergang '{}': {}
+The FFmpeg chain of '{}' contains elements that are not allowed	FFmpeg-Kette von '{}' enthält nicht erlaubte Elemente
+Default value of '{}' outside [{}, {}]	Standardwert von '{}' außerhalb [{}, {}]
+Default value of '{}' is not an option	Standardwert von '{}' ist keine Option
+Asset '{}' needs a file ('file')	Asset '{}' braucht eine Datei ('file')
+File type of '{}' not allowed (allowed: {})	Dateityp von '{}' nicht erlaubt (erlaubt: {})
+File '{}' is missing	Datei '{}' fehlt
+Entry file '{}' is missing	Einstiegsdatei '{}' fehlt
+already loaded	bereits geladen
+Pack is too large when unpacked	Paket ist entpackt zu groß
+Not a valid ZIP file: {}	Keine gültige ZIP-Datei: {}
+Pack has too many files ({}, at most {})	Paket hat zu viele Dateien ({}, höchstens {})
+Unsafe path in the pack: {}	Unsicherer Pfad im Paket: {}
+No {} in the pack	Kein {} im Paket
+Only content packs (asset-pack) can be added	Nur Inhaltspakete (asset-pack) lassen sich hinzufügen
+Only your own packs can be removed	Nur eigene Pakete lassen sich entfernen
+Response not readable: {}	Antwort nicht lesbar: {}
+Unknown version format: {}	Unbekanntes Versionsformat: {}
+Version {} has no package for this system ({})	Version {} hat kein Paket für dieses System ({})
+Version {} without checksum	Version {} ohne Prüfsumme
+No public releases found yet	Noch keine öffentlichen Releases gefunden
+Release without checksum – installation canceled for safety	Release ohne Prüfsumme – Installation aus Sicherheitsgründen abgebrochen
+Checksum file not readable	Prüfsummendatei unlesbar
+Package is too large	Paket ist zu groß
+Checksum does not match (expected {}…, got {}…)	Prüfsumme stimmt nicht (erwartet {}…, erhalten {}…)
+Package damaged: {}	Paket beschädigt: {}
+Package is empty	Paket ist leer
+Download incomplete	Download unvollständig
+{}: checksum does not match	{}: Prüfsumme stimmt nicht
+Archive is too large when unpacked	Archiv ist entpackt zu groß
+Invalid file name: {}	Ungültiger Dateiname: {}
+Multicam edit	Multicam-Schnitt
+Synchronize	Synchronisieren
+Cut-out: {}	Freistellen: {}
+Censor area tracked	Zensur verfolgt
+Microphone: {}	Mikrofon: {}
+Your title	Dein Titel
+Effects/Adjust	Effekte/Anpassen
+No download address	Keine Download-Adresse
+NO WAY?!	KRASS?!
+SUBSCRIBE	ABONNIEREN
+CHAPTER 2	KAPITEL 2
+PART 2	TEIL 2
+Summer	Sommer
+AT NIGHT	NACHTS
+Edited by Alex Sample	Schnitt: Alex Muster
+Asset ID '{}' twice	Asset-ID '{}' doppelt
+Parameter '{}' twice in '{}'	Parameter '{}' doppelt in '{}'
+Path '{}' must be inside the plugin	Pfad '{}' muss innerhalb des Plugins liegen
+Angle {}	Blickwinkel {}
+Captions: {}	Untertitel: {}
+Not a font file (unknown format)	Keine Schriftdatei (unbekanntes Format)
+HEADLINE	SCHLAGZEILE
+ATTENTION	ACHTUNG
+NEW VIDEO	NEUES VIDEO
+CAUTION!	VORSICHT!
+Own version not readable	Eigene Version unlesbar
+Unsafe path: {}	Unsicherer Pfad: {}
+{} clip copied	{} Clip kopiert
+{} clips copied	{} Clips kopiert
+What do you think?	Was meint ihr?
+My day	Mein Tag
+ONLY $9.99	NUR 9,99 €
+Everyday	Alltag
+{} (Copy)	{} (Kopie)
+frame pair incomplete	Bildpaar unvollständig
+no frame at {} s in {}	kein Bild bei {} s in {}

@@ -142,7 +142,7 @@ pub fn import_with(path: &Path, progress: &Progress) -> Result<(Project, Report)
     let text = std::fs::read_to_string(&json).map_err(|e| format!("{}: {e}", json.display()))?;
     progress.check()?;
     let d: Value = serde_json::from_str(&text).map_err(|_| {
-        "Der Entwurf ist verschlüsselt oder beschädigt und kann nicht gelesen werden".to_string()
+        "The draft is encrypted or damaged and can't be read".to_string()
     })?;
     drop(text);
     let name = std::fs::read_to_string(dir.join("draft_meta_info.json"))
@@ -162,7 +162,7 @@ pub fn import_with(path: &Path, progress: &Progress) -> Result<(Project, Report)
         .unwrap_or_else(|| {
             dir.file_name()
                 .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "CapCut-Projekt".into())
+                .unwrap_or_else(|| "CapCut project".into())
         });
     progress.set(Step::Read, 1, 1, "");
     convert_with(&d, &dir, &name, progress)
@@ -197,7 +197,7 @@ fn segments(t: &Value) -> impl Iterator<Item = &Value> {
     t.get("segments").and_then(|s| s.as_array()).into_iter().flatten()
 }
 
-/// Nested draft of a material (CapCut „zusammengesetzter Clip“)
+/// Nested draft of a material (CapCut "compound clip")
 fn sub_draft(m: &Value) -> Option<&Value> {
     m.get("draft").filter(|v| v.is_object())
 }
@@ -215,7 +215,7 @@ fn collect_files(d: &Value, dir: &Path, depth: usize, media: &mut Vec<PathBuf>, 
         for s in segments(t) {
             *seen += 1;
             if *seen > MAX_SEGMENTS {
-                return Err("Entwurf zu groß".into());
+                return Err("Draft too large".into());
             }
             if *seen % 256 == 0 {
                 progress.check()?;
@@ -348,13 +348,13 @@ impl Build<'_> {
                 "text" => TrackKind::Text,
                 "effect" => {
                     for _ in segments(t) {
-                        self.rep.skip("Effekte");
+                        self.rep.skip("Effects");
                     }
                     continue;
                 }
                 "filter" | "adjust" => {
                     for _ in segments(t) {
-                        self.rep.skip("Filter");
+                        self.rep.skip("Filters");
                     }
                     continue;
                 }
@@ -364,7 +364,7 @@ impl Build<'_> {
             if kind == TrackKind::Video && ty == "video" && first_video {
                 track.main = true;
                 first_video = false;
-                // „Originalton der Hauptspur aus“
+                // original audio of the main track off
                 track.muted = d.pointer("/config/video_mute").and_then(|v| v.as_bool()).unwrap_or(false);
             }
             // mute switch on the track header (bit 0); CapCut then sets the clips to 0 and remembers
@@ -392,9 +392,9 @@ impl Build<'_> {
                         let raw = m.get("path").and_then(|v| v.as_str()).unwrap_or("");
                         if raw.is_empty() {
                             self.rep.skip(if mkind == "videos" {
-                                "Online-Material"
+                                "Online media"
                             } else {
-                                "Online-Musik / Sprachausgabe"
+                                "Online music / text-to-speech"
                             });
                             continue;
                         }
@@ -427,20 +427,20 @@ impl Build<'_> {
                         Clip::new(ClipContent::Text(st), start, duration)
                     }
                     "stickers" => {
-                        self.rep.skip("Sticker");
+                        self.rep.skip("Stickers");
                         continue;
                     }
                     "drafts" => {
                         match sub_draft(m).filter(|_| depth < MAX_DEPTH) {
                             Some(sub) => nested.push((sub, s, layer_of(t, kind))),
-                            None => self.rep.skip("Zusammengesetzte Clips"),
+                            None => self.rep.skip("Compound clips"),
                         }
                         continue;
                     }
                     other => {
                         self.rep.skip(match other {
                             "speeds" | "canvases" | "sound_channel_mappings" => continue,
-                            _ => "Sonstiges",
+                            _ => "Other",
                         });
                         continue;
                     }
@@ -452,7 +452,7 @@ impl Build<'_> {
                 if vol <= 0.0001 && track.muted {
                     vol = s.get("last_nonzero_volume").and_then(|v| v.as_f64()).unwrap_or(vol);
                 }
-                // audio split from the video: it exists as its own audio clip (like „Ton extrahieren“),
+                // audio split from the video: it exists as its own audio clip (like „Extract audio“),
                 // marked below once the clip's audio stream is known
                 let separated = mkind == "videos" && m.get("has_sound_separated").and_then(|v| v.as_bool()).unwrap_or(false);
                 // limits as when editing (ReplaceClip, dragging in the player); nonsensical values
@@ -515,7 +515,7 @@ impl Build<'_> {
                             Some("out") => clip.anim.outro = Some(anim),
                             _ => continue,
                         }
-                        self.rep.skip("Animation (als Blende übernommen)");
+                        self.rep.skip("Animation (imported as a fade)");
                     }
                 }
                 // shortcut: a missing file relinked to one with fewer streams than CapCut's index plays
@@ -541,7 +541,7 @@ impl Build<'_> {
         for (sub, s, layer) in nested {
             let speed = s.get("speed").and_then(|v| v.as_f64()).unwrap_or(1.0);
             if (speed - 1.0).abs() > 1e-6 {
-                self.rep.skip("Zusammengesetzte Clips mit Tempo");
+                self.rep.skip("Compound clips with speed change");
                 continue;
             }
             let start = Time(us(s.get("target_timerange"), "start").max(0));
@@ -696,7 +696,7 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
         & !1;
     p.settings.width = w;
     p.settings.height = h;
-    // reduced aspect ratio (1920×1080 → 16:9) instead of „Eigenes“
+    // reduced aspect ratio (1920×1080 → 16:9) instead of „Custom“
     let g = {
         let (mut a, mut b) = (w.max(1), h.max(1));
         while b != 0 {
@@ -764,7 +764,7 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
         layer.insert(t.id, ri);
         if !t.clips.is_empty() {
             if t.muted && matches!(t.kind, TrackKind::Video | TrackKind::Audio) {
-                rep.skip("Spur stumm übernommen");
+                rep.skip("Track imported muted");
             }
             p.timeline.tracks.push(t);
         }
@@ -817,7 +817,7 @@ pub fn convert_with(d: &Value, dir: &Path, name: &str, progress: &Progress) -> R
         _ => (1, layer.get(&t.id).copied().unwrap_or(0)),
     });
     if rep.clips + rep.texts == 0 {
-        return Err("Im Entwurf wurden keine übertragbaren Clips gefunden".into());
+        return Err("No transferable clips found in the draft".into());
     }
     Ok((p, rep))
 }
@@ -833,7 +833,7 @@ mod tests {
         let seg = |at: i64, idx: &str| serde_json::json!({"material_id": "A", "target_timerange": {"start": at * 1_000_000, "duration": 1_000_000}, "extra_material_refs": [idx]});
         let draft = serde_json::json!({
             "materials": {
-                "audios": [{"id": "A", "type": "music", "path": "C:/gibt/es/nicht.wav", "duration": 9_000_000}],
+                "audios": [{"id": "A", "type": "music", "path": "C:/does/not/exist.wav", "duration": 9_000_000}],
                 "audio_track_indexes": [{"id": "I3", "audio_track_index": 3}, {"id": "I16", "audio_track_index": 16}, {"id": "IX", "audio_track_index": 4_000_000_000i64}, {"id": "I0", "audio_track_index": -5}]
             },
             "tracks": [{"type": "audio", "segments": [seg(0, "I3"), seg(1, "I16"), seg(2, "IX"), seg(3, "I0")]}]
@@ -886,7 +886,7 @@ mod tests {
     fn speed_and_fades_use_the_editor_limits() {
         let draft = serde_json::json!({
             "materials": {
-                "audios": [{"id": "A", "type": "music", "path": "C:/gibt/es/nicht.wav", "duration": 900_000_000}],
+                "audios": [{"id": "A", "type": "music", "path": "C:/does/not/exist.wav", "duration": 900_000_000}],
                 "audio_fades": [{"id": "F", "fade_in_duration": 900_000, "fade_out_duration": 900_000}]
             },
             "tracks": [{"type": "audio", "segments": [
@@ -917,7 +917,7 @@ mod tests {
         // font file from the bundled Cutline fonts
         let font = dir.path().join("Poppins-ExtraBold.ttf");
         std::fs::write(&font, include_bytes!("../../cl-app/assets/fonts/Poppins-ExtraBold.ttf")).unwrap();
-        let content = serde_json::json!({"text": "Oben", "styles": [{"size": 15.0, "font": {"path": "C:/x/SystemFont/en.ttf"}}]}).to_string();
+        let content = serde_json::json!({"text": "Top", "styles": [{"size": 15.0, "font": {"path": "C:/x/SystemFont/en.ttf"}}]}).to_string();
         let seg = |mid: &str, ri: i64| serde_json::json!({"material_id": mid, "render_index": ri, "target_timerange": {"start": 0, "duration": 1000000}, "source_timerange": {"start": 0, "duration": 1000000}});
         let draft = serde_json::json!({
             "canvas_config": {"width": 1920, "height": 1080},
@@ -968,22 +968,22 @@ mod tests {
     #[test]
     fn missing_file_keeps_clip_with_placeholder_media() {
         let dir = tempfile::tempdir().unwrap();
-        let gone = dir.path().join("fehlt.jpg");
+        let gone = dir.path().join("missing.jpg");
         let seg = |mid: &str, at: i64| serde_json::json!({"material_id": mid, "target_timerange": {"start": at, "duration": 1_000_000}});
         let draft = serde_json::json!({
             "materials": {
                 "videos": [{"id": "B", "type": "photo", "path": gone.to_string_lossy(), "width": 640, "height": 480, "duration": 5_000_000}],
-                "audios": [{"id": "A", "type": "music", "path": dir.path().join("fehlt.wav").to_string_lossy(), "duration": 9_000_000}]
+                "audios": [{"id": "A", "type": "music", "path": dir.path().join("missing.wav").to_string_lossy(), "duration": 9_000_000}]
             },
             "tracks": [
                 {"type": "video", "segments": [seg("B", 0), seg("B", 1_000_000)]},
                 {"type": "audio", "segments": [seg("A", 0)]}
             ]
         });
-        let (p, rep) = convert(&draft, dir.path(), "Fehlt").unwrap();
+        let (p, rep) = convert(&draft, dir.path(), "Missing").unwrap();
         assert_eq!(rep.missing.len(), 2);
         assert_eq!(rep.clips, 3);
-        assert_eq!(p.media.len(), 2, "jede Datei einmal");
+        assert_eq!(p.media.len(), 2, "each file once");
         let b = p.media.iter().find(|m| m.path == gone).unwrap();
         assert_eq!((b.kind, b.width, b.height, b.duration), (MediaKind::Image, 640, 480, Time(5_000_000)));
         assert_eq!(p.media.iter().find(|m| m.path != gone).unwrap().kind, MediaKind::Audio);
@@ -995,7 +995,7 @@ mod tests {
     #[test]
     fn nested_draft_bomb_stops_early() {
         let segs = |mid: &str| serde_json::json!([{"type": "video", "segments": (0..30).map(|_| serde_json::json!({"material_id": mid, "target_timerange": {"start": 0, "duration": 1000000}})).collect::<Vec<_>>()}]);
-        let mut d = serde_json::json!({"materials": {}, "tracks": segs("leer")});
+        let mut d = serde_json::json!({"materials": {}, "tracks": segs("empty")});
         for _ in 0..MAX_DEPTH {
             d = serde_json::json!({"materials": {"drafts": [{"id": "D", "draft": d}]}, "tracks": segs("D")});
         }
@@ -1005,7 +1005,7 @@ mod tests {
         });
         // without a limit this would run for days: then the test fails here instead of hanging
         let r = rx.recv_timeout(std::time::Duration::from_secs(30)).expect("import does not end");
-        assert_eq!(r.unwrap_err(), "Entwurf zu groß");
+        assert_eq!(r.unwrap_err(), "Draft too large");
     }
 
     /// Ignored: prints what the import makes of a real CapCut draft; needs one in CAPCUT_DRAFT.
@@ -1063,7 +1063,7 @@ mod tests {
             .status()
             .unwrap()
             .success());
-        let content = serde_json::json!({"text": "Hallo Welt", "styles": [{"fill": {"content": {"solid": {"color": [1.0, 0.0, 0.0]}}}, "size": 15.0}]}).to_string();
+        let content = serde_json::json!({"text": "Hello World", "styles": [{"fill": {"content": {"solid": {"color": [1.0, 0.0, 0.0]}}}, "size": 15.0}]}).to_string();
         let draft = serde_json::json!({
             "canvas_config": {"width": 1080, "height": 1920},
             "fps": 30.0,
@@ -1087,8 +1087,8 @@ mod tests {
         assert_eq!(rep.texts, 1);
         assert!(rep.missing.is_empty(), "{:?}", rep.missing);
         assert!(
-            rep.skipped.iter().any(|(w, _)| w == "Sticker")
-                && rep.skipped.iter().any(|(w, _)| w == "Effekte")
+            rep.skipped.iter().any(|(w, _)| w == "Stickers")
+                && rep.skipped.iter().any(|(w, _)| w == "Effects")
         );
         let main = &p.timeline.tracks[0];
         assert!(main.main);
@@ -1106,7 +1106,7 @@ mod tests {
         let ClipContent::Text(st) = &text.clips[0].content else {
             panic!()
         };
-        assert_eq!(st.text, "Hallo Welt");
+        assert_eq!(st.text, "Hello World");
         assert_eq!(st.color, [255, 0, 0, 255]);
         assert_eq!(st.align, 0);
         assert_eq!(p.timeline.tracks.last().unwrap().kind, TrackKind::Audio);
@@ -1120,7 +1120,7 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let v = dir.path().join("zwei.mp4");
+        let v = dir.path().join("five.mp4");
         let ok = cl_media::ffmpeg_command()
             .unwrap()
             .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=30:d=4", "-f", "lavfi", "-i", "sine=f=300:d=4"])
@@ -1165,7 +1165,7 @@ mod tests {
         let main = tr.iter().find(|t| t.main).unwrap();
         assert!(main.muted);
         assert_eq!(main.clips.iter().map(vol).collect::<Vec<_>>(), [-1.9, 0.0, 0.0], "0.8 adopted; split audio keeps its volume");
-        assert_eq!((main.clips[2].audio_stream, &main.clips[2].extracted_streams[..]), (Some(1), &[1][..]), "split stream marked like „Ton extrahieren“");
+        assert_eq!((main.clips[2].audio_stream, &main.clips[2].extracted_streams[..]), (Some(1), &[1][..]), "split stream marked like “Extract audio”");
         // second visual track: muted, volume 0 without `last_nonzero_volume` stays 0
         let v2 = tr.iter().find(|t| t.kind == TrackKind::Video && !t.main).unwrap();
         assert!(v2.muted && vol(&v2.clips[0]) == -60.0);
@@ -1175,11 +1175,11 @@ mod tests {
         let c = &loud.clips;
         assert_eq!((c[0].audio_stream, c[0].fade_in, c[0].fade_out), (Some(1), Time::ZERO, Time(500_000)), "fade out at most half the clip, as in the editor");
         assert_eq!(vol(&c[1]), -60.0, "clip volume 0 on an audible track stays 0");
-        assert_eq!((vol(&c[2]), c[2].audio_stream), (-6.0, None), "Index 1 = erste Spur");
+        assert_eq!((vol(&c[2]), c[2].audio_stream), (-6.0, None), "index 1 = first track");
         assert_eq!(vol(&c[3]), -60.0);
         let muted = audio.iter().find(|t| t.muted).unwrap();
         assert_eq!(vol(&muted.clips[0]), 0.0);
-        assert_eq!(rep.skipped.iter().find(|(w, _)| w == "Spur stumm übernommen").map(|x| x.1), Some(3));
+        assert_eq!(rep.skipped.iter().find(|(w, _)| w == "Track imported muted").map(|x| x.1), Some(3));
         // stream 3 does not exist in the file (2 audio streams): default stream
         let c12 = tr.iter().flat_map(|t| &t.clips).find(|c| c.start == Time(12_000_000)).unwrap();
         assert_eq!(c12.audio_stream, None);

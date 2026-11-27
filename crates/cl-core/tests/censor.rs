@@ -24,13 +24,13 @@ fn truth(boxes: &[CensorKey], t: Time) -> CensorKey {
 #[test]
 fn simplified_path_covers_every_frame() {
     let paths: Vec<(&str, Vec<CensorKey>)> = vec![
-        ("gerade", samples(4.0, |t| (0.1 + 0.2 * t as f32, 0.5, 0.1, 0.12))),
-        ("kurve", samples(4.0, |t| (0.5 + 0.3 * (t as f32 * 2.0).cos(), 0.5 + 0.3 * (t as f32 * 3.0).sin(), 0.1, 0.1))),
-        ("stillstand", samples(6.0, |_| (0.4, 0.6, 0.2, 0.25))),
+        ("straight", samples(4.0, |t| (0.1 + 0.2 * t as f32, 0.5, 0.1, 0.12))),
+        ("curve", samples(4.0, |t| (0.5 + 0.3 * (t as f32 * 2.0).cos(), 0.5 + 0.3 * (t as f32 * 3.0).sin(), 0.1, 0.1))),
+        ("standstill", samples(6.0, |_| (0.4, 0.6, 0.2, 0.25))),
         ("sprung", samples(3.0, |t| if t < 1.5 { (0.2, 0.3, 0.1, 0.1) } else { (0.8, 0.7, 0.1, 0.1) })),
         // lost: tracking holds the last position
-        ("verlust", samples(4.0, |t| { let t = t.min(1.2) as f32; (0.3 + 0.2 * t, 0.5, 0.1, 0.1) })),
-        ("größer", samples(3.0, |t| (0.5, 0.5, 0.05 + 0.1 * t as f32, 0.06 + 0.08 * t as f32))),
+        ("loss", samples(4.0, |t| { let t = t.min(1.2) as f32; (0.3 + 0.2 * t, 0.5, 0.1, 0.1) })),
+        ("larger", samples(3.0, |t| (0.5, 0.5, 0.05 + 0.1 * t as f32, 0.06 + 0.08 * t as f32))),
     ];
     for (name, boxes) in paths {
         let keys = censor_simplify(&boxes);
@@ -49,10 +49,10 @@ fn simplified_path_covers_every_frame() {
         }
         assert!(keys.len() < boxes.len(), "{name}: not simplified");
         eprintln!("{name}: {} boxes → {} keypoints", boxes.len(), keys.len());
-        if name == "stillstand" {
+        if name == "standstill" {
             assert!(keys.len() <= 4, "{name}: {}", keys.len());
         }
-        if name == "gerade" {
+        if name == "straight" {
             assert!(keys.len() <= 3, "{name}: {}", keys.len());
         }
     }

@@ -146,7 +146,7 @@ fn min_pps(dur: f64, width: f32) -> f32 {
     (0.5 * width.max(1.0) / dur.max(300.0) as f32).min(2.0)
 }
 
-/// „Ganze Zeitleiste zeigen“: (scale, scroll) with a 5 % margin left and right
+/// „Fit timeline“: (scale, scroll) with a 5 % margin left and right
 fn fit_all(dur: f64, width: f32, lo: f32) -> (f32, f64) {
     let d = dur.max(1.0);
     let pps = (width.max(1.0) / (d * 1.1) as f32).clamp(lo, PPS_MAX);
@@ -165,7 +165,7 @@ fn norm_zoom(n: f32, lo: f32) -> f32 {
 
 /// Scroll after zooming from `old` to `new` px/s with the view `view_w` px wide: the playhead
 /// (s) keeps its screen x; outside the view it comes to the centre. Never left of 0:00 or of
-/// the margin left by „Ganze Zeitleiste zeigen“.
+/// the margin left by „Fit timeline“.
 fn zoom_scroll(scroll: f64, old: f32, new: f32, playhead: f64, view_w: f32) -> f64 {
     let x = ((playhead - scroll) as f32) * old;
     let x = if (0.0..=view_w).contains(&x) { x } else { view_w * 0.5 };
@@ -412,7 +412,7 @@ enum Anchor {
     Scroll(f64, f64),
 }
 
-/// Smooth change of scale and scroll (zoom, „Ganze Zeitleiste zeigen“, follow playhead)
+/// Smooth change of scale and scroll (zoom, „Fit timeline“, follow playhead)
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct ViewGlide {
     pps: (f32, f32),
@@ -865,10 +865,10 @@ pub enum Tool {
 
 impl Tool {
     pub const ALL: [(Tool, &'static str, &'static str, &'static str); 4] = [
-        (Tool::Select, icon::CURSOR, "Auswählen", "A"),
-        (Tool::Blade, icon::KNIFE, "Klinge", "B"),
-        (Tool::SelectLeft, icon::ARROW_FAT_LINES_LEFT, "Alle Clips links auswählen", ""),
-        (Tool::SelectRight, icon::ARROW_FAT_LINES_RIGHT, "Alle Clips rechts auswählen", ""),
+        (Tool::Select, icon::CURSOR, "Select", "A"),
+        (Tool::Blade, icon::KNIFE, "Blade", "B"),
+        (Tool::SelectLeft, icon::ARROW_FAT_LINES_LEFT, "Select all clips to the left", ""),
+        (Tool::SelectRight, icon::ARROW_FAT_LINES_RIGHT, "Select all clips to the right", ""),
     ];
     fn icon(self) -> &'static str {
         Self::ALL.iter().find(|t| t.0 == self).map(|t| t.1).unwrap_or(icon::CURSOR)
@@ -877,11 +877,11 @@ impl Tool {
 
 /// Track kinds to add (icon, name)
 pub const TRACK_KINDS: [(TrackKind, &str); 5] = [
-    (TrackKind::Video, "Videospur"),
-    (TrackKind::Text, "Textspur"),
-    (TrackKind::Effect, "Effektspur"),
-    (TrackKind::Filter, "Filterspur"),
-    (TrackKind::Audio, "Audiospur"),
+    (TrackKind::Video, "Video track"),
+    (TrackKind::Text, "Text track"),
+    (TrackKind::Effect, "Effect track"),
+    (TrackKind::Filter, "Filter track"),
+    (TrackKind::Audio, "Audio track"),
 ];
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1021,7 +1021,7 @@ impl TimelineState {
         };
         self.glide_view(pps, anchor, now);
     }
-    /// „Ganze Zeitleiste zeigen“: fit a project of length `dur` with margin (smoothly)
+    /// „Fit timeline“: fit a project of length `dur` with margin (smoothly)
     fn show_all(&mut self, dur: f64, now: f64) {
         let (pps, scroll) = fit_all(dur, self.view_w, min_pps(dur, self.view_w));
         self.glide_view(pps, Anchor::Scroll(self.scroll, scroll), now);
@@ -1294,43 +1294,43 @@ impl App {
                 },
             )
             .response
-            .on_hover_text(crate::tr("Werkzeug"));
+            .on_hover_text(crate::tr("Tool"));
             // only the icon; the name is in the tooltip
             let tools = ui.menu_button(egui::RichText::new(icon::LIGHTNING).size(14.0), |ui| self.tools_menu(ui)).response;
             self.tour_rects.insert("tools", tools.rect);
-            tools.on_hover_text(format!("{}: {}", crate::tr("Schnellaktionen"), crate::tr("Pausen entfernen, Füllwörter, Ducking, Multicam, Hochkant …")));
+            tools.on_hover_text(format!("{}: {}", crate::tr("Quick Actions"), crate::tr("Remove pauses, filler words, ducking, multicam, vertical …")));
             ui.add(egui::Separator::default().vertical().spacing(10.0));
             let has = !self.project.timeline.tracks.is_empty();
             let sel = self.selected.is_some() || !self.sel_extra.is_empty() || self.selected_transition.is_some();
-            if theme::icon_button(ui, icon::SCISSORS, with_key("Teilen", &self.key_of("split")), has, false).clicked() {
+            if theme::icon_button(ui, icon::SCISSORS, with_key("Split", &self.key_of("split")), has, false).clicked() {
                 self.split_at_playhead();
             }
-            if theme::icon_button(ui, icon::ARROW_LINE_LEFT, with_key("Links vom Playhead löschen", &self.key_of("del_left")), has, false).clicked() {
+            if theme::icon_button(ui, icon::ARROW_LINE_LEFT, with_key("Delete left of playhead", &self.key_of("del_left")), has, false).clicked() {
                 self.delete_side(true);
             }
-            if theme::icon_button(ui, icon::ARROW_LINE_RIGHT, with_key("Rechts vom Playhead löschen", &self.key_of("del_right")), has, false).clicked() {
+            if theme::icon_button(ui, icon::ARROW_LINE_RIGHT, with_key("Delete right of playhead", &self.key_of("del_right")), has, false).clicked() {
                 self.delete_side(false);
             }
-            if theme::icon_button(ui, icon::TRASH, with_key("Löschen", &self.key_of("delete")), sel, false).clicked() {
+            if theme::icon_button(ui, icon::TRASH, with_key("Delete", &self.key_of("delete")), sel, false).clicked() {
                 self.delete_selected();
             }
             ui.add(egui::Separator::default().vertical().spacing(10.0));
             let video_sel = self.selected.and_then(|s| self.project.find_clip(s)).is_some_and(|(_, c)| matches!(c.content, ClipContent::Media { kind: MediaKind::Video, .. }));
             let visual_sel = self.selected.and_then(|s| self.project.find_clip(s)).is_some_and(|(_, c)| c.kind() == TrackKind::Video);
-            if theme::icon_button(ui, icon::SNOWFLAKE, "Standbild (3 s am Playhead)", has, false).clicked() {
+            if theme::icon_button(ui, icon::SNOWFLAKE, "Freeze frame (3 s at playhead)", has, false).clicked() {
                 self.freeze_frame();
             }
             let rev = self.selected.and_then(|s| self.project.find_clip(s)).is_some_and(|(_, c)| c.fx.reverse);
-            if theme::icon_button(ui, icon::ARROWS_LEFT_RIGHT, "Rückwärts", video_sel, rev).clicked() {
+            if theme::icon_button(ui, icon::ARROWS_LEFT_RIGHT, "Reverse", video_sel, rev).clicked() {
                 self.modify_selection(|c| c.fx.reverse = !c.fx.reverse);
             }
-            if theme::icon_button(ui, icon::FLIP_HORIZONTAL, "Spiegeln", visual_sel, false).clicked() {
+            if theme::icon_button(ui, icon::FLIP_HORIZONTAL, "Flip", visual_sel, false).clicked() {
                 self.modify_selection(|c| c.fx.flip_h = !c.fx.flip_h);
             }
-            if theme::icon_button(ui, icon::ARROWS_CLOCKWISE, "90° drehen", visual_sel, false).clicked() {
+            if theme::icon_button(ui, icon::ARROWS_CLOCKWISE, "Rotate 90°", visual_sel, false).clicked() {
                 self.modify_selection(|c| c.transform.rotation_deg = ((c.transform.rotation_deg + 90.0 + 180.0).rem_euclid(360.0)) - 180.0);
             }
-            if theme::icon_button(ui, icon::WAVEFORM, "Ton extrahieren", video_sel, false).clicked() {
+            if theme::icon_button(ui, icon::WAVEFORM, "Extract audio", video_sel, false).clicked() {
                 if let Some(s) = self.selected {
                     self.extract_audio(s);
                 }
@@ -1345,10 +1345,10 @@ impl App {
                 let dur = self.project.duration().as_secs_f64();
                 let lo = min_pps(dur, self.timeline.view_w);
                 let target = self.timeline.target_pps();
-                if zoom && theme::icon_button(ui, icon::ARROWS_OUT_LINE_HORIZONTAL, "Ganze Zeitleiste zeigen", true, false).clicked() {
+                if zoom && theme::icon_button(ui, icon::ARROWS_OUT_LINE_HORIZONTAL, "Fit timeline", true, false).clicked() {
                     self.timeline.show_all(dur, now);
                 }
-                if zoom && theme::icon_button(ui, icon::PLUS, "Vergrößern (Strg+Mausrad)", true, false).clicked() {
+                if zoom && theme::icon_button(ui, icon::PLUS, "Zoom in (Ctrl+wheel)", true, false).clicked() {
                     self.timeline.zoom_to((target * 1.25).min(PPS_MAX), self.playhead.as_secs_f64(), now);
                 }
                 if slider {
@@ -1369,7 +1369,7 @@ impl App {
                 });
                 }
                 if zoom {
-                    if theme::icon_button(ui, icon::MINUS, "Verkleinern", true, false).clicked() {
+                    if theme::icon_button(ui, icon::MINUS, "Zoom out~smaller", true, false).clicked() {
                         self.timeline.zoom_to((target / 1.25).max(lo), self.playhead.as_secs_f64(), now);
                     }
                     ui.add(egui::Separator::default().vertical().spacing(10.0));
@@ -1385,7 +1385,7 @@ impl App {
                     n.main_track_magnet = !n.main_track_magnet;
                     self.apply(EditOp::SetSettings { settings: n });
                 }
-                if theme::icon_button(ui, icon::STACK, "Alles mitziehen: Ripple-Schnitte verschieben alle Spuren und Marker", true, s.ripple_all_tracks).clicked() {
+                if theme::icon_button(ui, icon::STACK, "Move everything: ripple edits shift all tracks and markers", true, s.ripple_all_tracks).clicked() {
                     let mut n = s.clone();
                     n.ripple_all_tracks = !n.ripple_all_tracks;
                     self.apply(EditOp::SetSettings { settings: n });
@@ -1497,7 +1497,7 @@ impl App {
                     i.pointer.hover_pos(),
                 )
             });
-            // scroll left at most to 0:00 – or to the margin left by „Ganze Zeitleiste zeigen“
+            // scroll left at most to 0:00 – or to the margin left by „Fit timeline“
             let floor = self.timeline.scroll.min(0.0);
             if ctrl && dy != 0.0 {
                 // zoom glides around the playhead; further wheel steps continue the target
@@ -2259,7 +2259,7 @@ impl App {
                         painter.text(
                             pos2(tx(t), ruler.bottom() + 2.0),
                             egui::Align2::CENTER_TOP,
-                            crate::tr("Rollen"),
+                            crate::tr("Roll"),
                             egui::FontId::proportional(theme::FS_HINT),
                             theme::ACCENT(),
                         );
@@ -2282,7 +2282,7 @@ impl App {
                     painter.text(
                         pos2(cx + 4.0, ruler.bottom() + 2.0),
                         egui::Align2::LEFT_TOP,
-                        crate::tr(format!("Slippen: Quelle ab {}", theme::secs(v as f64, 2))),
+                        crate::tr(format!("Slip: source from {} s", theme::dec(v as f64, 2))),
                         egui::FontId::proportional(theme::FS_HINT),
                         theme::ACCENT(),
                     );
@@ -2457,7 +2457,7 @@ impl App {
         ));
         while tx(t) < rect.right() {
             let x = tx(t);
-            // no ticks before 0:00 (margin of „Ganze Zeitleiste zeigen“)
+            // no ticks before 0:00 (margin of „Fit timeline“)
             if x >= x0 - 1.0 && t > -1e-9 {
                 let major = k.rem_euclid(5) == 0;
                 let hh = if major { 7.0 } else { 3.0 };
@@ -2734,7 +2734,7 @@ impl App {
                 self.proxy_line(ctx, pc, &c, cr);
                 if missing && hovered_clip == Some(c.id) {
                     egui::show_tooltip_at_pointer(ui.ctx(), ui.layer_id(), egui::Id::new(("missing", c.id)), |ui| {
-                        ui.label(crate::tr("Datei fehlt"));
+                        ui.label(crate::tr("File missing"));
                     });
                 }
                 if has_audio(&c)
@@ -2943,7 +2943,7 @@ impl App {
             p.text(
                 cr.left_top() + vec2(6.0, 2.0),
                 egui::Align2::LEFT_TOP,
-                crate::tr(format!("{}  Aufnahme {}", icon::RECORD, theme::secs(*elapsed, 1))),
+                crate::tr(format!("{}  Recording {}", icon::RECORD, theme::secs(*elapsed, 1))),
                 egui::FontId::proportional(theme::FS_HINT),
                 Color32::WHITE,
             );
@@ -3002,7 +3002,7 @@ impl App {
                     icon::LOCK_SIMPLE_OPEN
                 },
                 tr.locked,
-                if tr.locked { "Entsperren" } else { "Sperren" },
+                if tr.locked { "Unlock" } else { "Lock" },
             )];
             if tr.kind != TrackKind::Audio {
                 toggles.push((
@@ -3013,7 +3013,7 @@ impl App {
                         icon::EYE
                     },
                     tr.hidden,
-                    if tr.hidden { "Spur einblenden" } else { "Spur verbergen" },
+                    if tr.hidden { "Show track" } else { "Hide track" },
 
                 ));
             }
@@ -3026,14 +3026,14 @@ impl App {
                         icon::SPEAKER_HIGH
                     },
                     tr.muted,
-                    if tr.muted { "Stumm aufheben" } else { "Stumm" },
+                    if tr.muted { "Unmute" } else { "Mute" },
                 ));
                 let solo = self.solo.contains(&tr.id);
                 toggles.push((
                     3,
                     icon::HEADPHONES,
                     solo,
-                    if solo { "Solo aufheben" } else { "Solo (nur diese Spur hören)" },
+                    if solo { "Unsolo" } else { "Solo (hear only this track)" },
                 ));
             }
             // collapsed: only icon and name, the toggles would have no room
@@ -3052,8 +3052,8 @@ impl App {
                 let k = match tr.kind {
                     TrackKind::Audio => "Audio",
                     TrackKind::Text => "Text",
-                    TrackKind::Effect => "Effekte",
-                    TrackKind::Filter => "Filter",
+                    TrackKind::Effect => "Effects",
+                    TrackKind::Filter => "Filters",
                     _ => "Video",
                 };
                 format!("{} {n}", crate::tr(k))
@@ -3152,7 +3152,7 @@ impl App {
         // „+“ above the track heads (corner next to the ruler): new track at the very top (picture) or very bottom (sound)
         let corner = Rect::from_min_max(pos2(rect.left() + 4.0, rect.top()), pos2(x0 - 4.0, ruler.bottom()));
         let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(corner).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        let add = theme::icon_button(&mut cui, icon::PLUS, "Spur hinzufügen", true, false);
+        let add = theme::icon_button(&mut cui, icon::PLUS, "Add track", true, false);
         let pop = ui.make_persistent_id("add-track-menu");
         if add.clicked() {
             ui.memory_mut(|m| m.toggle_popup(pop));
@@ -3208,7 +3208,7 @@ impl App {
                 _ => pointer.and_then(|p| hit(p).map(|h| h.0)),
             };
             if matches!(&*payload, DragAsset::Transition(_)) && on.is_none() {
-                self.toast_err("Lege den Übergang auf einen Schnitt zwischen zwei Clips");
+                self.toast_err("Drop the transition on a cut between two clips");
             } else {
                 self.drop_asset(&payload, at, track, on);
             }
@@ -3561,14 +3561,14 @@ impl App {
                     }
                 );
                 let visual = c.kind() == TrackKind::Video;
-                if menu_item(ui, icon::COPY, "Kopieren", "Strg+C") {
+                if menu_item(ui, icon::COPY, "Copy", "Ctrl+C") {
                     self.copy_selection();
                 }
-                if menu_item(ui, icon::SCISSORS, "Ausschneiden", "Strg+X") {
+                if menu_item(ui, icon::SCISSORS, "Cut", "Ctrl+X") {
                     self.cut_selection();
                 }
                 if !self.clipboard.is_empty()
-                    && menu_item(ui, icon::CLIPBOARD_TEXT, "Einfügen", "Strg+V")
+                    && menu_item(ui, icon::CLIPBOARD_TEXT, "Paste", "Ctrl+V")
                 {
                     self.paste();
                 }
@@ -3576,39 +3576,39 @@ impl App {
                 let attrs_key = self.key_of("paste_attrs");
                 if ui
                     .add_enabled_ui(!self.clipboard.is_empty(), |ui| {
-                        menu_item(ui, icon::CLIPBOARD, "Attribute einfügen", &attrs_key)
+                        menu_item(ui, icon::CLIPBOARD, "Paste attributes", &attrs_key)
                     })
                     .inner
                 {
                     self.paste_attrs_open = true;
                 }
-                if menu_item(ui, icon::COPY_SIMPLE, "Duplizieren", &self.key_of("duplicate")) {
+                if menu_item(ui, icon::COPY_SIMPLE, "Duplicate", &self.key_of("duplicate")) {
                     self.duplicate_selection();
                 }
                 if self.selection().len() >= 2
-                    && menu_item(ui, icon::BOUNDING_BOX, "Gruppieren", &self.key_of("group"))
+                    && menu_item(ui, icon::BOUNDING_BOX, "Group", &self.key_of("group"))
                 {
                     self.group_selection(true);
                 }
                 if c.group.is_some()
-                    && menu_item(ui, icon::SELECTION_SLASH, "Gruppe auflösen", &self.key_of("ungroup"))
+                    && menu_item(ui, icon::SELECTION_SLASH, "Ungroup", &self.key_of("ungroup"))
                 {
                     self.group_selection(false);
                 }
-                if menu_item(ui, icon::TRASH, "Löschen", "Entf") {
+                if menu_item(ui, icon::TRASH, "Delete", "Del") {
                     self.delete_selected();
                 }
-                if menu_item(ui, icon::TRASH_SIMPLE, "Löschen und Lücke schließen", &self.key_of("ripple_delete")) {
+                if menu_item(ui, icon::TRASH_SIMPLE, "Delete and close gap", &self.key_of("ripple_delete")) {
                     self.ripple_delete();
                 }
                 ui.separator();
-                if menu_item(ui, icon::SCISSORS, "Teilen", &self.key_of("split")) {
+                if menu_item(ui, icon::SCISSORS, "Split", &self.key_of("split")) {
                     self.split_at_playhead();
                 }
-                if menu_item(ui, icon::ARROW_LINE_LEFT, "Links vom Playhead löschen", &self.key_of("del_left")) {
+                if menu_item(ui, icon::ARROW_LINE_LEFT, "Delete left of playhead", &self.key_of("del_left")) {
                     self.delete_side(true);
                 }
-                if menu_item(ui, icon::ARROW_LINE_RIGHT, "Rechts vom Playhead löschen", &self.key_of("del_right")) {
+                if menu_item(ui, icon::ARROW_LINE_RIGHT, "Delete right of playhead", &self.key_of("del_right")) {
                     self.delete_side(false);
                 }
                 ui.separator();
@@ -3616,10 +3616,10 @@ impl App {
                     theme::submenu(
                         ui,
                         icon::PENCIL_SIMPLE,
-                        "Bearbeiten",
+                        "Edit",
                         |ui| {
                             ui.set_min_width(200.0);
-                            if video && menu_item(ui, icon::SNOWFLAKE, "Standbild", "") {
+                            if video && menu_item(ui, icon::SNOWFLAKE, "Freeze frame", "") {
                                 self.freeze_frame();
                             }
                             if video
@@ -3627,22 +3627,22 @@ impl App {
                                     ui,
                                     icon::ARROWS_LEFT_RIGHT,
                                     if c.fx.reverse {
-                                        "Vorwärts abspielen"
+                                        "Play forward"
                                     } else {
-                                        "Rückwärts"
+                                        "Reverse"
                                     },
                                     "",
                                 )
                             {
                                 self.modify_selection(|c| c.fx.reverse = !c.fx.reverse);
                             }
-                            if menu_item(ui, icon::FLIP_HORIZONTAL, "Horizontal spiegeln", "") {
+                            if menu_item(ui, icon::FLIP_HORIZONTAL, "Flip horizontally", "") {
                                 self.modify_selection(|c| c.fx.flip_h = !c.fx.flip_h);
                             }
-                            if menu_item(ui, icon::FLIP_VERTICAL, "Vertikal spiegeln", "") {
+                            if menu_item(ui, icon::FLIP_VERTICAL, "Flip vertically", "") {
                                 self.modify_selection(|c| c.fx.flip_v = !c.fx.flip_v);
                             }
-                            if menu_item(ui, icon::ARROWS_CLOCKWISE, "90° drehen", "") {
+                            if menu_item(ui, icon::ARROWS_CLOCKWISE, "Rotate 90°", "") {
                                 self.modify_selection(|c| {
                                     c.transform.rotation_deg =
                                         ((c.transform.rotation_deg + 90.0 + 180.0)
@@ -3653,7 +3653,7 @@ impl App {
                             if menu_item(
                                 ui,
                                 icon::ARROW_COUNTER_CLOCKWISE,
-                                "Transformation zurücksetzen",
+                                "Reset transform",
                                 "",
                             ) {
                                 self.modify_selection(|c| {
@@ -3666,7 +3666,7 @@ impl App {
                         },
                     );
                 }
-                if video && menu_item(ui, icon::WAVEFORM, "Ton extrahieren", "") {
+                if video && menu_item(ui, icon::WAVEFORM, "Extract audio", "") {
                     self.extract_audio(id);
                 }
                 if matches!(
@@ -3679,7 +3679,7 @@ impl App {
                     theme::submenu(
                         ui,
                         icon::GAUGE,
-                        "Tempo",
+                        "Speed",
                         |ui| {
                             for s in [0.25f32, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0] {
                                 if ui
@@ -3706,7 +3706,7 @@ impl App {
                     .map(|(i, p)| (i, p.name.clone()))
                     .collect();
                 if !looks.is_empty() {
-                    theme::submenu(ui, icon::SWATCHES, "Look anwenden", |ui| {
+                    theme::submenu(ui, icon::SWATCHES, "Apply look", |ui| {
                         for (i, n) in &looks {
                             if ui.add(theme::menu_row(n.as_str()).min_width(160.0)).clicked() {
                                 self.apply_preset(*i);
@@ -3715,16 +3715,16 @@ impl App {
                         }
                     });
                 }
-                // the same list as „Schnellaktionen“ in the bar (unsuitable ones are greyed out)
-                theme::submenu(ui, icon::LIGHTNING, "Schnellaktionen", |ui| {
+                // the same list as „Quick Actions“ in the bar (unsuitable ones are greyed out)
+                theme::submenu(ui, icon::LIGHTNING, "Quick Actions", |ui| {
                     self.tools_menu(ui)
                 });
                 if self.next_adjacent(id).is_some() {
                     if c.transition_out.is_some() {
-                        if menu_item(ui, icon::INTERSECT, "Übergang entfernen", "") {
+                        if menu_item(ui, icon::INTERSECT, "Remove transition", "") {
                             self.set_transition(id, None);
                         }
-                    } else if menu_item(ui, icon::INTERSECT, "Übergang einfügen (Überblenden)", "")
+                    } else if menu_item(ui, icon::INTERSECT, "Add transition (cross dissolve)", "")
                     {
                         self.set_transition(id, Some("fade"));
                     }
@@ -3737,17 +3737,17 @@ impl App {
                         icon::EYE_SLASH
                     },
                     if c.disabled {
-                        "Clip aktivieren"
+                        "Enable clip"
                     } else {
-                        "Clip deaktivieren"
+                        "Disable clip"
                     },
                     "V",
                 ) {
                     self.toggle_disabled();
                 }
-                theme::submenu(ui, icon::PALETTE, "Farbe", |ui| {
+                theme::submenu(ui, icon::PALETTE, "Color", |ui| {
                     ui.set_min_width(150.0);
-                    if menu_item(ui, icon::X, "Keine", "") {
+                    if menu_item(ui, icon::X, "None", "") {
                         self.modify_selection(|x| x.label = None);
                     }
                     for (i, (n, _)) in cl_core::MARKER_COLORS.iter().enumerate() {
@@ -3767,28 +3767,28 @@ impl App {
                     }
                 });
                 ui.separator();
-                if menu_item(ui, icon::INFO, "Eigenschaften", "") {
+                if menu_item(ui, icon::INFO, "Properties", "") {
                     self.props = Some(crate::props::Props::Clip(id));
                 }
                 let _ = tr;
             }
             CtxTarget::Transition(id) => {
-                if menu_item(ui, icon::TRASH, "Übergang entfernen", "Entf") {
+                if menu_item(ui, icon::TRASH, "Remove transition", "Del") {
                     self.set_transition(id, None);
                 }
             }
             CtxTarget::Ruler(marker) => {
                 // the same actions as the keys (M, I, O, Alt+X, Ctrl+L)
                 let ctx = ui.ctx().clone();
-                if menu_item(ui, icon::BOOKMARK_SIMPLE, "Marker hier setzen", &self.key_of("marker")) {
+                if menu_item(ui, icon::BOOKMARK_SIMPLE, "Add marker here", &self.key_of("marker")) {
                     self.run_action(&ctx, "marker");
                 }
                 if let Some(id) = marker {
-                    if menu_item(ui, icon::PENCIL_SIMPLE, "Marker bearbeiten …", "") {
+                    if menu_item(ui, icon::PENCIL_SIMPLE, "Edit marker …", "") {
                         self.marker_draft = None;
                         self.marker_edit = Some(id);
                     }
-                    if menu_item(ui, icon::TRASH, "Marker löschen", "") {
+                    if menu_item(ui, icon::TRASH, "Delete marker", "") {
                         let mut ms = self.project.timeline.markers.clone();
                         ms.retain(|m| m.id != id);
                         self.apply(EditOp::SetMarkers { markers: ms });
@@ -3796,22 +3796,22 @@ impl App {
                 }
                 ui.separator();
                 for (g, label, action) in [
-                    (icon::BRACKETS_SQUARE, "In-Punkt setzen", "mark_in"),
-                    (icon::BRACKETS_SQUARE, "Out-Punkt setzen", "mark_out"),
-                    (icon::X, "In/Out löschen", "clear_range"),
+                    (icon::BRACKETS_SQUARE, "Set In point", "mark_in"),
+                    (icon::BRACKETS_SQUARE, "Set Out point", "mark_out"),
+                    (icon::X, "Clear In/Out", "clear_range"),
                 ] {
                     if menu_item(ui, g, label, &self.key_of(action)) {
                         self.run_action(&ctx, action);
                     }
                 }
                 let mark = if self.loop_range { icon::CHECK } else { icon::REPEAT };
-                if menu_item(ui, mark, "Bereich wiederholen", &self.key_of("loop")) {
+                if menu_item(ui, mark, "Loop range", &self.key_of("loop")) {
                     self.run_action(&ctx, "loop");
                 }
                 ui.separator();
                 let has = !self.project.timeline.markers.is_empty();
                 if ui
-                    .add_enabled_ui(has, |ui| menu_item(ui, icon::COPY, "Kapitel kopieren", ""))
+                    .add_enabled_ui(has, |ui| menu_item(ui, icon::COPY, "Copy chapters", ""))
                     .inner
                 {
                     self.copy_chapters(&ctx);
@@ -3836,12 +3836,12 @@ impl App {
                 } else {
                     (idx + 1, idx)
                 };
-                if menu_item(ui, icon::PENCIL_SIMPLE, "Spur umbenennen …", "") {
+                if menu_item(ui, icon::PENCIL_SIMPLE, "Rename track …", "") {
                     self.track_rename = Some((tr.id, tr.name.clone().unwrap_or_default()));
                 }
                 for (label, glyph, index, show) in [
-                    ("Spur darüber einfügen", icon::ROWS_PLUS_TOP, above, true),
-                    ("Spur darunter einfügen", icon::ROWS_PLUS_BOTTOM, below, !tr.main),
+                    ("Insert track above", icon::ROWS_PLUS_TOP, above, true),
+                    ("Insert track below", icon::ROWS_PLUS_BOTTOM, below, !tr.main),
                 ] {
                     if !show {
                         continue;
@@ -3859,10 +3859,10 @@ impl App {
                     });
                 }
                 if !tr.main {
-                    if menu_item(ui, icon::ARROW_UP, "Spur nach oben", "") {
+                    if menu_item(ui, icon::ARROW_UP, "Move track up", "") {
                         self.apply(EditOp::MoveTrack { track: tid, up: true });
                     }
-                    if menu_item(ui, icon::ARROW_DOWN, "Spur nach unten", "") {
+                    if menu_item(ui, icon::ARROW_DOWN, "Move track down", "") {
                         self.apply(EditOp::MoveTrack { track: tid, up: false });
                     }
                 }
@@ -3874,7 +3874,7 @@ impl App {
                     } else {
                         icon::LOCK_SIMPLE
                     },
-                    if tr.locked { "Entsperren" } else { "Sperren" },
+                    if tr.locked { "Unlock" } else { "Lock" },
                     "",
                 ) {
                     self.apply(EditOp::SetTrackFlags {
@@ -3893,9 +3893,9 @@ impl App {
                             icon::EYE_SLASH
                         },
                         if tr.hidden {
-                            "Spur einblenden"
+                            "Show track"
                         } else {
-                            "Spur verbergen"
+                            "Hide track"
                         },
                         "",
                     )
@@ -3915,7 +3915,7 @@ impl App {
                         } else {
                             icon::SPEAKER_SLASH
                         },
-                        if tr.muted { "Stumm aufheben" } else { "Stumm" },
+                        if tr.muted { "Unmute" } else { "Mute" },
                         "",
                     )
                 {
@@ -3929,7 +3929,7 @@ impl App {
                 // solo as in the track head (preview only, not in the export)
                 let solo = self.solo.contains(&tid);
                 if matches!(tr.kind, TrackKind::Video | TrackKind::Audio)
-                    && menu_item(ui, icon::HEADPHONES, if solo { "Solo aufheben" } else { "Solo" }, "")
+                    && menu_item(ui, icon::HEADPHONES, if solo { "Unsolo" } else { "Solo" }, "")
                 {
                     if !self.solo.remove(&tid) {
                         self.solo.insert(tid);
@@ -3938,19 +3938,19 @@ impl App {
                     self.core.edit(true, self.core_now());
                 }
                 ui.separator();
-                if menu_item(ui, icon::SELECTION_ALL, "Alle Clips der Spur auswählen", "") {
+                if menu_item(ui, icon::SELECTION_ALL, "Select all clips on track", "") {
                     self.select_only(None);
                     self.sel_extra = tr.clips.iter().map(|c| c.id).collect();
                     self.selected = tr.clips.last().map(|c| c.id);
                 }
-                if menu_item(ui, icon::ARROWS_MERGE, "Lücken schließen", "") {
+                if menu_item(ui, icon::ARROWS_MERGE, "Close gaps", "") {
                     self.close_gaps(Some(tid));
                 }
                 let folded = tr.collapsed;
                 let (g, label) = if folded {
-                    (icon::CARET_DOWN, "Spur ausklappen")
+                    (icon::CARET_DOWN, "Expand track")
                 } else {
-                    (icon::CARET_UP, "Spur einklappen")
+                    (icon::CARET_UP, "Collapse track")
                 };
                 if menu_item(ui, g, label, "") {
                     self.apply(EditOp::SetTrackView { track: tid, collapsed: !folded, height: tr.height });
@@ -3958,14 +3958,14 @@ impl App {
                 theme::submenu(
                     ui,
                     icon::ARROWS_VERTICAL,
-                    "Spurhöhe",
+                    "Track height",
                     |ui| {
                         let cur = tr.height;
                         for (n, f) in [
-                            ("Klein", 0.7f32),
+                            ("Small", 0.7f32),
                             ("Normal", 1.0),
-                            ("Groß", 1.5),
-                            ("Sehr groß", 2.2),
+                            ("Large", 1.5),
+                            ("Extra large", 2.2),
                         ] {
                             if ui
                                 .selectable_label((cur - f).abs() < 0.01, crate::tr(n))
@@ -3977,44 +3977,44 @@ impl App {
                         }
                     },
                 );
-                if menu_item(ui, icon::INFO, "Eigenschaften", "") {
+                if menu_item(ui, icon::INFO, "Properties", "") {
                     self.props = Some(crate::props::Props::Track(tid));
                 }
                 ui.separator();
                 let label = if tr.main {
-                    "Hauptspur leeren"
+                    "Clear main track"
                 } else {
-                    "Spur löschen"
+                    "Delete track"
                 };
                 if menu_item(ui, icon::TRASH, label, "") {
                     self.apply(EditOp::RemoveTrack { track: tid });
                 }
             }
             CtxTarget::Empty(track) => {
-                if menu_item(ui, icon::CLIPBOARD_TEXT, "Einfügen", "Strg+V") {
+                if menu_item(ui, icon::CLIPBOARD_TEXT, "Paste", "Ctrl+V") {
                     self.paste();
                 }
-                if menu_item(ui, icon::SELECTION_ALL, "Alle auswählen", "Strg+A") {
+                if menu_item(ui, icon::SELECTION_ALL, "Select all", "Ctrl+A") {
                     self.select_all();
                 }
                 if let Some(t) = track {
-                    if menu_item(ui, icon::ARROWS_MERGE, "Lücken schließen", "") {
+                    if menu_item(ui, icon::ARROWS_MERGE, "Close gaps", "") {
                         self.close_gaps(Some(t));
                     }
                 }
-                if menu_item(ui, icon::ARROWS_MERGE, "Alle Lücken schließen", "") {
+                if menu_item(ui, icon::ARROWS_MERGE, "Close all gaps", "") {
                     self.close_gaps(None);
                 }
                 ui.separator();
                 let n = self.project.timeline.tracks.len();
-                theme::submenu(ui, icon::PLUS, "Spur hinzufügen", |ui| {
+                theme::submenu(ui, icon::PLUS, "Add track", |ui| {
                     for (k, name) in TRACK_KINDS {
                         if menu_item(ui, theme::track_icon(k), name, "") {
                             self.apply(EditOp::InsertTrack { index: n, kind: k });
                         }
                     }
                 });
-                if menu_item(ui, icon::TEXT_AA, "Text am Playhead", "") {
+                if menu_item(ui, icon::TEXT_AA, "Text at playhead", "") {
                     self.add_text_at(self.playhead, None, None);
                 }
             }
@@ -4074,7 +4074,7 @@ mod tests {
     fn head_toggles_per_track_kind() {
         let n = |k| toggle_count(&Track::new(k), false);
         assert_eq!((n(TrackKind::Video), n(TrackKind::Audio), n(TrackKind::Text)), (4, 3, 2));
-        assert_eq!(toggle_count(&Track::new(TrackKind::Video), true), 0, "eingeklappt");
+        assert_eq!(toggle_count(&Track::new(TrackKind::Video), true), 0, "collapsed");
     }
 
     fn place(s: f64, e: f64, track: TrackId) -> Place {
@@ -4252,8 +4252,8 @@ mod tests {
         assert_eq!(reveal_delta(row(150.0, 400.0), lanes), 46.0);
     }
 
-    /// Click test finding: `PL_einfach` (one clip, 23:16 min) showed only 0:00–10:20 after „Ganze Zeitleiste
-    /// zeigen“. After the movement the whole project must be visible with margin.
+    /// Click test finding: `PL_simple` (one clip, 23:16 min) showed only 0:00–10:20 after "Fit timeline".
+    /// After the movement the whole project must be visible with margin.
     #[test]
     fn show_all_fits_a_23_minute_project() {
         let dur = 23.0 * 60.0 + 16.0;
@@ -4377,7 +4377,7 @@ mod tests {
             let s = zoom_scroll(scroll, 40.0, 80.0, 120.0, 1000.0);
             assert!((x(s, 80.0) - 500.0).abs() < 1e-3, "{scroll}");
         }
-        // zooming out at the start: not left of 0:00 (or the margin of „Ganze Zeitleiste zeigen“)
+        // zooming out at the start: not left of 0:00 (or the margin of „Fit timeline“)
         assert_eq!(zoom_scroll(0.0, 100.0, 5.0, 1.0, 1000.0), 0.0);
         assert_eq!(zoom_scroll(-3.0, 100.0, 5.0, 1.0, 1000.0), -3.0);
         // a wheel gesture that starts off-screen keeps gliding to the centre, no jump
@@ -4501,10 +4501,10 @@ mod tests {
         assert_eq!(hbar_scroll(range, 21.0, 210.0, w, -50.0), 0.0);
         assert_eq!(hbar_scroll(range, 21.0, 210.0, w, 500.0), 84.0);
         assert_eq!(hbar_thumb(range, 84.0, 21.0, 210.0), Some((168.0, 42.0)));
-        // the margin of „Ganze Zeitleiste zeigen“ and a view past the end widen the range
+        // the margin of „Fit timeline“ and a view past the end widen the range
         assert_eq!(hbar_range(100.0, -5.0, 21.0).0, -5.0);
         assert_eq!(hbar_range(100.0, 200.0, 21.0).1, 221.0);
-        // everything fits (after „Ganze Zeitleiste zeigen“): no thumb
+        // everything fits (after „Fit timeline“): no thumb
         let (pps, scroll) = fit_all(100.0, 1000.0, min_pps(100.0, 1000.0));
         let visible = (1000.0 / pps) as f64;
         assert_eq!(hbar_thumb(hbar_range(100.0, scroll, visible), scroll, visible, 1000.0), None);
@@ -4603,7 +4603,7 @@ mod tests {
     fn missing_media_comes_from_the_background_check() {
         let m = MediaRef {
             id: MediaId::new(),
-            path: std::path::PathBuf::from("gibt/es/nicht.mp4"),
+            path: std::path::PathBuf::from("does/not/exist.mp4"),
             kind: MediaKind::Video,
             duration: Time::from_secs_f64(1.0),
             width: 64,
@@ -4692,7 +4692,7 @@ mod tests {
         use std::hash::{Hash, Hasher};
 
 
-        /// Project like `qa/PL_schnitt.cutline` (same tracks and shares), scaled to `n` clips.
+        /// Project like `qa/PL_cut.cutline` (same tracks and shares), scaled to `n` clips.
         pub(crate) fn synth_project(n: usize, file: &std::path::Path) -> Project {
             let mut p = Project::new("Messung");
             let media = |kind, audio, secs: f64| MediaRef {
@@ -4715,7 +4715,7 @@ mod tests {
             let img = media(MediaKind::Image, false, 0.0);
             let sfx = media(MediaKind::Audio, true, 2.0);
             let total = 644.0;
-            // (track kind, clips in PL_schnitt, content, clip duration share)
+            // (track kind, clips in PL_cut, content, clip duration share)
             let plan: [(TrackKind, usize, u8, f64); 9] = [
                 (TrackKind::Video, 150, 0, 1.0),
                 (TrackKind::Audio, 150, 1, 1.0),
@@ -4740,9 +4740,9 @@ mod tests {
                         1 => ClipContent::Media { media: va.id, kind: MediaKind::Audio },
                         2 => ClipContent::Media { media: va.id, kind: MediaKind::Video },
                         3 => ClipContent::Media { media: img.id, kind: MediaKind::Image },
-                        4 => ClipContent::Text(TextStyle { text: format!("Teil {}", i + 1), ..TextStyle::default() }),
-                        5 => ClipContent::Text(TextStyle { text: "dabei vom schiefgehen Heute Ende was".into(), ..TextStyle::default() }),
-                        6 => ClipContent::Effect(cl_core::FxRef::new("cutline.effekte/super8")),
+                        4 => ClipContent::Text(TextStyle { text: format!("Part {}", i + 1), ..TextStyle::default() }),
+                        5 => ClipContent::Text(TextStyle { text: "something goes wrong today end what".into(), ..TextStyle::default() }),
+                        6 => ClipContent::Effect(cl_core::FxRef::new("cutline.effects/super8")),
                         7 => ClipContent::Media { media: a.id, kind: MediaKind::Audio },
                         _ => ClipContent::Media { media: sfx.id, kind: MediaKind::Audio },
                     };
@@ -4845,7 +4845,7 @@ mod tests {
             for (name, tags, dur) in [
                 ("videoplayback.mp4", tags.as_str(), "4,3 s"),
                 ("Sunset Libreville.webm", "", "12,0 s"),
-                ("dabei vom schiefgehen Heute Ende was", "", ""),
+                ("something goes wrong today end what", "", ""),
                 ("a b  c", " x", "1 s"),
             ] {
                 let sep = if dur.is_empty() { "" } else { "  " };
@@ -4913,8 +4913,8 @@ mod tests {
                     let (med, max, p10) = stats(times);
                     let (run, ..) = stats(runs);
                     println!(
-                        "Zeitleiste {clips} Clips, {}: Median {med:.2} ms (davon Rechnen {run:.2} ms), 10 % {p10:.2} ms, Max {max:.2} ms, {shapes} Formen, Prüfsumme {sum:016x}",
-                        if playing { "Abspielen" } else { "Stand" }
+                        "Timeline {clips} clips, {}: median {med:.2} ms (of which compute {run:.2} ms), 10 % {p10:.2} ms, max {max:.2} ms, {shapes} shapes, checksum {sum:016x}",
+                        if playing { "Play" } else { "Stopped" }
                     );
                 }
                 // movement (only 657): 300 clips glide back and forth, smooth zoom, playback zoomed with paging
@@ -4949,7 +4949,7 @@ mod tests {
                     }
                 }
                 let (med, max, p10) = stats(times);
-                println!("Zeitleiste {clips} Clips, 300 Clips gleiten: Median {med:.2} ms, 10 % {p10:.2} ms, Max {max:.2} ms");
+                println!("Timeline {clips} clips, 300 clips glide: median {med:.2} ms, 10 % {p10:.2} ms, max {max:.2} ms");
                 let full = app.timeline.pps;
                 let mut times = Vec::new();
                 for f in 0..120 {
@@ -4963,7 +4963,7 @@ mod tests {
                     times.push(ms);
                 }
                 let (med, max, p10) = stats(times);
-                println!("Zeitleiste {clips} Clips, weicher Zoom (ganze Breite ↔ 3×): Median {med:.2} ms, 10 % {p10:.2} ms, Max {max:.2} ms");
+                println!("Timeline {clips} clips, soft zoom (full width ↔ 3×): median {med:.2} ms, 10 % {p10:.2} ms, max {max:.2} ms");
                 app.timeline.pps = 60.0;
                 app.timeline.view_glide = None;
                 app.playing = true;
@@ -4976,11 +4976,11 @@ mod tests {
                     times.push(ms);
                 }
                 let (med, max, p10) = stats(times);
-                println!("Zeitleiste {clips} Clips, Abspielen gezoomt (60 px/s, Playhead folgt): Median {med:.2} ms, 10 % {p10:.2} ms, Max {max:.2} ms");
+                println!("Timeline {clips} clips, playback zoomed (60 px/s, playhead follows): median {med:.2} ms, 10 % {p10:.2} ms, max {max:.2} ms");
                 app.playing = false;
             }
             app.playing = false;
-            // real project (e.g. `qa/PL_schnitt.cutline`), if given: CUTLINE_BENCH_PROJECT=file
+            // real project (e.g. `qa/PL_cut.cutline`), if given: CUTLINE_BENCH_PROJECT=file
             let Some(path) = std::env::var_os("CUTLINE_BENCH_PROJECT").filter(|p| std::path::Path::new(p).is_file()) else {
                 return;
             };
@@ -5006,8 +5006,8 @@ mod tests {
                 }
                 let (med, max, p10) = stats(times);
                 println!(
-                    "Projektdatei {clips} Clips, ganze Breite, {}: Median {med:.2} ms, 10 % {p10:.2} ms, Max {max:.2} ms",
-                    if playing { "Abspielen" } else { "Stand" }
+                    "Project file {clips} clips, full width, {}: median {med:.2} ms, 10 % {p10:.2} ms, max {max:.2} ms",
+                    if playing { "Play" } else { "Stopped" }
                 );
             }
             app.playing = false;

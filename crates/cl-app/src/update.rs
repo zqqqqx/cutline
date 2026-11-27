@@ -1,4 +1,4 @@
-//! Update check in the background (GitHub Releases), install at the push of a button, and „Was ist neu“.
+//! Update check in the background (GitHub Releases), install at the push of a button, and „What's new“.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -22,11 +22,11 @@ pub enum UpdateState {
     Downloading(Box<Release>, u64, u64),
     /// Installed, restart needed
     Installed(Version),
-    /// Message; failed while downloading: the release for „Erneut versuchen“
+    /// Message; failed while downloading: the release for „Try again“
     Error(String, Option<Box<Release>>),
 }
 
-/// Content of the „Update“ / „Was ist neu“ window
+/// Content of the „Update“ / „What's new“ window
 pub enum View {
     /// New version: changes from the release notes (empty = show the raw text)
     Update(Vec<Notes>),
@@ -153,12 +153,12 @@ fn update_dir() -> std::path::PathBuf {
 fn check_outcome(r: Result<Option<Release>, String>) -> (UpdateState, String) {
     match r {
         Ok(Some(rel)) => {
-            let from = if rel.changes.is_some() { " (Änderungen aus changes.json)" } else { "" };
-            let line = format!("Version {} verfügbar{from}", rel.version);
+            let from = if rel.changes.is_some() { " (changes from changes.json)" } else { "" };
+            let line = format!("Version {} available{from}", rel.version);
             (UpdateState::Available(Box::new(rel)), line)
         }
-        Ok(None) => (UpdateState::UpToDate, "aktuell".into()),
-        Err(e) => (UpdateState::Error(cl_update::friendly(&e), None), format!("Fehler {e}")),
+        Ok(None) => (UpdateState::UpToDate, "up to date".into()),
+        Err(e) => (UpdateState::Error(cl_update::friendly(&e), None), format!("Error {e}")),
     }
 }
 
@@ -208,7 +208,7 @@ impl Updater {
             };
             let (r, line) = check_outcome(r);
             let level = if matches!(r, UpdateState::Error(..)) { log::Level::Warn } else { log::Level::Info };
-            log::log!(target: "update", level, "Suche: {line}");
+            log::log!(target: "update", level, "Check: {line}");
             *state.lock().unwrap() = r;
             *checked.lock().unwrap() = Some(SystemTime::now());
             ctx.request_repaint();
@@ -239,7 +239,7 @@ impl Updater {
                 let _ = std::fs::remove_file(&zip);
                 n
             });
-            log::info!(target: "update", "Installation {}: {}", rel.version, res.as_ref().map_or_else(|e| format!("Fehler {e}"), |_| "fertig".into()));
+            log::info!(target: "update", "Installation {}: {}", rel.version, res.as_ref().map_or_else(|e| format!("Error {e}"), |_| "done".into()));
             *state.lock().unwrap() = match res {
                 Ok(_) => UpdateState::Installed(rel.version),
                 // Cancel leads back to the offer
@@ -323,7 +323,7 @@ mod temp_tests {
     #[test]
     fn cleanup_temp_removes_only_own_old_dirs() {
         let t = tempfile::tempdir().unwrap();
-        for d in ["cutline-audio-x1", "cutline-export-x2", "cutline-whisper-1-0", "cutline-thumbAbc12", "cutline-models", "fremd"] {
+        for d in ["cutline-audio-x1", "cutline-export-x2", "cutline-whisper-1-0", "cutline-thumbAbc12", "cutline-models", "other"] {
             std::fs::create_dir(t.path().join(d)).unwrap();
         }
         std::fs::write(t.path().join("cutline-export-datei"), "x").unwrap();
@@ -336,7 +336,7 @@ mod temp_tests {
         super::cleanup_temp(t.path(), std::time::Duration::from_secs(3600));
         let mut left: Vec<String> = std::fs::read_dir(t.path()).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
         left.sort();
-        assert_eq!(left, ["cutline-export-datei", "cutline-models", "fremd"]);
+        assert_eq!(left, ["cutline-export-datei", "cutline-models", "other"]);
     }
 
     #[test]
@@ -422,7 +422,7 @@ fn notes_list(ui: &mut egui::Ui, notes: &[Notes], headings: bool) {
 }
 
 impl App {
-    /// At startup: offer „Was ist neu“ once after an update (never on a fresh install),
+    /// At startup: offer „What's new“ once after an update (never on a fresh install),
     /// then remember the started version.
     pub fn note_started_version(&mut self) {
         let last = self.settings.last_version.as_deref().and_then(Version::parse);
@@ -440,7 +440,7 @@ impl App {
     /// Small hint in the title bar (only when there is something to do).
     pub fn update_badge(&mut self, ui: &mut egui::Ui) {
         if let Some(v) = self.updater.news.first().and_then(|n| n.version) {
-            let b = theme::secondary(format!("{}  Was ist neu in {v}", icon::SPARKLE)).min_size(vec2(0.0, 22.0));
+            let b = theme::secondary(format!("{}  What's new in {v}", icon::SPARKLE)).min_size(vec2(0.0, 22.0));
             if ui.add(b).clicked() {
                 self.updater.view = Some(View::News(std::mem::take(&mut self.updater.news)));
             }
@@ -453,7 +453,7 @@ impl App {
                     .min_size(vec2(0.0, 22.0));
                 if ui
                     .add(b)
-                    .on_hover_text(crate::tr("Neue Version verfügbar"))
+                    .on_hover_text(crate::tr("New version available"))
                     .clicked()
                 {
                     self.updater.open_update();
@@ -477,11 +477,11 @@ impl App {
                 }
             }
             UpdateState::Installed(v) => {
-                let b = theme::primary(format!("{}  Neu starten ({v})", icon::ARROWS_CLOCKWISE))
+                let b = theme::primary(format!("{}  Restart ({v})", icon::ARROWS_CLOCKWISE))
                     .min_size(vec2(0.0, 22.0));
                 if ui
                     .add(b)
-                    .on_hover_text(crate::tr("Update ist installiert. Cutline neu starten"))
+                    .on_hover_text(crate::tr("Update installed. Restart Cutline"))
                     .clicked()
                 {
                     self.restart_after_update(ui.ctx());
@@ -496,7 +496,7 @@ impl App {
         restart(ctx);
     }
 
-    /// „Update verfügbar“ or „Was ist neu“ window (above everything, also above the settings)
+    /// „Update available“ or „What's new“ window (above everything, also above the settings)
     pub fn update_dialog(&mut self, ctx: &egui::Context) {
         let Some(view) = self.updater.view.take() else { return };
         let state = self.updater.get();
@@ -505,13 +505,13 @@ impl App {
             ui.set_width(520.0);
             match &view {
                 View::News(notes) => {
-                    close |= crate::dialog::title(ui, "Was ist neu");
+                    close |= crate::dialog::title(ui, "What's new");
                     egui::ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         notes_list(ui, notes, true);
                     });
                     crate::dialog::footer(ui, |ui| {
-                        close |= ui.add(theme::primary("Schließen")).clicked();
+                        close |= ui.add(theme::primary("Close")).clicked();
                     });
                 }
                 View::Update(notes) => close |= self.update_view(ui, &state, notes),
@@ -534,7 +534,7 @@ impl App {
         };
         let mut close = crate::dialog::title(
             ui,
-            if matches!(state, UpdateState::Installed(_)) { "Update installiert" } else { "Update verfügbar" },
+            if matches!(state, UpdateState::Installed(_)) { "Update installed" } else { "Update available" },
         );
         let de = de();
         // Header: „0.11.0 → 0.11.1“, below it date and size
@@ -544,7 +544,7 @@ impl App {
                 ui.label(RichText::new(icon::ARROW_RIGHT).size(theme::FS_TITLE).color(theme::TEXT_FAINT()));
                 ui.label(RichText::new(rel.version.to_string()).size(theme::FS_PAGE).strong().color(theme::TEXT()));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if theme::icon_button(ui, icon::ARROW_SQUARE_OUT, "Auf GitHub ansehen", true, false).clicked() {
+                    if theme::icon_button(ui, icon::ARROW_SQUARE_OUT, "View on GitHub", true, false).clicked() {
                         ui.ctx().open_url(egui::OpenUrl::new_tab(&rel.page));
                     }
                 });
@@ -580,22 +580,22 @@ impl App {
                 ui.add_space(4.0);
                 ui.label(RichText::new(progress_text(*done, *total, de)).size(theme::FS_UI).color(theme::TEXT_DIM()));
                 crate::dialog::footer(ui, |ui| {
-                    if ui.add(theme::secondary("Abbrechen")).clicked() {
+                    if ui.add(theme::secondary("Cancel")).clicked() {
                         self.updater.cancel();
                     }
                 });
             }
             UpdateState::Installed(v) => {
                 ui.label(
-                    RichText::new(crate::tr(format!("{}  Version {v} ist installiert", icon::CHECK_CIRCLE)))
+                    RichText::new(crate::tr(format!("{}  Version {v} is installed", icon::CHECK_CIRCLE)))
                         .size(theme::FS_TEXT)
                         .color(theme::TEXT()),
                 );
                 crate::dialog::footer(ui, |ui| {
-                    if ui.add(theme::primary(format!("{}  Jetzt neu starten", icon::ARROWS_CLOCKWISE))).clicked() {
+                    if ui.add(theme::primary(format!("{}  Restart now", icon::ARROWS_CLOCKWISE))).clicked() {
                         self.restart_after_update(ui.ctx());
                     }
-                    close |= ui.add(theme::secondary("Später")).clicked();
+                    close |= ui.add(theme::secondary("Later")).clicked();
                 });
             }
             UpdateState::Error(e, r) => {
@@ -605,26 +605,26 @@ impl App {
                         .color(theme::WARN_TEXT()),
                 );
                 crate::dialog::footer(ui, |ui| {
-                    if ui.add(theme::primary(format!("{}  Erneut versuchen", icon::ARROWS_CLOCKWISE))).clicked() {
+                    if ui.add(theme::primary(format!("{}  Try again", icon::ARROWS_CLOCKWISE))).clicked() {
                         match r {
                             Some(r) => self.updater.install((**r).clone(), ui.ctx()),
                             None => self.updater.check(ui.ctx()),
                         }
                     }
-                    close |= ui.add(theme::secondary("Schließen")).clicked();
+                    close |= ui.add(theme::secondary("Close")).clicked();
                 });
             }
             UpdateState::Available(rel) => {
                 crate::dialog::footer(ui, |ui| {
                     let main = ui
-                        .add_enabled(can_install(), theme::primary(format!("{}  Jetzt aktualisieren", icon::DOWNLOAD_SIMPLE)))
-                        .on_disabled_hover_text(crate::tr("Entwicklungs-Build: bitte über Git aktualisieren"));
+                        .add_enabled(can_install(), theme::primary(format!("{}  Update now", icon::DOWNLOAD_SIMPLE)))
+                        .on_disabled_hover_text(crate::tr("Development build: please update via Git"));
                     if main.clicked() {
                         self.updater.install((**rel).clone(), ui.ctx());
                     }
-                    close |= ui.add(theme::secondary("Später")).clicked();
+                    close |= ui.add(theme::secondary("Later")).clicked();
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        if ui.add(theme::ghost("Diese Version überspringen")).clicked() {
+                        if ui.add(theme::ghost("Skip this version")).clicked() {
                             self.settings.skipped_version = Some(rel.version.to_string());
                             self.settings.save();
                             close = true;
@@ -643,23 +643,23 @@ impl App {
     pub fn updates_settings(&mut self, ui: &mut egui::Ui) {
         theme::row(ui, "Version", |ui| {
             ui.label(RichText::new(current_version()).monospace());
-            if ui.add(theme::ghost(format!("{}  Was ist neu", icon::SPARKLE))).clicked() {
+            if ui.add(theme::ghost(format!("{}  What's new", icon::SPARKLE))).clicked() {
                 self.updater.view = Some(View::News(embedded_notes()));
             }
         });
         let state = self.updater.get();
         theme::row(ui, "Status", |ui| {
             let (text, color) = match &state {
-                UpdateState::Idle => (crate::tr("Noch nicht gesucht"), theme::TEXT_DIM()),
-                UpdateState::Checking => (crate::tr("Suche nach Updates …"), theme::TEXT_DIM()),
-                UpdateState::UpToDate => (crate::tr(format!("{}  Cutline ist aktuell", icon::CHECK_CIRCLE)), theme::TEXT()),
+                UpdateState::Idle => (crate::tr("Not checked yet"), theme::TEXT_DIM()),
+                UpdateState::Checking => (crate::tr("Checking for updates …"), theme::TEXT_DIM()),
+                UpdateState::UpToDate => (crate::tr(format!("{}  Cutline is up to date", icon::CHECK_CIRCLE)), theme::TEXT()),
                 UpdateState::Available(rel) => (
-                    crate::tr(format!("{}  Version {} ist verfügbar", icon::ARROW_CIRCLE_UP, rel.version)),
+                    crate::tr(format!("{}  Version {} is available", icon::ARROW_CIRCLE_UP, rel.version)),
                     theme::TEXT(),
                 ),
                 UpdateState::Downloading(_, done, total) => (progress_text(*done, *total, de()), theme::TEXT_DIM()),
                 UpdateState::Installed(v) => (
-                    crate::tr(format!("{}  Version {v} ist installiert", icon::CHECK_CIRCLE)),
+                    crate::tr(format!("{}  Version {v} is installed", icon::CHECK_CIRCLE)),
                     theme::TEXT(),
                 ),
                 UpdateState::Error(e, _) => (format!("{}  {}", icon::WARNING_CIRCLE, crate::tr(e)), theme::WARN_TEXT()),
@@ -678,7 +678,7 @@ impl App {
         }
         if widgets::toggle_row(
             ui,
-            "Beim Start automatisch nach Updates suchen",
+            "Check for updates on startup",
             &mut self.settings.auto_update,
         ) {
             self.settings.save();
@@ -686,19 +686,19 @@ impl App {
         ui.add_space(8.0);
         ui.horizontal(|ui| match &state {
             UpdateState::Available(_) | UpdateState::Downloading(..) => {
-                if ui.add(theme::primary(format!("{}  Update ansehen", icon::ARROW_CIRCLE_UP))).clicked() {
+                if ui.add(theme::primary(format!("{}  View update", icon::ARROW_CIRCLE_UP))).clicked() {
                     self.updater.open_update();
                 }
             }
             UpdateState::Installed(_) => {
-                if ui.add(theme::primary(format!("{}  Jetzt neu starten", icon::ARROWS_CLOCKWISE))).clicked() {
+                if ui.add(theme::primary(format!("{}  Restart now", icon::ARROWS_CLOCKWISE))).clicked() {
                     self.restart_after_update(ui.ctx());
                 }
             }
             _ => {
                 let busy = matches!(state, UpdateState::Checking);
                 if ui
-                    .add_enabled(!busy, theme::secondary(format!("{}  Jetzt prüfen", icon::ARROWS_CLOCKWISE)))
+                    .add_enabled(!busy, theme::secondary(format!("{}  Check now", icon::ARROWS_CLOCKWISE)))
                     .clicked()
                 {
                     self.settings.skipped_version = None;
@@ -717,9 +717,9 @@ mod tests {
     fn a_failed_search_keeps_the_raw_error_for_the_log() {
         let raw = "https://api.github.com/x: Connection Failed: tls handshake eof";
         let (st, line) = check_outcome(Err(raw.into()));
-        assert!(matches!(&st, UpdateState::Error(m, None) if m == "Keine Verbindung"));
+        assert!(matches!(&st, UpdateState::Error(m, None) if m == "No connection"));
         assert!(line.contains("tls handshake eof"), "{line}");
-        assert!(matches!(check_outcome(Ok(None)), (UpdateState::UpToDate, l) if l == "aktuell"));
+        assert!(matches!(check_outcome(Ok(None)), (UpdateState::UpToDate, l) if l == "up to date"));
     }
 
     #[test]
@@ -763,23 +763,23 @@ mod tests {
         assert!(all.windows(2).all(|w| w[0].version > w[1].version));
     }
 
-    /// With `changes.json`, „Was ist neu“ comes from it (also older skipped versions),
+    /// With `changes.json`, „What's new“ comes from it (also older skipped versions),
     /// not from the release text; if the attachment is missing, the text applies.
     #[test]
     fn update_prefers_changes_json() {
         let mut rel = fake_release();
         rel.version = Version(0, 11, 1);
-        rel.notes = "## 0.11.1\n### English\n**New**\n- aus dem Text\n".into();
+        rel.notes = "## 0.11.1\n### English\n**New**\n- from the text\n".into();
         let from_text: Vec<_> = release_notes(&rel, Version(0, 9, 0)).iter().map(|n| n.groups(false)[0].entries[0].text.clone()).collect();
-        assert_eq!(from_text, ["aus dem Text"]);
+        assert_eq!(from_text, ["from the text"]);
         rel.changes = cl_update::changelog::parse_json(
             r#"{"format": 1, "versions": [
-                {"version": "0.11.1", "en": [{"group": "New", "items": [{"text": "aus changes.json"}]}]},
-                {"version": "0.10.0", "de": [{"group": "Neu", "items": [{"text": "übersprungen"}]}]},
-                {"version": "0.9.0", "en": [{"group": "New", "items": [{"text": "schon installiert"}]}]}]}"#,
+                {"version": "0.11.1", "en": [{"group": "New", "items": [{"text": "from changes.json"}]}]},
+                {"version": "0.10.0", "de": [{"group": "Neu", "items": [{"text": "skipped"}]}]},
+                {"version": "0.9.0", "en": [{"group": "New", "items": [{"text": "already installed"}]}]}]}"#,
         );
         let got: Vec<_> = release_notes(&rel, Version(0, 9, 0)).iter().map(|n| n.groups(false)[0].entries[0].text.clone()).collect();
-        assert_eq!(got, ["aus changes.json", "übersprungen"]);
+        assert_eq!(got, ["from changes.json", "skipped"]);
         assert!(check_outcome(Ok(Some(rel))).1.contains("changes.json"));
     }
 }

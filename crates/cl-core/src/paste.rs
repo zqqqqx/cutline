@@ -1,4 +1,4 @@
-//! Paste from the clipboard: target track per clip and „Nachfolgende schieben“.
+//! Paste from the clipboard: target track per clip and "push following clips".
 //!
 //! Flow: [`paste_targets`] decides target track and position, [`paste_splits`] splits a clip that
 //! lies at the paste position, then (on the split state) [`paste_ops`] push the later
@@ -173,7 +173,7 @@ mod tests {
         // playhead at the start of a clip: it and all later ones move 2 s
         paste(&mut d, &[(a, c.clone())], None, 0.0);
         assert_eq!(starts(&d, a), vec![0.0, 2.0, 5.0]);
-        assert_eq!(starts(&d, b), vec![1.0], "andere Spuren bleiben");
+        assert_eq!(starts(&d, b), vec![1.0], "other tracks stay");
         // one history step: undo restores everything
         d.undo().unwrap();
         assert_eq!(d.project(), &before);
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(it[0].0, Some(txt), "text does not belong on an effect track");
         d.apply(EditOp::SetTrackFlags { track: other, locked: true, hidden: false, muted: false }, OpSource::Ui).unwrap();
         let it = paste_targets(d.project(), &[(txt, c.clone())], Some(other), s(4.0));
-        assert_eq!(it[0].0, Some(txt), "gesperrte Spur");
+        assert_eq!(it[0].0, Some(txt), "locked track");
         // source track gone: previous automatic choice
         let it = paste_targets(d.project(), &[(TrackId::new(), c)], None, s(4.0));
         assert_eq!(it[0].0, None);

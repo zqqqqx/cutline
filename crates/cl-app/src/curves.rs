@@ -1,5 +1,5 @@
 //! Shape the motion between two keyframes: ready-made curves as tiles (one click) and
-//! below them „Eigene Kurve“ with two draggable handles for anyone who wants it exact.
+//! below them „Custom curve“ with two draggable handles for anyone who wants it exact.
 
 use cl_core::{Clip, Ease, Keyframe, Time};
 use eframe::egui::{self, pos2, vec2, Pos2, Rect, RichText, Sense, Stroke};
@@ -10,14 +10,14 @@ use crate::widgets::Edit;
 
 /// Ready-made curves: (name, hint, curve)
 const PRESETS: [(&str, &str, Ease); 8] = [
-    ("Linear", "Gleiches Tempo von Anfang bis Ende", Ease::Linear),
-    ("Sanft", "Langsam anfahren und abbremsen", Ease::EaseInOut),
-    ("Anfahren", "Startet langsam, wird schneller", Ease::EaseIn),
-    ("Abbremsen", "Startet schnell, kommt sanft an", Ease::EaseOut),
-    ("Schnell", "Kurzer, kräftiger Ruck in der Mitte", Ease::Bezier(0.85, 0.0, 0.15, 1.0)),
-    ("Schwung", "Schießt etwas übers Ziel und federt zurück", Ease::Bezier(0.34, 1.56, 0.64, 1.0)),
-    ("Ausholen", "Holt kurz in die Gegenrichtung aus", Ease::Bezier(0.36, -0.5, 0.66, 1.0)),
-    ("Halten", "Bleibt stehen und springt am nächsten Keyframe", Ease::Hold),
+    ("Linear", "Same speed from start to end", Ease::Linear),
+    ("Smooth", "Start slowly and slow down at the end", Ease::EaseInOut),
+    ("Ease in~start", "Starts slowly, gets faster", Ease::EaseIn),
+    ("Ease out~brake", "Starts fast, arrives gently", Ease::EaseOut),
+    ("Snappy", "Short, strong push in the middle", Ease::Bezier(0.85, 0.0, 0.15, 1.0)),
+    ("Overshoot", "Shoots a little past the target and springs back", Ease::Bezier(0.34, 1.56, 0.64, 1.0)),
+    ("Anticipate", "Briefly swings in the opposite direction first", Ease::Bezier(0.36, -0.5, 0.66, 1.0)),
+    ("Hold", "Stays put and jumps at the next keyframe", Ease::Hold),
 ];
 
 /// Index of the keyframe whose segment contains `t` (needs a keyframe after it)
@@ -33,7 +33,7 @@ fn draw_curve(p: &egui::Painter, r: Rect, e: Ease, stroke: Stroke) {
     let pts: Vec<Pos2> = (0..=24)
         .map(|i| {
             let x = i as f32 / 24.0;
-            // „Halten“ only jumps at the end
+            // „Hold“ only jumps at the end
             let y = if e == Ease::Hold && i == 24 { 1.0 } else { e.apply(x) };
             pos2(r.left() + x * r.width(), r.bottom() - y * r.height())
         })
@@ -59,11 +59,11 @@ impl App {
             return out;
         }
         let t = self.rel_time(c);
-        theme::section(ui, "Bewegung zwischen Keyframes");
+        theme::section(ui, "Motion between keyframes");
         let cur = c.keyframes.0.values().find_map(|l| segment(l, t).map(|i| (l[i], l[i + 1])));
         let Some((a, b)) = cur else {
             ui.label(
-                RichText::new(crate::tr("Braucht zwei Keyframes"))
+                RichText::new(crate::tr("Needs two keyframes"))
                     .small()
                     .color(theme::TEXT_DIM()),
             );
@@ -73,7 +73,7 @@ impl App {
         ui.label(
             RichText::new(format!(
                 "{} {} – {}",
-                crate::tr("Abschnitt"),
+                crate::tr("Section"),
                 (c.start + a.t).timecode(fps),
                 (c.start + b.t).timecode(fps)
             ))
@@ -112,11 +112,11 @@ impl App {
         });
         // Advanced: drag handles (expanding in `MOTION`; egui reads the duration from the style)
         ui.ctx().style_mut(|s| s.animation_time = theme::anim(theme::MOTION));
-        egui::CollapsingHeader::new(RichText::new(crate::tr("Eigene Kurve")).size(theme::FS_UI).color(theme::TEXT_DIM()))
+        egui::CollapsingHeader::new(RichText::new(crate::tr("Custom curve")).size(theme::FS_UI).color(theme::TEXT_DIM()))
             .id_salt("curve-adv")
             .show(ui, |ui| {
                 let Some((mut x1, mut y1, mut x2, mut y2)) = a.ease.bezier() else {
-                    ui.label(RichText::new(crate::tr("„Halten“ hat keine Kurve")).small().color(theme::TEXT_DIM()));
+                    ui.label(RichText::new(crate::tr("“Hold” has no curve")).small().color(theme::TEXT_DIM()));
                     return;
                 };
                 let w = ui.available_width().min(230.0);
@@ -157,7 +157,7 @@ impl App {
                         .monospace()
                         .color(theme::TEXT_DIM()),
                 )
-                .on_hover_text(crate::tr("Griffe ziehen: links der Start, rechts die Ankunft. Über die Linien hinaus = Ausholen bzw. Überschwingen."));
+                .on_hover_text(crate::tr("Drag the handles: left is the start, right the arrival. Beyond the lines = anticipation or overshoot."));
             });
         ui.ctx().style_mut(|s| s.animation_time = theme::anim(theme::MOTION_FAST));
         if let Some(e) = pick {
@@ -178,7 +178,7 @@ fn segment_picks_the_keyframe_before_the_playhead() {
     let l = [k(1.0), k(2.0), k(4.0)];
     assert_eq!(segment(&l, Time::from_secs_f64(0.0)), Some(0));
     assert_eq!(segment(&l, Time::from_secs_f64(2.5)), Some(1));
-    assert_eq!(segment(&l, Time::from_secs_f64(9.0)), Some(1), "hinter dem letzten: letzter Abschnitt");
+    assert_eq!(segment(&l, Time::from_secs_f64(9.0)), Some(1), "behind the last one: last segment");
     assert_eq!(segment(&l[..1], Time::ZERO), None);
 }
 

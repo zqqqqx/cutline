@@ -20,9 +20,9 @@ impl Chord {
         let mut mods = Modifiers::NONE;
         let mut key = None;
         for part in s.split('+').map(str::trim).filter(|p| !p.is_empty()) {
-            match part.to_ascii_lowercase().as_str() {
-                "ctrl" | "strg" | "cmd" => mods |= Modifiers::COMMAND,
-                "shift" | "umschalt" => mods |= Modifiers::SHIFT,
+            match cl_i18n::key_english(part).to_ascii_lowercase().as_str() {
+                "ctrl" | "cmd" => mods |= Modifiers::COMMAND,
+                "shift" => mods |= Modifiers::SHIFT,
                 "alt" => mods |= Modifiers::ALT,
                 _ => key = Key::from_name(part),
             }
@@ -38,20 +38,20 @@ impl Chord {
     pub fn label(&self) -> String {
         let mut v = Vec::new();
         if self.mods.command {
-            v.push("Strg".to_string());
+            v.push("Ctrl".to_string());
         }
         if self.mods.alt {
             v.push("Alt".into());
         }
         if self.mods.shift {
-            v.push("Umschalt".into());
+            v.push("Shift".into());
         }
         v.push(
             match self.key {
-                Key::Space => "Leertaste",
-                Key::Delete => "Entf",
-                Key::Home => "Pos1",
-                Key::End => "Ende",
+                Key::Space => "Space",
+                Key::Delete => "Del",
+                Key::Home => "Home",
+                Key::End => "End",
                 Key::ArrowLeft => "←",
                 Key::ArrowRight => "→",
                 Key::ArrowUp => "↑",
@@ -83,134 +83,134 @@ impl Chord {
 
 /// (action, description, default bindings)
 pub const ACTIONS: &[(&str, &str, &[&str])] = &[
-    ("play", "Abspielen / Pause", &["Space"]),
+    ("play", "Play / pause", &["Space"]),
     (
         "shuttle_back",
-        "Rückwärts abspielen (mehrfach: schneller)",
+        "Play backward (press again: faster)",
         &["J"],
     ),
-    ("shuttle_stop", "Anhalten", &["K"]),
+    ("shuttle_stop", "Stop~halt", &["K"]),
     (
         "shuttle_fwd",
-        "Vorwärts abspielen (mehrfach: schneller)",
+        "Play forward (press again: faster)",
         &["L"],
     ),
-    ("mark_in", "In-Punkt setzen", &["I"]),
-    ("mark_out", "Out-Punkt setzen", &["O"]),
-    ("clear_range", "In/Out löschen", &["Alt+X"]),
-    ("loop", "Bereich in Schleife abspielen", &["Ctrl+L"]),
-    ("marker", "Marker setzen", &["M"]),
-    ("marker_next", "Nächster Marker", &["Shift+M"]),
-    ("marker_prev", "Vorheriger Marker", &["Ctrl+Shift+M"]),
-    ("split", "Am Playhead teilen", &["Ctrl+B"]),
-    ("del_left", "Links vom Playhead löschen", &["Q"]),
-    ("del_right", "Rechts vom Playhead löschen", &["W"]),
+    ("mark_in", "Set In point", &["I"]),
+    ("mark_out", "Set Out point", &["O"]),
+    ("clear_range", "Clear In/Out", &["Alt+X"]),
+    ("loop", "Loop the range", &["Ctrl+L"]),
+    ("marker", "Add marker", &["M"]),
+    ("marker_next", "Next marker", &["Shift+M"]),
+    ("marker_prev", "Previous marker", &["Ctrl+Shift+M"]),
+    ("split", "Split at playhead", &["Ctrl+B"]),
+    ("del_left", "Delete left of playhead", &["Q"]),
+    ("del_right", "Delete right of playhead", &["W"]),
     (
         "ripple_delete",
-        "Löschen und Lücke schließen",
+        "Delete and close gap",
         &["Shift+Delete", "Shift+Backspace"],
     ),
-    ("delete", "Auswahl löschen", &["Delete", "Backspace"]),
-    ("nudge_left", "Clip 1 Bild nach links", &["Alt+ArrowLeft"]),
+    ("delete", "Delete selection", &["Delete", "Backspace"]),
+    ("nudge_left", "Nudge clip 1 frame left", &["Alt+ArrowLeft"]),
     (
         "nudge_right",
-        "Clip 1 Bild nach rechts",
+        "Nudge clip 1 frame right",
         &["Alt+ArrowRight"],
     ),
     (
         "nudge_left10",
-        "Clip 10 Bilder nach links",
+        "Nudge clip 10 frames left",
         &["Alt+Shift+ArrowLeft"],
     ),
     (
         "nudge_right10",
-        "Clip 10 Bilder nach rechts",
+        "Nudge clip 10 frames right",
         &["Alt+Shift+ArrowRight"],
     ),
     // mostly arrive as a copy/paste event, not as a key (see `App::shortcuts`)
-    ("copy", "Kopieren", &["Ctrl+C"]),
-    ("cut", "Ausschneiden", &["Ctrl+X"]),
-    ("paste", "Einfügen", &["Ctrl+V"]),
-    ("paste_attrs", "Attribute einfügen", &["Ctrl+Alt+V"]),
-    ("group", "Gruppieren", &["Ctrl+G"]),
-    ("ungroup", "Gruppe auflösen", &["Ctrl+Shift+G"]),
-    ("duplicate", "Duplizieren", &["Ctrl+D"]),
-    ("select_all", "Alle Clips auswählen", &["Ctrl+A"]),
-    ("disable", "Clip deaktivieren", &["V"]),
-    ("tool_select", "Werkzeug: Auswählen", &["A"]),
-    ("tool_blade", "Werkzeug: Klinge", &["B"]),
-    ("undo", "Rückgängig", &["Ctrl+Z"]),
-    ("redo", "Wiederholen", &["Ctrl+Shift+Z", "Ctrl+Y"]),
-    ("prev", "Ein Bild zurück", &["ArrowLeft"]),
-    ("next", "Ein Bild vor", &["ArrowRight"]),
-    ("prev_edit", "Zum vorherigen Schnitt", &["ArrowUp"]),
-    ("next_edit", "Zum nächsten Schnitt", &["ArrowDown"]),
-    ("home", "Zum Anfang", &["Home"]),
-    ("end", "Zum Ende", &["End"]),
-    ("magnet", "Hauptspur-Magnet", &["P"]),
-    ("snap", "Einrasten", &["N"]),
-    ("voiceover", "Einsprechen", &["R"]),
-    ("max", "Großer Player", &["F"]),
-    // Playback volume (no default key: M is „Marker setzen“)
-    ("playback_mute", "Wiedergabe stumm", &[]),
-    ("playback_louder", "Wiedergabe lauter", &[]),
-    ("playback_quieter", "Wiedergabe leiser", &[]),
-    ("import", "Importieren", &["Ctrl+I"]),
-    ("save", "Speichern", &["Ctrl+S"]),
-    ("save_as", "Speichern unter", &["Ctrl+Shift+S"]),
-    ("open", "Öffnen", &["Ctrl+O"]),
-    ("export", "Exportieren", &["Ctrl+E"]),
-    ("settings", "Einstellungen", &["Ctrl+Comma"]),
-    ("command_search", "Befehlssuche", &["Ctrl+K"]),
+    ("copy", "Copy", &["Ctrl+C"]),
+    ("cut", "Cut", &["Ctrl+X"]),
+    ("paste", "Paste", &["Ctrl+V"]),
+    ("paste_attrs", "Paste attributes", &["Ctrl+Alt+V"]),
+    ("group", "Group", &["Ctrl+G"]),
+    ("ungroup", "Ungroup", &["Ctrl+Shift+G"]),
+    ("duplicate", "Duplicate", &["Ctrl+D"]),
+    ("select_all", "Select all clips", &["Ctrl+A"]),
+    ("disable", "Disable clip", &["V"]),
+    ("tool_select", "Tool: select", &["A"]),
+    ("tool_blade", "Tool: blade", &["B"]),
+    ("undo", "Undo", &["Ctrl+Z"]),
+    ("redo", "Redo", &["Ctrl+Shift+Z", "Ctrl+Y"]),
+    ("prev", "Previous frame", &["ArrowLeft"]),
+    ("next", "Next frame", &["ArrowRight"]),
+    ("prev_edit", "Previous edit", &["ArrowUp"]),
+    ("next_edit", "Next edit", &["ArrowDown"]),
+    ("home", "Go to start", &["Home"]),
+    ("end", "Go to end", &["End"]),
+    ("magnet", "Main track magnet", &["P"]),
+    ("snap", "Snapping", &["N"]),
+    ("voiceover", "Voiceover", &["R"]),
+    ("max", "Large player", &["F"]),
+    // Playback volume (no default key: M is „Add marker“)
+    ("playback_mute", "Mute playback", &[]),
+    ("playback_louder", "Playback louder", &[]),
+    ("playback_quieter", "Playback quieter", &[]),
+    ("import", "Import~verb", &["Ctrl+I"]),
+    ("save", "Save", &["Ctrl+S"]),
+    ("save_as", "Save as", &["Ctrl+Shift+S"]),
+    ("open", "Open", &["Ctrl+O"]),
+    ("export", "Export", &["Ctrl+E"]),
+    ("settings", "Settings", &["Ctrl+Comma"]),
+    ("command_search", "Command search", &["Ctrl+K"]),
     (
         "zoom_in",
-        "Oberfläche größer",
+        "Larger interface",
         &["Ctrl+Plus", "Ctrl+Equals"],
     ),
-    ("zoom_out", "Oberfläche kleiner", &["Ctrl+Minus"]),
-    ("zoom_reset", "Oberfläche 100 %", &["Ctrl+0"]),
-    ("escape", "Auswahl aufheben", &["Escape"]),
+    ("zoom_out", "Smaller interface", &["Ctrl+Minus"]),
+    ("zoom_reset", "Interface 100 %", &["Ctrl+0"]),
+    ("escape", "Clear selection", &["Escape"]),
     // Menu top left (names as in the menu)
-    ("new_project", "Neues Projekt", &[]),
-    ("import_project", "Projekt aus anderem Programm importieren …", &[]),
-    ("import_fonts", "Schrift importieren …", &[]),
-    ("exports", "Exporte", &[]),
-    ("history", "Bearbeitungsverlauf", &[]),
-    ("layout_edit", "Layout bearbeiten …", &[]),
-    ("template_save", "Als Vorlage speichern …", &[]),
-    ("template_insert", "Aus Vorlage einfügen …", &[]),
-    ("archive", "Projekt archivieren …", &[]),
-    ("relink", "Medien neu verknüpfen …", &[]),
-    ("backups", "Sicherungen …", &[]),
-    ("go_home", "Projektübersicht", &[]),
-    ("tour", "Rundgang", &[]),
-    ("onboarding", "Einführung wiederholen", &[]),
+    ("new_project", "New project", &[]),
+    ("import_project", "Import project from another app …", &[]),
+    ("import_fonts", "Import font …", &[]),
+    ("exports", "Exports", &[]),
+    ("history", "Edit history", &[]),
+    ("layout_edit", "Edit layout …", &[]),
+    ("template_save", "Save as template …", &[]),
+    ("template_insert", "Insert from template …", &[]),
+    ("archive", "Archive project …", &[]),
+    ("relink", "Relink media …", &[]),
+    ("backups", "Backups …", &[]),
+    ("go_home", "Projects~overview", &[]),
+    ("tour", "Tour", &[]),
+    ("onboarding", "Repeat introduction", &[]),
     // Quick actions (menu in the timeline)
-    ("quick_pauses", "Pausen entfernen (Jump Cuts)", &[]),
-    ("quick_fillers", "Füllwörter entfernen (äh, ähm, uh, um)", &[]),
-    ("quick_ducking", "Musik unter Sprache absenken (Auto-Ducking)", &[]),
-    ("quick_highlights", "Highlights finden (laute Momente → Marker)", &[]),
-    ("quick_sync", "Auswahl per Ton synchronisieren", &[]),
-    ("quick_multicam", "Multicam-Schnitt starten", &[]),
-    ("quick_speakers", "Sprecher-Aufnahmen importieren …", &[]),
-    ("quick_punch", "Zoom-Punch-in am Playhead", &[]),
-    ("quick_vertical", "Hochkant-Layout (9:16, Facecam oben)", &[]),
+    ("quick_pauses", "Remove pauses (jump cuts)", &[]),
+    ("quick_fillers", "Remove filler words (uh, um)", &[]),
+    ("quick_ducking", "Lower music under speech (auto-ducking)", &[]),
+    ("quick_highlights", "Find highlights (loud moments → markers)", &[]),
+    ("quick_sync", "Sync selection by audio", &[]),
+    ("quick_multicam", "Start multicam edit", &[]),
+    ("quick_speakers", "Import speaker recordings …", &[]),
+    ("quick_punch", "Zoom punch-in at the playhead", &[]),
+    ("quick_vertical", "Vertical layout (9:16, facecam on top)", &[]),
     // „Layout“ submenu (`arrange.rs`); in the menu without „Layout: “
-    ("quick_layout_side", "Layout: Nebeneinander", &[]),
-    ("quick_layout_stack", "Layout: Übereinander", &[]),
-    ("quick_layout_big_left", "Layout: Einer groß, zwei rechts", &[]),
-    ("quick_layout_columns", "Layout: Drei Spalten", &[]),
-    ("quick_layout_grid", "Layout: Raster 2×2", &[]),
-    ("quick_layout_pip_tl", "Layout: Bild-in-Bild – oben links", &[]),
-    ("quick_layout_pip_tr", "Layout: Bild-in-Bild – oben rechts", &[]),
-    ("quick_layout_pip_bl", "Layout: Bild-in-Bild – unten links", &[]),
-    ("quick_layout_pip_br", "Layout: Bild-in-Bild – unten rechts", &[]),
-    ("quick_layout_reset", "Layout zurücksetzen", &[]),
+    ("quick_layout_side", "Layout: Side by side", &[]),
+    ("quick_layout_stack", "Layout: Stacked", &[]),
+    ("quick_layout_big_left", "Layout: One large, two on the right", &[]),
+    ("quick_layout_columns", "Layout: Three columns", &[]),
+    ("quick_layout_grid", "Layout: Grid 2×2", &[]),
+    ("quick_layout_pip_tl", "Layout: Picture in picture – top left", &[]),
+    ("quick_layout_pip_tr", "Layout: Picture in picture – top right", &[]),
+    ("quick_layout_pip_bl", "Layout: Picture in picture – bottom left", &[]),
+    ("quick_layout_pip_br", "Layout: Picture in picture – bottom right", &[]),
+    ("quick_layout_reset", "Reset layout", &[]),
     ("quick_thumbnail", "Thumbnail …", &[]),
-    ("quick_recap", "Rückblick aus Markern erstellen", &[]),
-    ("censor", "Zensieren …", &[]),
+    ("quick_recap", "Create recap from markers", &[]),
+    ("censor", "Censor …", &[]),
     // Brand Kit (Settings → Brand Kit)
-    ("brand_logo", "Logo einfügen", &[]),
+    ("brand_logo", "Insert logo", &[]),
 ];
 
 /// Name of an action (German, `tr()` translates), empty for unknown ones
@@ -329,7 +329,7 @@ pub fn search(query: &str, items: &[(&'static str, Vec<String>)], recent: &[&str
 pub const PRESETS: &[(&str, &[(&str, &str)])] = &[
     ("Cutline", &[]),
     (
-        "Premiere-ähnlich",
+        "Premiere-like",
         &[
             ("split", "Ctrl+K"),
             ("command_search", "Ctrl+Shift+K"),
@@ -340,7 +340,7 @@ pub const PRESETS: &[(&str, &[(&str, &str)])] = &[
         ],
     ),
     (
-        "Resolve-ähnlich",
+        "Resolve-like",
         &[
             ("split", "Ctrl+Backslash"),
             ("disable", "D"),
@@ -375,7 +375,7 @@ pub fn bindings(custom: &BTreeMap<String, String>) -> Vec<(Chord, &'static str)>
     v
 }
 
-/// Tooltip „Text  (Kürzel)“; without a bound key only the text. The dictionary translates both
+/// Tooltip "Text  (shortcut)"; without a bound key only the text. The dictionary translates both
 /// parts separately, `theme::tip_with_keys` shows the shortcut as a keycap.
 pub fn with_key(text: &str, key: &str) -> String {
     if key.is_empty() {
@@ -387,10 +387,10 @@ pub fn with_key(text: &str, key: &str) -> String {
 
 impl App {
 
-    /// „Tastenkürzel“ settings page: change a binding (click, then press keys).
+    /// „Keyboard shortcuts“ settings page: change a binding (click, then press keys).
     pub fn shortcuts_settings(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label(RichText::new(crate::tr("Vorlage")).color(theme::TEXT_DIM()));
+            ui.label(RichText::new(crate::tr("Preset")).color(theme::TEXT_DIM()));
             for (name, diff) in PRESETS {
                 if ui.add(theme::secondary(*name)).clicked() {
                     self.settings.shortcuts = diff
@@ -481,7 +481,7 @@ impl App {
                                     ui.set_min_size(egui::vec2(170.0, 19.0));
                                     ui.horizontal(|ui| {
                                         if capturing {
-                                            ui.label(RichText::new(crate::tr("Taste drücken …")).color(theme::ACCENT_INK()));
+                                            ui.label(RichText::new(crate::tr("Press a key …")).color(theme::ACCENT_INK()));
                                         } else if keys.is_empty() {
                                             ui.label(RichText::new("—").color(theme::TEXT_FAINT()));
                                         }
@@ -503,7 +503,7 @@ impl App {
                         if theme::icon_button(
                             ui,
                             crate::theme::icon::ARROW_COUNTER_CLOCKWISE,
-                            "Standard wiederherstellen",
+                            "Restore default",
                             true,
                             false,
                         )
@@ -519,7 +519,7 @@ impl App {
                 }
             });
         ui.add_space(8.0);
-        ui.label(RichText::new(crate::tr("Außerdem: Strg+C / X / V kopieren, ausschneiden, einfügen · Strg+Mausrad zoomt die Zeitleiste · Umschalt+Mausrad scrollt waagerecht · Alt+Umschalt+Z passt den Player ein")).small().color(theme::TEXT_DIM()));
+        ui.label(RichText::new(crate::tr("Also: Ctrl+C / X / V copy, cut, paste · Ctrl+wheel zooms the timeline · Shift+wheel scrolls horizontally · Alt+Shift+Z fits the player")).small().color(theme::TEXT_DIM()));
     }
 }
 
@@ -529,10 +529,10 @@ mod tests {
 
     #[test]
     fn tooltip_with_and_without_key() {
-        assert_eq!(with_key("Teilen", "Strg+K"), "Teilen  (Strg+K)");
-        assert_eq!(with_key("Teilen", ""), "Teilen");
+        assert_eq!(with_key("Split", "Ctrl+K"), "Split  (Ctrl+K)");
+        assert_eq!(with_key("Split", ""), "Split");
         // this is how the tooltip display splits it back into text and keycap
-        assert_eq!(with_key("Teilen", "Q").rsplit_once("  ("), Some(("Teilen", "Q)")));
+        assert_eq!(with_key("Split", "Q").rsplit_once("  ("), Some(("Split", "Q)")));
     }
 
 
@@ -541,7 +541,7 @@ mod tests {
         let c = Chord::parse("Ctrl+Shift+Z").unwrap();
         assert!(c.mods.command && c.mods.shift && c.key == Key::Z);
         assert_eq!(Chord::parse(&c.store()), Some(c));
-        assert_eq!(c.label(), "Strg+Umschalt+Z");
+        assert_eq!(c.label(), "Ctrl+Shift+Z");
         let mut custom = BTreeMap::new();
         custom.insert("split".to_string(), "Ctrl+K".to_string());
         custom.insert("disable".to_string(), String::new());
@@ -610,22 +610,22 @@ mod tests {
     }
 
     #[test]
-    fn every_action_has_a_name_and_english_text() {
+    fn every_action_has_a_name_and_a_german_text() {
         let en: std::collections::HashSet<&str> = cl_i18n::ui_entries().into_iter().map(|e| e.0).collect();
         for (id, what, _) in ACTIONS {
             assert_eq!(name(id), *what);
-            assert!(en.contains(what.trim()), "{id}: „{what}“ missing in ui.en.tsv");
+            assert!(en.contains(what.trim()), "{id}: „{what}“ missing in translations/de_DE/ui.tsv");
         }
-        assert_eq!(name("gibt-es-nicht"), "");
+        assert_eq!(name("does-not-exist"), "");
     }
 
     #[test]
     fn search_ranks_word_starts_first() {
         let items: Vec<(&'static str, Vec<String>)> = [
-            ("a", "Exportieren"),
-            ("b", "Thumbnail exportieren (aktuelles Bild)"),
-            ("c", "Am Playhead teilen"),
-            ("d", "Projekt archivieren …"),
+            ("a", "Export"),
+            ("b", "Export thumbnail (current frame)"),
+            ("c", "Split at playhead"),
+            ("d", "Archive project …"),
             ("e", "Überblendung"),
         ]
         .into_iter()
@@ -634,22 +634,22 @@ mod tests {
         // word start before mid-word, otherwise list order
         assert_eq!(search("port", &items, &[]), ["a", "b"]);
         assert_eq!(search("EXP", &items, &[]), ["a", "b"]);
-        assert_eq!(search("tieren", &items, &[]), ["a", "b"], "mid-word counts too");
-        assert_eq!(search("ren", &items, &[]), ["a", "b", "d"]);
+        assert_eq!(search("xpo", &items, &[]), ["a", "b"], "mid-word counts too");
+        assert_eq!(search("o", &items, &[]), ["a", "b", "d"]);
         assert_eq!(search("arch", &items, &[]), ["d"]);
         assert_eq!(search("hiv proj", &items, &[]), ["d"], "several words, any order");
-        assert_eq!(search("bild export", &items, &[]), ["b"]);
-        assert_eq!(search("teilen x", &items, &[]), Vec::<&str>::new());
+        assert_eq!(search("frame export", &items, &[]), ["b"]);
+        assert_eq!(search("split x", &items, &[]), Vec::<&str>::new());
         // Umlauts as written, case-insensitive
         assert_eq!(search("über", &items, &[]), ["e"]);
         assert_eq!(search("ÜBER", &items, &[]), ["e"]);
         assert!(search("xyz", &items, &[]).is_empty());
         // Word start also inside the name („teilen“) before mid-word hits
         let more: Vec<(&'static str, Vec<String>)> =
-            vec![("m", vec!["Verteilen".into()]), ("s", vec!["Am Playhead teilen".into()])];
+            vec![("m", vec!["Verteilen".into()]), ("s", vec!["Am Abspielkopf teilen".into()])];
         assert_eq!(search("teil", &more, &[]), ["s", "m"]);
-        // the second name (German with an English UI) counts too
-        let en: Vec<(&'static str, Vec<String>)> = vec![("x", vec!["Split at playhead".into(), "Am Playhead teilen".into()])];
+        // the name in the other language counts too
+        let en: Vec<(&'static str, Vec<String>)> = vec![("x", vec!["Split at playhead".into(), "Am Abspielkopf teilen".into()])];
         assert_eq!(search("teilen", &en, &[]), ["x"]);
         assert_eq!(search("split", &en, &[]), ["x"]);
     }
@@ -666,7 +666,7 @@ mod tests {
 
     #[test]
     fn odd_chords_never_panic() {
-        for s in ["", "+", "++", "Ctrl+", "Ctrl++", "Strg+Umschalt+", "Ctrl+Shift+Alt+F12", "🎬", "Ctrl+🎬", "A+B", &"Ctrl+".repeat(1000)] {
+        for s in ["", "+", "++", "Ctrl+", "Ctrl++", "Ctrl+Shift+", "Ctrl+Shift+Alt+F12", "🎬", "Ctrl+🎬", "A+B", &"Ctrl+".repeat(1000)] {
             if let Some(c) = Chord::parse(s) {
                 let _ = c.label();
                 assert_eq!(Chord::parse(&c.store()), Some(c), "{s:?}");

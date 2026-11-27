@@ -88,7 +88,7 @@ fn keyframes_at_the_edges() {
         let v = k.eval(Prop::Scale, s(i as f64 * 0.1)).unwrap();
         assert!(v.is_finite());
     }
-    assert_eq!(k.eval(Prop::Scale, s(2.5)), Some(2.0), "Halten");
+    assert_eq!(k.eval(Prop::Scale, s(2.5)), Some(2.0), "Hold");
     assert_eq!(k.eval(Prop::Scale, s(9.0)), Some(4.0));
     for e in [Ease::Linear, Ease::EaseIn, Ease::EaseOut, Ease::EaseInOut, Ease::Bezier(0.3, -2.0, 0.7, 3.0)] {
         assert!(e.apply(0.0).abs() < 1e-3 && (e.apply(1.0) - 1.0).abs() < 1e-3, "{e:?}");
@@ -105,7 +105,7 @@ fn tempo_maps_source_and_timeline_both_ways() {
     let m = media(MediaKind::Video, 100.0);
     for speed in [0.1f32, 0.37, 1.0, 2.5, 100.0] {
         for reverse in [false, true] {
-            for curve in [None, Some("montage"), Some("bullet"), Some("unbekannt")] {
+            for curve in [None, Some("montage"), Some("bullet"), Some("unknown")] {
                 let mut c = media_clip(&m, 3.0, 4.0);
                 c.source_in = s(10.0);
                 c.speed = speed;
@@ -149,14 +149,14 @@ fn full_project_json() -> String {
     k.set(Prop::Opacity, Time::ZERO, 0.0);
     apply(&mut d, EditOp::SetKeyframes { clip: r.v1, keyframes: k });
     let track = d.project().find_clip(r.a1).unwrap().0.id;
-    apply(&mut d, EditOp::RenameTrack { track, name: Some("Ton".into()) });
+    apply(&mut d, EditOp::RenameTrack { track, name: Some("Audio~sound".into()) });
     d.project().to_json()
 }
 
 #[test]
 fn broken_project_files_give_errors_not_panics() {
     let json = full_project_json();
-    for bad in ["", " ", "null", "[]", "{}", "\"Projekt\"", "{\"schema_version\":1}", "\u{feff}{}", "{\"name\":"] {
+    for bad in ["", " ", "null", "[]", "{}", "\"Project\"", "{\"schema_version\":1}", "\u{feff}{}", "{\"name\":"] {
         assert!(Project::from_json(bad).is_err(), "{bad:?}");
     }
     // truncated at many places
@@ -172,7 +172,7 @@ fn broken_project_files_give_errors_not_panics() {
         ("/timeline/tracks/0/clips/0/opacity", serde_json::Value::Null),
         ("/settings/fps/num", serde_json::json!(-30)),
         ("/timeline/tracks/0/kind", "Hologramm".into()),
-        ("/timeline/tracks/0/id", "keine-uuid".into()),
+        ("/timeline/tracks/0/id", "no-uuid".into()),
     ];
     for (ptr, val) in swaps {
         let mut w = v.clone();
@@ -215,7 +215,7 @@ fn unknown_fields_and_old_files_still_load() {
     v2["schema_version"] = (cl_core::PROJECT_SCHEMA_VERSION + 1).into();
     let e = Project::from_json(&v2.to_string()).unwrap_err();
     assert_eq!(e.to_string(), cl_core::NEWER_PROJECT);
-    v2["timeline"] = "neu".into();
+    v2["timeline"] = "new".into();
     assert_eq!(Project::from_json(&v2.to_string()).unwrap_err().to_string(), cl_core::NEWER_PROJECT);
     // unknown keys everywhere, also next to enum tags (clip content `{"Media": …}`): today refused
     // with a position error; if it ever loads, nothing of the project may be lost
@@ -387,7 +387,7 @@ fn soft_shadow_round_trips_and_hard_shadows_stay_as_before() {
 /// range survives saving, and `keep_bound` keeps it with the mask.
 #[test]
 fn mask_range_round_trips_and_old_clips_stay_as_before() {
-    assert_eq!(PROJECT_SCHEMA_VERSION, 6);
+    assert!(PROJECT_SCHEMA_VERSION >= 6);
     let plain = ClipFx { cutout: Some("m.mkv".into()), ..Default::default() };
     let json = serde_json::to_string(&plain).unwrap();
     assert!(!json.contains("cutout_span"), "{json}");
@@ -418,4 +418,81 @@ fn object_marks_round_trip_on_the_clip() {
     assert_eq!(c.fx, ClipFx::default());
     // an object point written without `remove`
     assert!(json.contains(r#"{"x":0.25,"y":0.5}"#), "{json}");
+}
+
+/// A project of version 6 (up to 0.19.3) names bundled effects, transitions and pack files by
+/// their old ids and paths: opening converts them and the project is version 7 from then on. A
+/// project that is version 7 already is left alone, whatever its strings look like.
+#[test]
+fn version_6_projects_get_the_new_ids_of_bundled_content() {
+    let mut p = Project::new("Old");
+    let m = MediaRef {
+        id: MediaId::new(),
+        path: r"C:\Programs\Cutline\plugins\cutline-sounds\audio\knall.ogg".into(),
+        kind: MediaKind::Audio,
+        duration: Time::from_secs_f64(1.0),
+        width: 0,
+        height: 0,
+        fps: None,
+        has_audio: true,
+        audio_streams: 1,
+        video_codec: None,
+        audio_codec: Some("vorbis".into()),
+        has_alpha: false,
+    };
+    let mut fx = Track::new(TrackKind::Effect);
+    fx.clips.push(Clip::new(ClipContent::Effect(FxRef::new("cutline.effekte/roehrenfernseher")), Time::ZERO, Time::from_secs_f64(2.0)));
+    let mut a = Track::new(TrackKind::Audio);
+    let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Audio }, Time::ZERO, Time::from_secs_f64(1.0));
+    c.fx.effects.push(FxRef::new("cutline.effekte/super8"));
+    c.fx.effects.push(FxRef::new("blur"));
+    a.clips.push(c);
+    p.media.push(m);
+    let mut caps = Track::new(TrackKind::Text);
+    caps.name = Some("Untertitel".into());
+    let mut own = Track::new(TrackKind::Video);
+    own.name = Some("Untertitel".into());
+    p.timeline.tracks = vec![fx, a, caps, own];
+    let cur = format!("\"schema_version\": {PROJECT_SCHEMA_VERSION}");
+    let json = p.to_json();
+    assert!(json.contains(&cur));
+    let ids = |p: &Project| -> Vec<String> {
+        let mut v = Vec::new();
+        for t in &p.timeline.tracks {
+            for c in &t.clips {
+                if let ClipContent::Effect(f) = &c.content {
+                    v.push(f.id.clone());
+                }
+                v.extend(c.fx.effects.iter().map(|f| f.id.clone()));
+            }
+        }
+        v
+    };
+    // saved by this version: nothing is touched
+    let same = Project::from_json(&json).unwrap();
+    assert_eq!(ids(&same), ["cutline.effekte/roehrenfernseher", "cutline.effekte/super8", "blur"]);
+    assert!(same.media[0].path.ends_with("knall.ogg"));
+    // the same file as version 6 wrote it
+    let old = Project::from_json(&json.replace(&cur, "\"schema_version\": 6")).unwrap();
+    assert_eq!(old.schema_version, PROJECT_SCHEMA_VERSION);
+    assert_eq!(ids(&old), ["cutline.effects/crt-tv", "cutline.effects/super8", "blur"]);
+    assert_eq!(old.media[0].path, std::path::PathBuf::from(r"C:\Programs\Cutline\plugins\cutline-sounds\audio\bang.ogg"));
+    // the caption track is found by its name: a text track with the old default name gets the new one
+    let names = |p: &Project| p.timeline.tracks.iter().map(|t| t.name.clone().unwrap_or_default()).collect::<Vec<_>>();
+    assert_eq!(names(&old), ["", "", "Captions", "Untertitel"]);
+    assert_eq!(names(&same), ["", "", "Untertitel", "Untertitel"], "a version 7 file keeps what its user typed");
+    // everything else is the same project
+    let mut back = old.clone();
+    back.timeline.tracks[2].name = same.timeline.tracks[2].name.clone();
+    back.media[0].path = same.media[0].path.clone();
+    for (t, s) in back.timeline.tracks.iter_mut().zip(&same.timeline.tracks) {
+        for (c, o) in t.clips.iter_mut().zip(&s.clips) {
+            c.content = o.content.clone();
+            c.fx.effects = o.fx.effects.clone();
+        }
+    }
+    assert_eq!(back, same);
+    // saved again it is a version 7 file that loads without conversion
+    let again = Project::from_json(&old.to_json()).unwrap();
+    assert_eq!(again, old);
 }

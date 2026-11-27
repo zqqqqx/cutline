@@ -42,7 +42,7 @@ pub struct ImportState {
     /// The draft list is read in the background (folders and files, not in the UI thread)
     drafts_rx: Option<Receiver<Vec<cl_import::capcut::Draft>>>,
     job: Option<Job>,
-    /// waiting drafts; counter for „Projekt 2 von 5“
+    /// waiting drafts; counter for "Project 2 of 5"
     queue: VecDeque<PathBuf>,
     batch_total: usize,
     /// finished imports of this round (summary)
@@ -53,12 +53,12 @@ pub struct ImportState {
 
 /// Steps of the import (display)
 const STEPS: [(Step, &str); 6] = [
-    (Step::Read, "Entwurf lesen"),
-    (Step::Find, "Medien finden"),
-    (Step::Probe, "Medien prüfen"),
-    (Step::Fonts, "Schriften"),
-    (Step::Timeline, "Zeitleiste aufbauen"),
-    (Step::Save, "Projekt anlegen"),
+    (Step::Read, "Read draft"),
+    (Step::Find, "Find media"),
+    (Step::Probe, "Check media"),
+    (Step::Fonts, "Fonts"),
+    (Step::Timeline, "Build timeline"),
+    (Step::Save, "Create project"),
 ];
 
 /// Free file name in the project folder (`Name.cutline`, `Name (2).cutline` …)
@@ -111,7 +111,7 @@ pub fn run_import(
     }
     if crate::app::perf() {
         eprintln!(
-            "perf: Import „{}“ {:.1} s, {} Medien, {} Clips, {} Texte",
+            "perf: import “{}” {:.1} s, {} media, {} clips, {} texts",
             project.name,
             t.elapsed().as_secs_f64(),
             project.media.len(),
@@ -221,7 +221,7 @@ impl App {
             Ok(r) => r,
             Err(TryRecvError::Empty) => return,
             // import thread crashed: otherwise the display spins forever
-            Err(TryRecvError::Disconnected) => Err("Import fehlgeschlagen (interner Fehler)".into()),
+            Err(TryRecvError::Disconnected) => Err("Import failed (internal error)".into()),
         };
         let Some(job) = self.import.job.take() else { return };
         match res {
@@ -231,7 +231,7 @@ impl App {
                 }
                 self.home.refresh();
                 if !self.import.open {
-                    self.toast(format!("„{}“ importiert: {} Clips, {} Texte", imp.name, imp.report.clips, imp.report.texts));
+                    self.toast(format!("“{}” imported: {} clips, {} texts", imp.name, imp.report.clips, imp.report.texts));
                 }
                 self.import.results.push(imp);
             }
@@ -252,7 +252,7 @@ impl App {
             return;
         }
         let imp = self.import.results.remove(i);
-        // missing files (placeholders): „Medien neu verknüpfen“ opens right away
+        // missing files (placeholders): „Relink media“ opens right away
         let present: HashMap<PathBuf, bool> = imp.project.media.iter().map(|m| (m.path.clone(), !imp.report.missing.contains(&m.path))).collect();
         let fonts = imp
             .project
@@ -273,7 +273,7 @@ impl App {
         self.import.errors.clear();
     }
 
-    /// „Projekt importieren“ dialog: selection, guided progress, summary.
+    /// „Import project“ dialog: selection, guided progress, summary.
     pub fn import_dialogs(&mut self, ctx: &egui::Context) {
         let _s = crate::app::section("Import");
         self.poll_import(ctx);
@@ -315,23 +315,23 @@ impl App {
             ui.set_width(520.0);
             if let Some(job) = &self.import.job {
                 // guided progress
-                close |= crate::dialog::title(ui, &crate::tr(format!("„{}“ wird importiert", job.label)));
+                close |= crate::dialog::title(ui, &crate::tr(format!("Importing “{}”", job.label)));
                 let n = self.import.batch_total;
                 if n > 1 {
                     let i = n - self.import.queue.len();
-                    ui.label(RichText::new(crate::tr(format!("Projekt {i} von {n}"))).color(theme::TEXT_DIM()));
+                    ui.label(RichText::new(crate::tr(format!("Project {i} of {n}"))).color(theme::TEXT_DIM()));
                     ui.add_space(4.0);
                 }
                 crate::loading::steps_view(ui, egui::Id::new("import-steps"), &STEPS, &job.progress.status());
-                cancel |= crate::dialog::footer(ui, |ui| ui.add(theme::secondary("Abbrechen")).clicked());
+                cancel |= crate::dialog::footer(ui, |ui| ui.add(theme::secondary("Cancel")).clicked());
                 return;
             }
             if summary {
-                close |= crate::dialog::title(ui, "Import abgeschlossen");
+                close |= crate::dialog::title(ui, "Import finished");
                 open = self.import_summary(ui);
                 close |= crate::dialog::footer(ui, |ui| {
                     if let Some(last) = self.import.results.len().checked_sub(1) {
-                        if ui.add(theme::primary("Projekt öffnen")).clicked() {
+                        if ui.add(theme::primary("Open project")).clicked() {
                             open = Some(last);
                         }
                         false
@@ -341,15 +341,15 @@ impl App {
                 });
                 return;
             }
-            close |= crate::dialog::title(ui, "Projekt importieren");
+            close |= crate::dialog::title(ui, "Import project");
             ui.add_space(8.0);
             if self.settings.import_capcut {
-                theme::section(ui, "CapCut-Entwürfe auf diesem Rechner");
+                theme::section(ui, "CapCut drafts on this computer");
                 let drafts = self.import.drafts.clone().unwrap_or_default();
                 if self.import.drafts.is_none() {
                     ui.spinner();
                 } else if drafts.is_empty() {
-                    theme::empty_state(ui, icon::FOLDER_OPEN, "Keine Entwürfe gefunden", "");
+                    theme::empty_state(ui, icon::FOLDER_OPEN, "No drafts found", "");
                 } else {
                     egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
                         for d in &drafts {
@@ -358,7 +358,7 @@ impl App {
                                 ui.label(RichText::new(icon::FILM_STRIP).color(theme::TEXT_DIM()));
                                 ui.add(egui::Label::new(&d.name).truncate());
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.add(theme::secondary("Importieren")).clicked() {
+                                    if ui.add(theme::secondary("Import~verb")).clicked() {
                                         pick = Some(d.dir.clone());
                                     }
                                     if let Some(t) = d.modified {
@@ -379,8 +379,8 @@ impl App {
                 if self.settings.import_fcpxml {
                     exts.extend(["fcpxml", "xml"]);
                 }
-                if ui.add(theme::secondary(format!("{}  Datei wählen …", icon::FOLDER_OPEN))).on_hover_text(crate::tr("draft_content.json (CapCut) oder FCPXML (Final Cut Pro, DaVinci Resolve)")).clicked() {
-                    if let Some(p) = crate::dialog().add_filter(crate::tr("Projekte"), &exts).pick_file() {
+                if ui.add(theme::secondary(format!("{}  Choose file …", icon::FOLDER_OPEN))).on_hover_text(crate::tr("draft_content.json (CapCut) or FCPXML (Final Cut Pro, DaVinci Resolve)")).clicked() {
+                    if let Some(p) = crate::dialog().add_filter(crate::tr("Projects"), &exts).pick_file() {
                         pick = Some(p);
                     }
                 }
@@ -417,7 +417,7 @@ impl App {
                     ui.add(egui::Label::new(RichText::new(&imp.name).strong()).truncate());
                     if n > 1 {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add(theme::ghost("Öffnen")).clicked() {
+                            if ui.add(theme::ghost("Open")).clicked() {
                                 open = Some(i);
                             }
                         });
@@ -425,32 +425,32 @@ impl App {
                 });
                 let tracks = imp.project.timeline.tracks.len();
                 let mut took = vec![
-                    crate::tr(format!("{} Clips", r.clips)),
-                    crate::tr(format!("{} Texte", r.texts)),
-                    crate::tr(format!("{tracks} Spuren")),
+                    crate::tr(format!("{} clips", r.clips)),
+                    crate::tr(format!("{} texts", r.texts)),
+                    crate::tr(format!("{tracks} tracks")),
                 ];
                 if r.nested > 0 {
-                    took.push(crate::tr(format!("{} zusammengesetzte Clips aufgelöst", r.nested)));
+                    took.push(crate::tr(format!("{} compound clips resolved", r.nested)));
                 }
                 ui.label(dim(took.join("  ·  ")));
                 let skipped: usize = r.skipped.iter().map(|s| s.1).sum::<usize>() + r.failed.len();
                 if skipped > 0 {
-                    egui::CollapsingHeader::new(crate::tr(format!("Nicht übernommen: {skipped}")))
+                    egui::CollapsingHeader::new(crate::tr(format!("Not imported: {skipped}")))
                         .id_salt(("import-skipped", i))
                         .show(ui, |ui| {
                             for (w, k) in &r.skipped {
                                 ui.label(dim(format!("{}  ×{k}", crate::tr(w))));
                             }
                             if !r.failed.is_empty() {
-                                ui.label(dim(format!("{}  ×{}", crate::tr("Datei nicht lesbar"), r.failed.len())));
+                                ui.label(dim(format!("{}  ×{}", crate::tr("File can't be read"), r.failed.len())));
                             }
                         });
                 }
                 if !r.missing.is_empty() {
                     egui::CollapsingHeader::new(crate::tr(crate::theme::count_text(
                         r.missing.len(),
-                        "{} Mediendatei nicht gefunden",
-                        "{} Mediendateien nicht gefunden",
+                        "{} media file not found",
+                        "{} media files not found",
                     )))
                     .id_salt(("import-missing", i))
                     .show(ui, |ui| {
@@ -479,7 +479,7 @@ impl App {
     pub fn import_settings(&mut self, ui: &mut egui::Ui) {
         ui.add_space(6.0);
         let mut changed =
-            widgets::toggle_row(ui, "CapCut-Entwürfe", &mut self.settings.import_capcut);
+            widgets::toggle_row(ui, "CapCut drafts", &mut self.settings.import_capcut);
         changed |= widgets::toggle_row(
             ui,
             "FCPXML (Final Cut Pro, DaVinci Resolve)",
@@ -492,9 +492,9 @@ impl App {
         if self.settings.import_capcut {
             let roots = cl_import::capcut::draft_roots();
             ui.add_space(4.0);
-            ui.label(RichText::new(crate::tr(if roots.is_empty() { "Kein CapCut-Entwurfsordner gefunden; Entwürfe lassen sich trotzdem als Datei wählen." } else { "Entwurfsordner gefunden" })).small().color(theme::TEXT_DIM()));
+            ui.label(RichText::new(crate::tr(if roots.is_empty() { "No CapCut draft folder found; you can still pick a draft as a file." } else { "Draft folder found" })).small().color(theme::TEXT_DIM()));
         }
-        // Importing itself: main menu → „Projekt aus anderem Programm importieren …“
+        // Importing itself: main menu → „Import project from another app …“
     }
 }
 
@@ -503,15 +503,15 @@ mod tests {
     use super::*;
 
     fn draft_dir(root: &Path) -> PathBuf {
-        let d = root.join("entwurf");
+        let d = root.join("draft");
         std::fs::create_dir_all(&d).unwrap();
-        let content = serde_json::json!({"text": "Hallo", "styles": [{"size": 10.0}]}).to_string();
+        let content = serde_json::json!({"text": "Hello", "styles": [{"size": 10.0}]}).to_string();
         let j = serde_json::json!({
             "materials": {"texts": [{"id": "T", "content": content}]},
             "tracks": [{"type": "text", "segments": [{"material_id": "T", "target_timerange": {"start": 0, "duration": 1000000}}]}]
         });
         std::fs::write(d.join("draft_content.json"), j.to_string()).unwrap();
-        std::fs::write(d.join("draft_meta_info.json"), serde_json::json!({"draft_name": "Mein Film"}).to_string()).unwrap();
+        std::fs::write(d.join("draft_meta_info.json"), serde_json::json!({"draft_name": "My Film"}).to_string()).unwrap();
         d
     }
 
@@ -534,19 +534,19 @@ mod tests {
     }
 
     /// Missing file on import: the clip stays, on opening it counts as missing and
-    /// „Medien neu verknüpfen“ opens.
+    /// „Relink media“ opens.
     #[test]
     fn opened_import_marks_missing_media_for_relinking() {
         let mut app = crate::saving::tests::test_app();
         let src = draft_dir(app.dir());
-        let gone = app.dir().join("fehlt.mp4");
+        let gone = app.dir().join("missing.mp4");
         let j = serde_json::json!({
             "materials": {"videos": [{"id": "V", "type": "video", "path": gone.to_string_lossy()}]},
             "tracks": [{"type": "video", "segments": [{"material_id": "V", "target_timerange": {"start": 0, "duration": 1000000}}]}]
         });
         std::fs::write(src.join("draft_content.json"), j.to_string()).unwrap();
         let fonts = Mutex::new(cl_fonts::FontLibrary::default());
-        let imp = run_import(&src, &app.dir().join("Projekte"), &fonts, &Progress::default()).unwrap();
+        let imp = run_import(&src, &app.dir().join("Projects"), &fonts, &Progress::default()).unwrap();
         assert_eq!(imp.report.missing, [gone.clone()]);
         app.import.results.push(imp);
         app.open_imported(0);
@@ -558,7 +558,7 @@ mod tests {
     fn missing_files_are_listed_in_natural_order() {
         let root = tempfile::tempdir().unwrap();
         let src = draft_dir(root.path());
-        let names = ["fehlt_1", "fehlt_10", "fehlt_0", "Fehlt_3", "fehlt_2"];
+        let names = ["missing_1", "missing_10", "missing_0", "Missing_3", "missing_2"];
         let p = |n: &str| root.path().join(format!("{n}.mp4"));
         let videos: Vec<_> = names.iter().map(|n| serde_json::json!({"id": n, "type": "video", "path": p(n).to_string_lossy()})).collect();
         let segs: Vec<_> = names
@@ -569,18 +569,18 @@ mod tests {
         let j = serde_json::json!({"materials": {"videos": videos}, "tracks": [{"type": "video", "segments": segs}]});
         std::fs::write(src.join("draft_content.json"), j.to_string()).unwrap();
         let fonts = Mutex::new(cl_fonts::FontLibrary::default());
-        let imp = run_import(&src, &root.path().join("Projekte"), &fonts, &Progress::default()).unwrap();
-        let want: Vec<_> = ["fehlt_0", "fehlt_1", "fehlt_2", "Fehlt_3", "fehlt_10"].iter().map(|n| p(n)).collect();
+        let imp = run_import(&src, &root.path().join("Projects"), &fonts, &Progress::default()).unwrap();
+        let want: Vec<_> = ["missing_0", "missing_1", "missing_2", "Missing_3", "missing_10"].iter().map(|n| p(n)).collect();
         assert_eq!(imp.report.missing, want);
         assert!(natural_cmp("a007", "a7").is_eq() && natural_cmp("a99999999999999999999999", "a100000000000000000000000").is_lt());
     }
 
-    /// Cancel during „Schriften übernehmen“ (after writing): no project is left behind.
+    /// Cancel during "Take over fonts" (after writing): no project is left behind.
     #[test]
     fn cancel_during_fonts_leaves_nothing() {
         let root = tempfile::tempdir().unwrap();
         let src = draft_dir(root.path());
-        let out = root.path().join("Projekte");
+        let out = root.path().join("Projects");
         let fonts = Mutex::new(cl_fonts::FontLibrary::default());
         let slot: Arc<std::sync::OnceLock<std::sync::Weak<Progress>>> = Arc::default();
         let sl = slot.clone();
@@ -611,13 +611,13 @@ mod tests {
     fn import_saves_a_new_project_next_to_existing_ones() {
         let root = tempfile::tempdir().unwrap();
         let src = draft_dir(root.path());
-        let out = root.path().join("Projekte");
+        let out = root.path().join("Projects");
         std::fs::create_dir_all(&out).unwrap();
-        std::fs::write(out.join("Mein Film.cutline"), "alt").unwrap();
+        std::fs::write(out.join("My Film.cutline"), "old").unwrap();
         let fonts = Mutex::new(cl_fonts::FontLibrary::default());
         let imp = run_import(&src, &out, &fonts, &Progress::default()).unwrap();
-        assert_eq!(imp.path, out.join("Mein Film (2).cutline"));
-        assert_eq!(std::fs::read_to_string(out.join("Mein Film.cutline")).unwrap(), "alt");
+        assert_eq!(imp.path, out.join("My Film (2).cutline"));
+        assert_eq!(std::fs::read_to_string(out.join("My Film.cutline")).unwrap(), "old");
         let saved = Project::from_json(&std::fs::read_to_string(&imp.path).unwrap()).unwrap();
         assert_eq!(saved.timeline.tracks.len(), imp.project.timeline.tracks.len());
     }
@@ -626,12 +626,12 @@ mod tests {
     fn cancelled_or_failed_import_leaves_nothing() {
         let root = tempfile::tempdir().unwrap();
         let src = draft_dir(root.path());
-        let out = root.path().join("Projekte");
+        let out = root.path().join("Projects");
         let fonts = Mutex::new(cl_fonts::FontLibrary::default());
         let p = Progress::default();
         p.cancel();
         assert_eq!(run_import(&src, &out, &fonts, &p).err().as_deref(), Some(cl_import::CANCELLED));
-        std::fs::write(src.join("draft_content.json"), "{kaputt").unwrap();
+        std::fs::write(src.join("draft_content.json"), "{broken").unwrap();
         assert!(run_import(&src, &out, &fonts, &Progress::default()).is_err());
         assert_eq!(std::fs::read_dir(&out).map_or(0, |d| d.count()), 0, "no half project");
     }

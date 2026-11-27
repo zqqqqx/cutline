@@ -40,7 +40,7 @@ fn capcut_garbage_structures_give_errors() {
         json!({"tracks": [{"type": "video", "segments": [{"material_id": 5}]}]}),
         json!({"tracks": [{"type": "text", "segments": "x"}], "materials": {"texts": "x"}})] {
         let e = capcut::convert(&d, dir, "x").unwrap_err();
-        assert!(e.contains("keine übertragbaren Clips"), "{d}: {e}");
+        assert!(e.contains("No transferable clips"), "{d}: {e}");
     }
 }
 
@@ -75,20 +75,20 @@ fn capcut_odd_values_are_tamed() {
     assert_eq!(rep.texts, 1);
     // missing media are reported, texts stay
     let mut d = text_draft(json!({}));
-    d["materials"]["videos"] = json!([{"id": "V1", "path": "C:/gibt/es/nicht/Ä 🎬.mp4"}, {"id": "V2", "path": ""}]);
+    d["materials"]["videos"] = json!([{"id": "V1", "path": "C:/does/not/exist/Ä 🎬.mp4"}, {"id": "V2", "path": ""}]);
     d["tracks"].as_array_mut().unwrap().push(json!({"type": "video", "segments": [
         {"material_id": "V1", "target_timerange": {"start": 0, "duration": 1}},
         {"material_id": "V2", "target_timerange": {"start": 0, "duration": 1}},
-        {"material_id": "fehlt", "target_timerange": {"start": 0, "duration": 1}}]}));
+        {"material_id": "missing", "target_timerange": {"start": 0, "duration": 1}}]}));
     let (_, rep) = capcut::convert(&d, dir, "x").unwrap();
-    assert_eq!(rep.missing, vec![PathBuf::from("C:/gibt/es/nicht/Ä 🎬.mp4")]);
-    assert!(rep.skipped.iter().any(|(w, _)| w == "Online-Material"));
+    assert_eq!(rep.missing, vec![PathBuf::from("C:/does/not/exist/Ä 🎬.mp4")]);
+    assert!(rep.skipped.iter().any(|(w, _)| w == "Online media"));
 }
 
 #[test]
 fn capcut_files_on_disk() {
     let dir = tempfile::tempdir().unwrap();
-    assert!(capcut::import(&dir.path().join("fehlt")).is_err());
+    assert!(capcut::import(&dir.path().join("missing")).is_err());
     assert!(capcut::import(dir.path()).unwrap_err().contains("draft_content.json"), "folder without draft");
     let f = dir.path().join("draft_content.json");
     for junk in [&b""[..], b"\xff\xfe\x00", b"{\"tracks\": [", b"verschl\xc3\xbcsselt"] {
@@ -97,12 +97,12 @@ fn capcut_files_on_disk() {
     }
     // name from draft_meta_info.json (even if it is broken)
     std::fs::write(&f, text_draft(json!({})).to_string()).unwrap();
-    std::fs::write(dir.path().join("draft_meta_info.json"), "{kaputt").unwrap();
+    std::fs::write(dir.path().join("draft_meta_info.json"), "{broken").unwrap();
     let (p, _) = cl_import::import(&f).unwrap();
     assert_eq!(p.name, dir.path().file_name().unwrap().to_string_lossy());
-    std::fs::write(dir.path().join("draft_meta_info.json"), json!({"draft_name": "Mein Ä 🎬"}).to_string()).unwrap();
-    assert_eq!(cl_import::import(dir.path()).unwrap().0.name, "Mein Ä 🎬");
-    assert!(cl_import::import(&dir.path().join("x.mov")).unwrap_err().contains("Unbekanntes"));
+    std::fs::write(dir.path().join("draft_meta_info.json"), json!({"draft_name": "My Ä 🎬"}).to_string()).unwrap();
+    assert_eq!(cl_import::import(dir.path()).unwrap().0.name, "My Ä 🎬");
+    assert!(cl_import::import(&dir.path().join("x.mov")).unwrap_err().contains("Unknown"));
     // material in the draft folder with umlauts via the placeholder
     let Some(v) = make_video(dir.path(), "Ä ö 🎬.mp4") else { return };
     let mut d = text_draft(json!({}));
@@ -118,18 +118,18 @@ fn capcut_files_on_disk() {
 fn fcpxml_garbage_gives_errors() {
     let d = Path::new("");
     for (xml, msg) in [
-        ("", "nicht lesbar"),
-        ("<fcpxml", "nicht lesbar"),
-        ("<x/>", "Keine FCPXML"),
-        ("<fcpxml/>", "Keine Sequenz"),
+        ("", "not readable"),
+        ("<fcpxml", "not readable"),
+        ("<x/>", "Not an FCPXML"),
+        ("<fcpxml/>", "No sequence"),
         ("<fcpxml><sequence/></fcpxml>", "spine"),
-        ("<fcpxml><sequence><spine><asset-clip ref='r9' duration='NaN'/></spine></sequence></fcpxml>", "keine übertragbaren"),
+        ("<fcpxml><sequence><spine><asset-clip ref='r9' duration='NaN'/></spine></sequence></fcpxml>", "No transferable"),
     ] {
         let e = fcpxml::convert(xml, "x", d).unwrap_err();
         assert!(e.contains(msg), "{xml}: {e}");
     }
     // missing file: the clip stays (placeholder for relinking)
-    let (p, rep) = fcpxml::convert("<fcpxml><resources><asset id='r1' src='file:///C:/fehlt/Ä%20b.mov'/></resources><sequence><spine><asset-clip ref='r1'/></spine></sequence></fcpxml>", "x", d).unwrap();
+    let (p, rep) = fcpxml::convert("<fcpxml><resources><asset id='r1' src='file:///C:/missing/Ä%20b.mov'/></resources><sequence><spine><asset-clip ref='r1'/></spine></sequence></fcpxml>", "x", d).unwrap();
     assert_eq!((rep.missing.len(), p.timeline.tracks[0].clips.len()), (1, 1));
 }
 
@@ -157,7 +157,7 @@ fn fcpxml_times_and_formats() {
         assert!(c.start == Time::ZERO && c.source_in == Time::ZERO, "{c:?}");
     }
     // bug: relative media paths were looked up from the working directory instead of from the file
-    let f = dir.path().join("Projekt.fcpxml");
+    let f = dir.path().join("Project.fcpxml");
     std::fs::write(&f, xml("1/25s", "%C3%84%20b.mp4")).unwrap();
     let (p, rep) = fcpxml::import(&f).unwrap();
     assert!(rep.missing.is_empty(), "{:?}", rep.missing);

@@ -66,10 +66,10 @@ pub struct Frame<'a> {
 impl Frame<'_> {
     fn check(&self, max: u32) -> Result<(), String> {
         if self.width == 0 || self.height == 0 || self.width > max || self.height > max {
-            return Err(format!("Bildgröße {}x{} nicht möglich", self.width, self.height));
+            return Err(format!("Frame size {}x{} not possible", self.width, self.height));
         }
         if self.rgba.len() != self.width as usize * self.height as usize * 4 {
-            return Err("Bilddaten passen nicht zur Größe".into());
+            return Err("Frame data does not match the size".into());
         }
         Ok(())
     }
@@ -228,7 +228,7 @@ pub fn render(
     progress: f32,
 ) -> Result<Vec<u8>, String> {
     gpu()
-        .ok_or_else(|| "keine GPU".to_string())?
+        .ok_or_else(|| "no GPU".to_string())?
         .render(shader, params, from, to, out, progress)
 }
 
@@ -246,13 +246,13 @@ impl Gpu {
         from.check(self.max_size)?;
         to.check(self.max_size)?;
         if out.0 == 0 || out.1 == 0 || out.0 > self.max_size || out.1 > self.max_size {
-            return Err(format!("Ausgabegröße {}x{} nicht möglich", out.0, out.1));
+            return Err(format!("Output size {}x{} not possible", out.0, out.1));
         }
         let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.render_locked(&mut st, shader, params, from, to, out, progress)
         }))
-        .unwrap_or_else(|_| Err("GPU-Fehler".into()))
+        .unwrap_or_else(|_| Err("GPU error".into()))
     }
 
     /// Build the pipeline for `shader` up front (compiling takes noticeably long the first time);
@@ -260,7 +260,7 @@ impl Gpu {
     pub fn prepare(&self, shader: &str) -> Result<(), String> {
         let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.pipeline(&mut st, shader).map(|_| ())))
-            .unwrap_or_else(|_| Err("GPU-Fehler".into()))
+            .unwrap_or_else(|_| Err("GPU error".into()))
     }
 
     fn pipeline(&self, st: &mut State, shader: &str) -> Result<wgpu::RenderPipeline, String> {
@@ -385,7 +385,7 @@ impl Gpu {
             st.out = slot.map(|t| (t, buf));
         }
         let (Some(ta), Some(tb), Some((to_tex, buf))) = (&st.from, &st.to, &st.out) else {
-            return Err("Textur fehlt".into());
+            return Err("texture missing".into());
         };
         self.upload(ta, from);
         self.upload(tb, to);
@@ -471,7 +471,7 @@ impl Gpu {
         match rx.recv() {
             Ok(Ok(())) => {}
             Ok(Err(e)) => return Err(e.to_string()),
-            Err(_) => return Err("GPU antwortet nicht".into()),
+            Err(_) => return Err("GPU does not respond".into()),
         }
         let row = out.0 as usize * 4;
         let mut px = Vec::with_capacity(row * out.1 as usize);
@@ -546,7 +546,7 @@ mod tests {
             validate(src).unwrap_or_else(|e| panic!("{id}: {e}"));
         }
         assert!(validate("fn transition(uv: vec2f) -> vec4f { return vec4f(0.0); }").is_err());
-        assert!(validate("kaputt").is_err());
+        assert!(validate("broken").is_err());
         validate(CROSSFADE).unwrap();
     }
 
@@ -590,7 +590,7 @@ mod tests {
         assert_eq!(o.len(), 20 * 40 * 4);
         // wrong data is an error, not a crash
         assert!(g.render(CROSSFADE, &p, Frame { rgba: &a[4..], width: w, height: h }, fb, (w, h), 0.5).is_err());
-        assert!(g.render("kaputt", &p, fa, fb, (w, h), 0.5).is_err());
+        assert!(g.render("broken", &p, fa, fb, (w, h), 0.5).is_err());
         assert!(g.render(CROSSFADE, &p, fa, fb, (0, h), 0.5).is_err());
     }
 
@@ -602,7 +602,7 @@ mod tests {
         };
         let shader = CROSSFADE.replace("progress)", "progress * 1.0)");
         g.prepare(&shader).unwrap();
-        assert!(g.prepare("kaputt").is_err());
+        assert!(g.prepare("broken").is_err());
         // the pipeline is ready before the first frame
         assert!(g.state.lock().unwrap().pipelines.get(&shader).is_some_and(|p| p.is_ok()));
     }
@@ -620,9 +620,9 @@ mod tests {
             let fb = Frame { rgba: &b, width: w, height: h };
             for (id, src, prm) in shipped() {
                 let s = g.render(&src, &prm, fa, fb, (w, h), 0.0).unwrap_or_else(|e| panic!("{id}: {e}"));
-                assert!(max_diff(&s, &a) <= 1, "{id} {w}x{h}: Anfang ≠ A ({})", max_diff(&s, &a));
+                assert!(max_diff(&s, &a) <= 1, "{id} {w}x{h}: start ≠ A ({})", max_diff(&s, &a));
                 let e = g.render(&src, &prm, fa, fb, (w, h), 1.0).unwrap();
-                assert!(max_diff(&e, &b) <= 1, "{id} {w}x{h}: Ende ≠ B ({})", max_diff(&e, &b));
+                assert!(max_diff(&e, &b) <= 1, "{id} {w}x{h}: end ≠ B ({})", max_diff(&e, &b));
             }
         }
     }

@@ -126,7 +126,7 @@ fn run(seed: u64, steps: usize) {
     // history was trimmed at the front (large projects): undo no longer reaches the start
     let mut trimmed = false;
     for step in 0..steps {
-        let ctx = format!("Seed {seed}, Schritt {step}");
+        let ctx = format!("Seed {seed}, step {step}");
         let before = d.project().clone();
         let hist = d.undo_entries().len();
         match r.below(20) {
@@ -163,13 +163,13 @@ fn run(seed: u64, steps: usize) {
                 let flags = op_dbg.contains("SetTrackFlags");
                 for t in before.timeline.tracks.iter().filter(|t| t.locked && !flags) {
                     let now = after.timeline.tracks.iter().find(|x| x.id == t.id);
-                    let now = now.unwrap_or_else(|| panic!("{ctx}: gesperrte Spur verschwunden: {desc}"));
+                    let now = now.unwrap_or_else(|| panic!("{ctx}: locked track vanished: {desc}"));
                     if now.locked {
                         assert_eq!(now.clips, t.clips, "{ctx}: locked track changed: {desc}");
                     }
                 }
                 if step % 50 == 0 {
-                    assert_eq!(&roundtrip(after), after, "{ctx}: Speichern+Laden");
+                    assert_eq!(&roundtrip(after), after, "{ctx}: save+load");
                 }
             }
             Err(e) => {
@@ -188,7 +188,7 @@ fn run(seed: u64, steps: usize) {
         assert_eq!(d.project(), &start, "seed {seed}: undo to the start");
     }
     assert_eq!(d.step(n as isize), n);
-    assert_eq!(d.project(), &end, "Seed {seed}: alles wiederholen");
+    assert_eq!(d.project(), &end, "Seed {seed}: repeat everything");
 }
 
 #[test]

@@ -9,7 +9,7 @@ fn main() {
         res.set("LegalCopyright", "MPL-2.0");
         if let Err(e) = res.compile() {
             // Without a resource compiler, still build, just without the icon
-            println!("cargo:warning=Icon nicht eingebettet: {e}");
+            println!("cargo:warning=icon not embedded: {e}");
         }
     }
 }

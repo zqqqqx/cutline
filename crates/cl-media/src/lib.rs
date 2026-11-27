@@ -24,17 +24,17 @@ pub use proc::{cpu_time, limit_threads, lower_priority, raise_priority, suspend}
 
 #[derive(Debug, thiserror::Error)]
 pub enum MediaError {
-    #[error("FFmpeg/FFprobe nicht gefunden. Bitte installieren oder CUTLINE_FFMPEG_DIR setzen.")]
+    #[error("FFmpeg/FFprobe not found. Please install it or set CUTLINE_FFMPEG_DIR.")]
     FfmpegMissing,
-    #[error("Datei kann nicht gelesen werden: {0}")]
+    #[error("Cannot read file: {0}")]
     Unreadable(String),
-    #[error("Kein Video- oder Audiostrom gefunden")]
+    #[error("No video or audio stream found")]
     NoStreams,
-    #[error("E/A-Fehler: {0}")]
+    #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Unerwartete FFprobe-Ausgabe: {0}")]
+    #[error("Unexpected FFprobe output: {0}")]
     Parse(#[from] serde_json::Error),
-    #[error("Abgebrochen")]
+    #[error("Canceled")]
     Cancelled,
 }
 
@@ -545,7 +545,7 @@ pub fn is_url(path: &Path) -> bool {
 
 fn not_url(path: &Path) -> Result<()> {
     if is_url(path) {
-        return Err(MediaError::Unreadable("keine lokale Datei".into()));
+        return Err(MediaError::Unreadable("not a local file".into()));
     }
     Ok(())
 }
@@ -635,7 +635,7 @@ fn decode_raw(
         let err = err.trim().to_string();
         // without error text: there is no frame at this position (e.g. after the last one)
         return Err(MediaError::Unreadable(if err.is_empty() {
-            format!("kein Bild bei {:.3} s in {}", at.as_secs_f64(), path.display())
+            format!("no frame at {:.3} s in {}", at.as_secs_f64(), path.display())
         } else {
             err
         }));
@@ -1276,9 +1276,9 @@ mod tests {
         let f = graph_file(dir.path(), &g).unwrap();
         assert_eq!(std::fs::read_to_string(&f).unwrap(), g);
         // stand-in for "being read right now": the content must not be touched
-        std::fs::write(&f, "gelesen").unwrap();
+        std::fs::write(&f, "read").unwrap();
         assert_eq!(graph_file(dir.path(), &g).unwrap(), f);
-        assert_eq!(std::fs::read_to_string(&f).unwrap(), "gelesen");
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "read");
         let g2 = "copy,".repeat(20_000);
         let read: Vec<String> = std::thread::scope(|s| {
             let hs: Vec<_> = (0..8)
@@ -1375,7 +1375,7 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let src = gen(dir.path(), "lauf.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=30:d=4", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "30"]);
+        let src = gen(dir.path(), "run.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=30:d=4", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "30"]);
         let g = "[0:v]setpts=PTS-STARTPTS,setpts=(PTS-STARTPTS)/2,fps=30/1,scale=32:18[pre];[pre]setpts=PTS-STARTPTS+round(20/TB)[pc];[pc]format=rgba[out]";
         let s = FrameStream::open_fx(&src, Time::ZERO, 32, 18, Rational::new(30, 1), Some(g)).unwrap();
         let frames: Vec<Vec<u8>> = std::iter::from_fn(|| s.next_blocking().map(|f| f.data)).take(20).collect();
@@ -1392,21 +1392,21 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let src = gen(dir.path(), "fenster.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=60:d=3", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "60"]);
+        let src = gen(dir.path(), "window.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=60:d=3", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-g", "60"]);
         let at = |i: i64| Time::from_secs_f64(i as f64 / 60.0);
         let win = decode_frames(&src, at(97), 16, 32, 18, &|_| true, None).unwrap();
         assert_eq!(win.len(), 16);
         for (k, f) in &win {
             let one = decode_frame(&src, at(97 + *k as i64), 32, 18).unwrap();
-            assert!(one.data == f.data, "Bild {} weicht ab", 97 + k);
+            assert!(one.data == f.data, "frame {} deviates", 97 + k);
         }
-        assert_ne!(win[0].1.data, win[1].1.data, "aufeinanderfolgende Bilder");
+        assert_ne!(win[0].1.data, win[1].1.data, "consecutive frames");
         // keep only selected ones: the same frames at the same numbers
         let some = decode_frames(&src, at(97), 16, 32, 18, &|k| k < 3 || k == 15, None).unwrap();
         assert_eq!(some.iter().map(|x| x.0).collect::<Vec<_>>(), vec![0, 1, 2, 15]);
         assert!(some[3].1.data == win[15].1.data);
         let tail = decode_frames(&src, at(172), 16, 32, 18, &|_| true, None).unwrap();
-        assert!((1..=8).contains(&tail.len()), "{} Bilder am Ende", tail.len());
+        assert!((1..=8).contains(&tail.len()), "{} frames at the end", tail.len());
     }
 
     /// Window run through an effect graph (starts with `setpts`, like `cl_fx::preview_graph`): frame k is
@@ -1462,7 +1462,7 @@ mod tests {
             return;
         }
         let url = Path::new("https://127.0.0.1:9/x.mp4");
-        let no = |r: Result<()>| assert!(matches!(&r, Err(MediaError::Unreadable(e)) if e == "keine lokale Datei"), "{r:?}");
+        let no = |r: Result<()>| assert!(matches!(&r, Err(MediaError::Unreadable(e)) if e == "not a local file"), "{r:?}");
         no(waveform(url, 10).map(|_| ()));
         no(decode_frame(url, Time::ZERO, 16, 16).map(|_| ()));
         assert_eq!(silent_channel(url), None);
@@ -1530,7 +1530,7 @@ mod tests {
         let clip = make_clip(dir.path());
         // after the last frame: FFmpeg delivers nothing and reports nothing either
         let e = decode_frame(&clip, Time::from_millis(2500), 32, 18).unwrap_err().to_string();
-        assert!(e.contains("kein Bild bei 2.500 s") && e.contains("t.mp4"), "{e}");
+        assert!(e.contains("no frame at 2.500 s") && e.contains("t.mp4"), "{e}");
         assert!(decode_frame(&clip, Time::from_millis(1900), 32, 18).is_ok());
     }
 
@@ -1660,7 +1660,7 @@ mod tests {
             return;
         }
         let d = mean_diff(&sw.data, &hw.data);
-        assert!(d < 2.0, "mittlere Abweichung HW/SW {d:.2}");
+        assert!(d < 2.0, "mean deviation HW/SW {d:.2}");
         // stream: same frame count and same first frame
         let count = |hw: bool| {
             let s = FrameStream::open_opts(&clip, Time::from_secs_f64(1.0), 480, 270, Rational::new(30, 1), None, if hw { Hw::On } else { Hw::Off }).unwrap();
@@ -1705,14 +1705,14 @@ mod tests {
         let (sw, none) = frames(false);
         assert_eq!(none, None);
         let (hw, from) = frames(true);
-        eprintln!("Hardware ab Bild {from:?} von {}", hw.len());
+        eprintln!("hardware from frame {from:?} of {}", hw.len());
         assert_ne!(from, Some(0), "first frame from software");
         if works {
             assert!(from.is_some(), "hardware takes over");
         }
         assert_eq!(sw.len(), hw.len(), "no frame missing or doubled");
         for (i, (a, b)) in sw.iter().zip(&hw).enumerate() {
-            assert!(mean_diff(a, b) < 2.0, "Bild {i} weicht ab");
+            assert!(mean_diff(a, b) < 2.0, "frame {i} deviates");
         }
     }
 
@@ -1768,7 +1768,7 @@ mod tests {
             for (i, label) in ["SW", "HW"].iter().enumerate() {
                 wall[i].sort();
                 println!(
-                    "{} {label}: Median {} ms, max {} ms, CPU je Bild {} ms",
+                    "{} {label}: median {} ms, max {} ms, CPU per frame {} ms",
                     f.file_name().unwrap().to_string_lossy(),
                     wall[i][5],
                     wall[i][9],
@@ -1789,7 +1789,7 @@ mod tests {
         let svg = dir.path().join("b.svg");
         std::fs::write(&svg, r#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>"#).unwrap();
         assert!(matches!(probe(&svg), Err(MediaError::Unreadable(_))));
-        let png = dir.path().join("bild.png");
+        let png = dir.path().join("frame.png");
         let st = command("ffmpeg")
             .unwrap()
             .args([
@@ -1811,8 +1811,8 @@ mod tests {
         assert_eq!(m.kind, MediaKind::Image);
         assert_eq!((m.width, m.height), (64, 32));
 
-        let bad = dir.path().join("kaputt.mp4");
-        std::fs::write(&bad, b"kein video").unwrap();
+        let bad = dir.path().join("broken.mp4");
+        std::fs::write(&bad, b"no video").unwrap();
         assert!(matches!(probe(&bad), Err(MediaError::Unreadable(_))));
     }
 
@@ -1900,27 +1900,27 @@ mod tests {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let empty = dir.path().join("leer.mp4");
+        let empty = dir.path().join("empty.mp4");
         std::fs::write(&empty, b"").unwrap();
         assert!(probe(&empty).is_err());
-        assert!(probe(&dir.path().join("fehlt.mp4")).is_err());
-        assert!(probe(dir.path()).is_err(), "Ordner");
+        assert!(probe(&dir.path().join("missing.mp4")).is_err());
+        assert!(probe(dir.path()).is_err(), "Folder");
         // audio only
-        let a = gen(dir.path(), "ton ä.m4a", &["-f", "lavfi", "-i", "sine=d=1", "-c:a", "aac"]);
+        let a = gen(dir.path(), "sound ä.m4a", &["-f", "lavfi", "-i", "sine=d=1", "-c:a", "aac"]);
         let m = probe(&a).unwrap();
         assert_eq!((m.kind, m.fps, m.width, m.has_audio), (MediaKind::Audio, None, 0, true));
         // image only, 23.976 fps, umlaut/emoji in the name
-        let v = gen(dir.path(), "Bild ö 🎬.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=24000/1001:d=1", "-pix_fmt", "yuv420p"]);
+        let v = gen(dir.path(), "Image ö 🎬.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=24000/1001:d=1", "-pix_fmt", "yuv420p"]);
         let m = probe(&v).unwrap();
         assert_eq!((m.kind, m.has_audio), (MediaKind::Video, false));
         assert_eq!(m.fps, Some(cl_core::Rational::new(24000, 1001)));
         // a single frame as video
-        let one = gen(dir.path(), "eins.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=25:d=0.04", "-pix_fmt", "yuv420p"]);
+        let one = gen(dir.path(), "four.mp4", &["-f", "lavfi", "-i", "testsrc2=s=64x36:r=25:d=0.04", "-pix_fmt", "yuv420p"]);
         let m = probe(&one).unwrap();
         assert_eq!((m.kind, m.width, m.height), (MediaKind::Video, 64, 36));
         // truncated file: a clean "unreadable" error or the video as it is, never a crash
         let data = std::fs::read(&v).unwrap();
-        let cut = dir.path().join("halb.mp4");
+        let cut = dir.path().join("half.mp4");
         std::fs::write(&cut, &data[..data.len() / 2]).unwrap();
         match probe(&cut) {
             Ok(m) => assert_eq!((m.kind, m.width, m.height), (MediaKind::Video, 64, 36), "{m:?}"),

@@ -2,20 +2,20 @@
 # Own transitions: CC0-1.0 (Cutline project). Ported GL Transitions: MIT, author and source per transition,
 # license text in LICENSE-gl-transitions.txt.
 [plugin]
-id = "cutline.uebergaenge"
+id = "cutline.transitions"
 version = "1.0.0"
 api = 1
 kind = "asset-pack"
 name = { de = "Übergänge", en = "Transitions" }
 description = { de = "Shader-Übergänge: Reißschwenk, Zoom-Stoß, Würfel, Glitch, Licht und mehr", en = "Shader transitions: whip pans, zoom punches, cube, glitch, light and more" }
-authors = ["Cutline-Projekt"]
+authors = ["Cutline project"]
 license = "CC0-1.0"
 
 [[asset]]
-id = "reissschwenk-links"
+id = "whip-pan-left"
 kind = "transition"
 name = { de = "Reißschwenk links", en = "Whip pan left" }
-category = ["Unschärfe"]
+category = ["Blur"]
 shader = "shaders/whip_pan.wgsl"
 fallback = "slideleft"
 params = [
@@ -24,10 +24,10 @@ params = [
 ]
 
 [[asset]]
-id = "reissschwenk-rechts"
+id = "whip-pan-right"
 kind = "transition"
 name = { de = "Reißschwenk rechts", en = "Whip pan right" }
-category = ["Unschärfe"]
+category = ["Blur"]
 shader = "shaders/whip_pan.wgsl"
 fallback = "slideright"
 params = [
@@ -36,10 +36,10 @@ params = [
 ]
 
 [[asset]]
-id = "reissschwenk-hoch"
+id = "whip-pan-up"
 kind = "transition"
 name = { de = "Reißschwenk hoch", en = "Whip pan up" }
-category = ["Unschärfe"]
+category = ["Blur"]
 shader = "shaders/whip_pan.wgsl"
 fallback = "slideup"
 params = [
@@ -48,10 +48,10 @@ params = [
 ]
 
 [[asset]]
-id = "reissschwenk-runter"
+id = "whip-pan-down"
 kind = "transition"
 name = { de = "Reißschwenk runter", en = "Whip pan down" }
-category = ["Unschärfe"]
+category = ["Blur"]
 shader = "shaders/whip_pan.wgsl"
 fallback = "slidedown"
 params = [
@@ -60,10 +60,10 @@ params = [
 ]
 
 [[asset]]
-id = "zoom-stoss-hinein"
+id = "zoom-punch-in"
 kind = "transition"
 name = { de = "Zoom-Stoß hinein", en = "Zoom punch in" }
-category = ["Unschärfe"]
+category = ["Blur"]
 shader = "shaders/zoom_punch.wgsl"
 fallback = "zoomin"
 params = [
@@ -73,10 +73,10 @@ params = [
 ]
 
 [[asset]]
-id = "zoom-stoss-heraus"
+id = "zoom-punch-out"
 kind = "transition"
 name = { de = "Zoom-Stoß heraus", en = "Zoom punch out" }
-category = ["Unschärfe"]
+category = ["Blur"]
 shader = "shaders/zoom_punch.wgsl"
 fallback = "fade"
 params = [
@@ -86,10 +86,10 @@ params = [
 ]
 
 [[asset]]
-id = "dreh-unschaerfe"
+id = "spin-blur"
 kind = "transition"
 name = { de = "Dreh-Unschärfe", en = "Spin blur" }
-category = ["Unschärfe"]
+category = ["Blur"]
 shader = "shaders/spin_blur.wgsl"
 fallback = "radial"
 params = [
@@ -97,10 +97,10 @@ params = [
 ]
 
 [[asset]]
-id = "zoom-unschaerfe"
+id = "zoom-blur"
 kind = "transition"
 name = { de = "Zoom-Unschärfe", en = "Zoom blur" }
-category = ["Unschärfe"]
+category = ["Blur"]
 shader = "shaders/cross_zoom.wgsl"
 fallback = "zoomin"
 params = [
@@ -111,7 +111,7 @@ author = "rectalogic"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/CrossZoom.glsl"
 
 [[asset]]
-id = "wuerfel"
+id = "cube"
 kind = "transition"
 name = { de = "Würfel", en = "Cube" }
 category = ["3D"]
@@ -129,7 +129,7 @@ author = "gre"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Cube.glsl"
 
 [[asset]]
-id = "tuer"
+id = "doorway"
 kind = "transition"
 name = { de = "Flügeltür", en = "Doorway" }
 category = ["3D"]
@@ -145,10 +145,10 @@ author = "gre"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Doorway.glsl"
 
 [[asset]]
-id = "wirbel"
+id = "swirl"
 kind = "transition"
 name = { de = "Wirbel", en = "Swirl" }
-category = ["Verzerren"]
+category = ["Distort"]
 shader = "shaders/swirl.wgsl"
 fallback = "radial"
 params = [
@@ -160,10 +160,10 @@ author = "Sergey Kosarevsky"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Swirl.glsl"
 
 [[asset]]
-id = "welle"
+id = "ripple"
 kind = "transition"
 name = { de = "Welle", en = "Ripple" }
-category = ["Verzerren"]
+category = ["Distort"]
 shader = "shaders/ripple.wgsl"
 fallback = "fade"
 params = [
@@ -175,10 +175,10 @@ author = "gre"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Ripple.glsl"
 
 [[asset]]
-id = "wassertropfen"
+id = "water-drop"
 kind = "transition"
 name = { de = "Wassertropfen", en = "Water drop" }
-category = ["Verzerren"]
+category = ["Distort"]
 shader = "shaders/water_drop.wgsl"
 fallback = "circleopen"
 params = [
@@ -192,10 +192,10 @@ author = "Paweł Płóciennik"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/WaterDrop.glsl"
 
 [[asset]]
-id = "verziehen"
+id = "cross-warp"
 kind = "transition"
 name = { de = "Verziehen", en = "Cross warp" }
-category = ["Verzerren"]
+category = ["Distort"]
 shader = "shaders/cross_warp.wgsl"
 fallback = "smoothleft"
 license = "MIT"
@@ -203,10 +203,10 @@ author = "Eke Péter"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/CrossWarp.glsl"
 
 [[asset]]
-id = "schraeg-verziehen"
+id = "directional-warp"
 kind = "transition"
 name = { de = "Schräg verziehen", en = "Directional warp" }
-category = ["Verzerren"]
+category = ["Distort"]
 shader = "shaders/directional_warp.wgsl"
 fallback = "diagbr"
 params = [
@@ -217,10 +217,10 @@ author = "pschroen"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/DirectionalWarp.glsl"
 
 [[asset]]
-id = "morphen"
+id = "morph"
 kind = "transition"
 name = { de = "Morphen", en = "Morph" }
-category = ["Verzerren"]
+category = ["Distort"]
 shader = "shaders/morph.wgsl"
 fallback = "dissolve"
 params = [
@@ -231,10 +231,10 @@ author = "paniq"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Morph.glsl"
 
 [[asset]]
-id = "kaleidoskop"
+id = "kaleidoscope"
 kind = "transition"
 name = { de = "Kaleidoskop", en = "Kaleidoscope" }
-category = ["Verzerren"]
+category = ["Distort"]
 shader = "shaders/kaleidoscope.wgsl"
 fallback = "fade"
 params = [
@@ -258,7 +258,7 @@ params = [
 ]
 
 [[asset]]
-id = "glitch-versatz"
+id = "glitch-displace"
 kind = "transition"
 name = { de = "Glitch-Versatz", en = "Glitch displace" }
 category = ["Glitch"]
@@ -269,10 +269,10 @@ author = "Matt DesLauriers"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/GlitchDisplace.glsl"
 
 [[asset]]
-id = "blitz"
+id = "flash"
 kind = "transition"
 name = { de = "Blitz", en = "Flash" }
-category = ["Licht"]
+category = ["Light"]
 shader = "shaders/flash.wgsl"
 fallback = "fadewhite"
 params = [
@@ -280,10 +280,10 @@ params = [
 ]
 
 [[asset]]
-id = "lichtleck"
+id = "light-leak"
 kind = "transition"
 name = { de = "Lichtleck", en = "Light leak" }
-category = ["Licht"]
+category = ["Light"]
 shader = "shaders/light_leak.wgsl"
 fallback = "smoothright"
 params = [
@@ -291,10 +291,10 @@ params = [
 ]
 
 [[asset]]
-id = "filmbrand"
+id = "film-burn"
 kind = "transition"
 name = { de = "Filmbrand", en = "Film burn" }
-category = ["Licht"]
+category = ["Light"]
 shader = "shaders/film_burn.wgsl"
 fallback = "fadewhite"
 params = [
@@ -305,10 +305,10 @@ author = "Anastasia Dunbar"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/FilmBurn.glsl"
 
 [[asset]]
-id = "traum-zoom"
+id = "dreamy-zoom"
 kind = "transition"
 name = { de = "Traum-Zoom", en = "Dreamy zoom" }
-category = ["Licht"]
+category = ["Light"]
 shader = "shaders/dreamy_zoom.wgsl"
 fallback = "fadewhite"
 params = [
@@ -320,10 +320,10 @@ author = "Zeh Fernando"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/DreamyZoom.glsl"
 
 [[asset]]
-id = "herz"
+id = "heart"
 kind = "transition"
 name = { de = "Herz", en = "Heart" }
-category = ["Form"]
+category = ["Shape"]
 shader = "shaders/heart_wipe.wgsl"
 fallback = "circleopen"
 params = [
@@ -336,10 +336,10 @@ author = "gre"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/HeartWipe.glsl"
 
 [[asset]]
-id = "punkte"
+id = "polka-dots"
 kind = "transition"
 name = { de = "Punkte", en = "Polka dots" }
-category = ["Form"]
+category = ["Shape"]
 shader = "shaders/polka_dots.wgsl"
 fallback = "dissolve"
 params = [
@@ -350,10 +350,10 @@ author = "bobylito"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/PolkaDotsCurtain.glsl"
 
 [[asset]]
-id = "jalousie"
+id = "window-slices"
 kind = "transition"
 name = { de = "Jalousie", en = "Window slices" }
-category = ["Wischen"]
+category = ["Wipe"]
 shader = "shaders/window_slices.wgsl"
 fallback = "hrslice"
 params = [
@@ -365,10 +365,10 @@ author = "gre"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/WindowSlices.glsl"
 
 [[asset]]
-id = "mosaik"
+id = "mosaic"
 kind = "transition"
 name = { de = "Mosaik", en = "Mosaic" }
-category = ["Effekt"]
+category = ["Effect"]
 shader = "shaders/mosaic.wgsl"
 fallback = "pixelize"
 license = "MIT"
@@ -376,10 +376,10 @@ author = "Xaychru"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Mosaic.glsl"
 
 [[asset]]
-id = "waben"
+id = "hexagons"
 kind = "transition"
 name = { de = "Waben", en = "Hexagons" }
-category = ["Effekt"]
+category = ["Effect"]
 shader = "shaders/hexagonalize.wgsl"
 fallback = "pixelize"
 params = [
@@ -391,10 +391,10 @@ author = "Fernando Kuteken"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/Hexagonalize.glsl"
 
 [[asset]]
-id = "schmelzen"
+id = "melt"
 kind = "transition"
 name = { de = "Schmelzen", en = "Melt" }
-category = ["Effekt"]
+category = ["Effect"]
 shader = "shaders/luminance_melt.wgsl"
 fallback = "dissolve"
 params = [
@@ -407,10 +407,10 @@ author = "0gust1; Ian McEwan, Ashima Arts"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/LuminanceMelt.glsl"
 
 [[asset]]
-id = "sanft-zoomen"
+id = "simple-zoom"
 kind = "transition"
 name = { de = "Sanft hineinzoomen", en = "Simple zoom" }
-category = ["Bewegung"]
+category = ["Motion"]
 shader = "shaders/simple_zoom.wgsl"
 fallback = "zoomin"
 params = [
@@ -421,10 +421,10 @@ author = "0gust1"
 source = "https://github.com/gl-transitions/gl-transitions/blob/master/transitions/SimpleZoom.glsl"
 
 [[asset]]
-id = "drehen-zoomen"
+id = "rotate-and-zoom"
 kind = "transition"
 name = { de = "Drehen und zoomen", en = "Rotate and zoom" }
-category = ["Bewegung"]
+category = ["Motion"]
 shader = "shaders/rotate_scale_fade.wgsl"
 fallback = "fade"
 params = [

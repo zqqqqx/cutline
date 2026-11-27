@@ -1,4 +1,4 @@
-//! From a long video to a short: hit list from „Highlights finden“, one 9:16 project
+//! From a long video to a short: hit list from „Find highlights“, one 9:16 project
 //! per hit, refit clips when the aspect ratio changes.
 
 use cl_core::*;
@@ -180,7 +180,7 @@ pub fn text_measure(fonts: &crate::thumb::Fonts) -> impl Fn(&TextStyle, f32) -> 
 
 /// Rebuild a snapshot for another format `w`×`h` (export in another aspect ratio, shorts).
 /// - frame-filling image clips: fill or fit as on a format change (zoom, shift and
-///   keyframes proportionally); with „Einpassen“ a muted, blurred, filling copy lies
+///   keyframes proportionally); with „Fit“ a muted, blurred, filling copy lies
 ///   below on each track (same times, transitions, speed, crop, censoring)
 /// - placed image clips (picture-in-picture, layouts, logo, sticker) and text: position proportional, size
 ///   in the same ratio to the shorter edge, what lay fully in the frame stays inside; text is
@@ -293,7 +293,7 @@ pub fn reframe(p: &Project, (w2, h2): (u32, u32), fill: bool, focus: &FocusPaths
             // transition only if the following clip of the track also has a copy
             let copied: Vec<ClipId> = back.iter().map(|b| b.id).collect();
             for b in &mut back {
-                let i = t.clips.iter().position(|c| c.id.derived(BACK_SALT) == b.id).expect("Kopie eines Clips der Spur");
+                let i = t.clips.iter().position(|c| c.id.derived(BACK_SALT) == b.id).expect("copy of a clip of the track");
                 if !t.clips.get(i + 1).is_some_and(|n| copied.contains(&n.id.derived(BACK_SALT))) {
                     b.transition_out = None;
                 }
@@ -377,7 +377,7 @@ pub fn make_short(p: &Project, a: Time, b: Time, name: &str, captions: Option<(&
 }
 
 impl App {
-    /// Window with the hit list of „Highlights finden“
+    /// Window with the hit list of „Find highlights“
     pub fn shorts_window(&mut self, ctx: &egui::Context) {
         let Some(mut st) = self.shorts.take() else {
             return;
@@ -403,26 +403,26 @@ impl App {
                             crate::widgets::check(ui, &mut h.on, "");
                             if ui
                                 .add(theme::ghost(fmt_t(h.at)))
-                                .on_hover_text(crate::tr("Zum Moment springen"))
+                                .on_hover_text(crate::tr("Jump to moment"))
                                 .clicked()
                             {
                                 self.playhead = Time::from_secs_f64(h.at);
                             }
                             ui.label(RichText::new(format!("{:.0} s", b - a)).color(theme::TEXT_DIM()));
                             ui.label(
-                                RichText::new(crate::tr(format!("Stärke {:.0} %", h.strength / max * 100.0)))
+                                RichText::new(crate::tr(format!("Strength {:.0} %", h.strength / max * 100.0)))
                                     .color(theme::TEXT_DIM()),
                             );
                         });
                     }
                 });
                 theme::section(ui, "Short");
-                theme::row(ui, "Länge je Short", |ui| {
+                theme::row(ui, "Length per short", |ui| {
                     crate::widgets::Slider::new(&mut st.len, 10.0..=60.0).default(30.0).suffix(" s").show(ui);
                 });
                 ui.add_enabled_ui(has_caps, |ui| {
                     let mut on = st.captions && has_caps;
-                    crate::widgets::check(ui, &mut on, crate::tr("Untertitel-Stil anwenden"));
+                    crate::widgets::check(ui, &mut on, crate::tr("Apply caption style"));
                     st.captions = on;
                     if on {
                         self.caption_preset_picker(ui);
@@ -430,20 +430,20 @@ impl App {
                 });
                 if !has_caps {
                     ui.label(
-                        RichText::new(crate::tr("Keine Untertitel im Projekt – erst Untertitel erzeugen"))
+                        RichText::new(crate::tr("No captions in the project – generate captions first"))
                             .small()
                             .color(theme::TEXT_DIM()),
                     );
                 }
                 let n = st.hits.iter().filter(|h| h.on).count();
                 crate::dialog::footer(ui, |ui| {
-                    if ui.add_enabled(n > 0, theme::primary(format!("{}  Als Shorts anlegen", icon::DEVICE_MOBILE))).clicked() {
+                    if ui.add_enabled(n > 0, theme::primary(format!("{}  Create as shorts", icon::DEVICE_MOBILE))).clicked() {
                         make = true;
                     }
-                    if ui.add_enabled(n > 0, theme::secondary(format!("{}  Als Marker setzen", icon::FLAG))).clicked() {
+                    if ui.add_enabled(n > 0, theme::secondary(format!("{}  Add as markers", icon::FLAG))).clicked() {
                         markers = true;
                     }
-                    if ui.add(theme::secondary("Abbrechen")).clicked() {
+                    if ui.add(theme::secondary("Cancel")).clicked() {
                         open = false;
                     }
                 });
@@ -466,7 +466,7 @@ impl App {
                 });
             }
             self.apply(EditOp::SetMarkers { markers: ms });
-            self.toast(crate::theme::count_text(chosen.len(), "{} Highlight als Marker gesetzt", "{} Highlights als Marker gesetzt"));
+            self.toast(crate::theme::count_text(chosen.len(), "{} highlight added as a marker", "{} highlights added as markers"));
             open = false;
         }
         if make {
@@ -510,7 +510,7 @@ impl App {
         if n > 0 {
             self.settings.save();
             self.home.refresh();
-            self.toast(format!("{n} Shorts angelegt in {}", dir.display()));
+            self.toast(format!("{n} shorts created in {}", dir.display()));
         }
     }
 
@@ -523,19 +523,19 @@ impl App {
         let (mut esc, enter) = crate::dialog::keys(ctx);
         crate::dialog::modal(ctx, "aspect-fit").show(ctx, |ui| {
             ui.set_width(360.0);
-            esc |= crate::dialog::title(ui, "Clips neu einpassen?");
-            ui.label(RichText::new(crate::tr("Das Seitenverhältnis ändert sich. Wie sollen vorhandene Bilder ins neue Format?")).color(theme::TEXT_DIM()));
+            esc |= crate::dialog::title(ui, "Refit clips?");
+            ui.label(RichText::new(crate::tr("The aspect ratio is changing. How should existing footage fit the new format?")).color(theme::TEXT_DIM()));
             crate::dialog::footer(ui, |ui| {
-                if ui.add(theme::primary("Füllen")).on_hover_text(crate::tr("Bild füllt das Format, Ränder werden beschnitten")).clicked() {
+                if ui.add(theme::primary("Fill")).on_hover_text(crate::tr("Image fills the frame, edges are cropped")).clicked() {
                     pick = Some(1);
                 }
-                if ui.add(theme::secondary("Einpassen")).on_hover_text(crate::tr("Ganzes Bild sichtbar, mit Balken")).clicked() {
+                if ui.add(theme::secondary("Fit~verb")).on_hover_text(crate::tr("Whole image visible, with bars")).clicked() {
                     pick = Some(2);
                 }
-                if ui.add(theme::secondary("Auto-Reframe")).on_hover_text(crate::tr("Füllen und dem Wichtigen im Bild folgen (Analyse im Hintergrund)")).clicked() {
+                if ui.add(theme::secondary("Auto reframe")).on_hover_text(crate::tr("Fill and follow what matters in the frame (analysis runs in the background)")).clicked() {
                     pick = Some(3);
                 }
-                if ui.add(theme::secondary("So lassen")).clicked() {
+                if ui.add(theme::secondary("Leave as is")).clicked() {
                     pick = Some(0);
                 }
             });
@@ -567,7 +567,7 @@ impl App {
                 ops.push(EditOp::ReplaceClip { clip: c });
             }
         }
-        self.apply(EditOp::Batch { label: "Seitenverhältnis".into(), ops });
+        self.apply(EditOp::Batch { label: "Aspect ratio".into(), ops });
         if mode == 3 {
             // one job for all clips, one after another; the result as one undo step
             let jobs: Vec<(ClipId, MediaRef, f64, f64)> = clips
@@ -578,14 +578,14 @@ impl App {
             if jobs.is_empty() {
                 return;
             }
-            self.tasks.spawn(ctx, "reframe:fit", "Auto-Reframe analysiert …", move |p, cancel| {
+            self.tasks.spawn(ctx, "reframe:fit", "Auto reframe is analyzing …", move |p, cancel| {
                 let n = jobs.len() as f32;
                 let (mut done, mut err) = (Vec::new(), None);
                 for (i, (id, m, start, span)) in jobs.into_iter().enumerate() {
                     let sub = |v: f32| p((i as f32 + v) / n);
                     let r = cl_analyze::reframe::focus_path(&m.path, m.width, m.height, start, span, &sub, cancel);
                     if cancel.load(std::sync::atomic::Ordering::Relaxed) {
-                        return TaskDone::Failed("Abgebrochen".into());
+                        return TaskDone::Failed("Canceled".into());
                     }
                     match r {
                         Ok(points) => done.push((id, points)),
@@ -834,9 +834,9 @@ mod tests {
             c
         };
         let texts = vec![
-            text("Ein sehr langer Titel", 96.0, false, -0.3),
-            text("Unten mittig", 64.0, true, 0.38),
-            text("Das ist ein ziemlich langer Untertitel, der umbrechen muss", 64.0, true, 0.4),
+            text("A very long title", 96.0, false, -0.3),
+            text("Bottom center", 64.0, true, 0.38),
+            text("This is a fairly long subtitle that has to wrap", 64.0, true, 0.4),
         ];
         let mut fx = Clip::new(ClipContent::Filter(FxRef::new("noir")), Time::ZERO, secs(15.0));
         fx.fx.mask = Some(Mask { cx: 0.25, cy: 0.5, w: 0.5, h: 1.0, ..Mask::new(MaskShape::Rect) });
@@ -913,7 +913,7 @@ mod tests {
             let (w2, h2) = (ps.width, ps.height);
             for fill in [true, false] {
                 let o = reframe(&s.p, (w2, h2), fill, &FocusPaths::new(), &rough);
-                let case = format!("{w}×{h} → {w2}×{h2} {}", if fill { "Füllen" } else { "Einpassen" });
+                let case = format!("{w}×{h} → {w2}×{h2} {}", if fill { "Fill" } else { "Fit~verb" });
                 assert_eq!((o.settings.width, o.settings.height, o.settings.aspect), (w2, h2, AspectPreset::Ratio(a, b)), "{case}");
                 // frame-filling: covers the area or lies fully within it
                 let r = shown(&o, clip(&o, s.base), Time::ZERO);
@@ -932,7 +932,7 @@ mod tests {
                 let ks = w2.min(h2) as f32 / w.min(h) as f32;
                 // Cropped clips (layout cells): the whole layout fits into the new frame
                 let kl = ks.min(w2 as f32 / w as f32).min(h2 as f32 / h as f32);
-                for (id, name, ks) in [(s.pip, "Bild-in-Bild", ks), (s.logo, "Logo", ks), (s.crop, "Zuschnitt", kl)] {
+                for (id, name, ks) in [(s.pip, "Frame-in-Frame", ks), (s.logo, "Logo", ks), (s.crop, "Crop", kl)] {
                     for t in [0.0, 5.0] {
                         let t = Time::from_secs_f64(t);
                         let (old, new) = (shown(&s.p, clip(&s.p, id), t), shown(&o, clip(&o, id), t));
@@ -1014,7 +1014,7 @@ mod tests {
         assert!(third(r0, 1.0 / 3.0) > 0.0 && third(r1, 2.0 / 3.0) < 0.0, "{r0:?} {r1:?}");
     }
 
-    /// Without a path like „Füllen“; own keyframes stay as „Füllen“ sets them
+    /// Without a path like „Fill“; own keyframes stay as „Fill“ sets them
     #[test]
     fn follow_person_without_path_or_on_own_keyframes_is_plain_fill() {
         let (p, a, b) = follow_project();
@@ -1044,7 +1044,7 @@ mod tests {
     fn highlights_window_does_not_collect_captions_per_frame() {
         let mut app = crate::saving::tests::test_app();
         app.set_doc(Project::new("k"));
-        let seg = cl_analyze::asr::Segment { start: 1.0, end: 2.0, text: "Hallo".into(), words: Vec::new() };
+        let seg = cl_analyze::asr::Segment { start: 1.0, end: 2.0, text: "Hello".into(), words: Vec::new() };
         assert_eq!(app.add_caption_segments(&[seg], Time::ZERO), 1);
         app.shorts = Some(ShortsState { hits: vec![Hit { at: 1.0, strength: 1.0, on: true }], len: 30.0, captions: true });
         let ctx = egui::Context::default();

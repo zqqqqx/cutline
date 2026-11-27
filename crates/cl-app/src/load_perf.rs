@@ -34,7 +34,7 @@ impl Stats {
             *self.by_section.entry(w).or_default() += t;
             known += t;
         }
-        *self.by_section.entry("übrige Oberfläche").or_default() += d.saturating_sub(known);
+        *self.by_section.entry("rest of the interface").or_default() += d.saturating_sub(known);
         self.frames += 1;
         self.sum += d;
         if d > self.max {
@@ -46,7 +46,7 @@ impl Stats {
     }
     fn print(&self, what: &str) {
         println!(
-            "{what}: {} Bilder, Ø {:.2} ms, max {:.1} ms ({}), >16 ms: {}, >100 ms: {}",
+            "{what}: {} frames, avg {:.2} ms, max {:.1} ms ({}), >16 ms: {}, >100 ms: {}",
             self.frames,
             self.sum.as_secs_f64() * 1000.0 / self.frames.max(1) as f64,
             self.max.as_secs_f64() * 1000.0,
@@ -58,7 +58,7 @@ impl Stats {
         v.sort_by_key(|(_, d)| std::cmp::Reverse(**d));
         let n = self.frames.max(1) as f64;
         let parts: Vec<String> = v.iter().take(6).map(|(w, d)| format!("{w} {:.2}", d.as_secs_f64() * 1000.0 / n)).collect();
-        println!("    Ø je Bild in ms: {}", parts.join(", "));
+        println!("    avg per frame in ms: {}", parts.join(", "));
     }
 }
 
@@ -71,7 +71,7 @@ struct Headless {
 
 fn headless() -> Headless {
     std::env::set_var("CUTLINE_PERF", "1");
-    assert!(perf(), "Mess-Tests einzeln laufen lassen (CUTLINE_PERF wird einmal gelesen)");
+    assert!(perf(), "run measurement tests one by one (CUTLINE_PERF is read once)");
     let ctx = egui::Context::default();
     let app = crate::saving::tests::test_app_with(ctx.clone());
     Headless { app, ctx, frame: eframe::Frame::_new_kittest() }
@@ -115,10 +115,10 @@ fn load_perf_import_big_draft() {
     let mut st = Stats::default();
     while h.app.import_busy() {
         st.add(h.frame());
-        assert!(t.elapsed() < Duration::from_secs(600), "Import hängt");
+        assert!(t.elapsed() < Duration::from_secs(600), "import hangs");
     }
-    println!("Import fertig: {:.1} s", t.elapsed().as_secs_f64());
-    // Show the summary, then „Projekt öffnen“
+    println!("import finished: {:.1} s", t.elapsed().as_secs_f64());
+    // Show the summary, then „Open project“
     for _ in 0..5 {
         st.add(h.frame());
     }
@@ -126,14 +126,14 @@ fn load_perf_import_big_draft() {
     while h.app.screen != Screen::Editor {
         st.add(h.frame());
     }
-    println!("Import bis Editor: {:.1} s", t.elapsed().as_secs_f64());
-    st.print("während Import");
+    println!("import to editor: {:.1} s", t.elapsed().as_secs_f64());
+    st.print("during import");
     println!(
-        "Projekt: {} Medien, {} Clips",
+        "project: {} media, {} clips",
         h.app.project.media.len(),
         h.app.project.timeline.tracks.iter().map(|t| t.clips.len()).sum::<usize>()
     );
-    h.frames_for(20.0, "20 s nach Import (Proxys/Vorschaubilder laufen)");
+    h.frames_for(20.0, "20 s after import (proxies/thumbnails running)");
 }
 
 /// Project with 500 media and 3000 clips from the test material (checked in parallel).
@@ -153,7 +153,7 @@ fn big_project(dir: &Path) -> Project {
             .collect();
         hs.into_iter().flat_map(|h| h.join().unwrap()).collect()
     });
-    let mut p = Project::new("Groß");
+    let mut p = Project::new("Large");
     for k in 0..10 {
         let kind = if k < 7 { TrackKind::Video } else { TrackKind::Audio };
         let mut t = cl_core::Track::new(kind);
@@ -199,7 +199,7 @@ fn load_perf_open_big_project() {
         }
     };
     println!(
-        "Projekt: {} Medien, {} Clips, {} KB",
+        "project: {} media, {} clips, {} KB",
         p.media.len(),
         p.timeline.tracks.iter().map(|t| t.clips.len()).sum::<usize>(),
         std::fs::metadata(&file).unwrap().len() / 1024
@@ -210,15 +210,15 @@ fn load_perf_open_big_project() {
     let mut st = Stats::default();
     while h.app.screen != Screen::Editor {
         st.add(h.frame());
-        assert!(t.elapsed() < Duration::from_secs(60), "Öffnen hängt");
+        assert!(t.elapsed() < Duration::from_secs(60), "opening hangs");
     }
-    println!("bis Editor: {:.0} ms", t.elapsed().as_secs_f64() * 1000.0);
-    st.print("bis geöffnet");
+    println!("to editor: {:.0} ms", t.elapsed().as_secs_f64() * 1000.0);
+    st.print("until opened");
     let t = Instant::now();
     h.frame();
-    println!("erstes Bild im Editor: {:.0} ms", t.elapsed().as_secs_f64() * 1000.0);
+    println!("first frame in the editor: {:.0} ms", t.elapsed().as_secs_f64() * 1000.0);
     let secs = std::env::var("CUTLINE_PERF_SECS").ok().and_then(|s| s.parse().ok()).unwrap_or(20.0);
-    h.frames_for(secs, "nach dem Öffnen (Proxys/Vorschaubilder laufen)");
+    h.frames_for(secs, "after opening (proxies/thumbnails running)");
     // Saving a large project
     let mut s = h.app.project.settings.clone();
     s.main_track_magnet = !s.main_track_magnet;

@@ -148,11 +148,11 @@ mod tests {
         let n = SR as usize * 6;
         let tone: Vec<f32> = (0..n).map(|i| 0.5 * (i as f32 * 440.0 * std::f32::consts::TAU / SR as f32).sin()).collect();
         for (name, x) in [
-            ("Stille", vec![0.0f32; n]),
+            ("Silence", vec![0.0f32; n]),
             ("Gleichspannung", vec![0.3f32; n]),
             ("Dauerton", tone),
             ("empty", Vec::new()),
-            ("kurz", vec![0.9f32; 300]),
+            ("short", vec![0.9f32; 300]),
         ] {
             let b = detect_samples(&x);
             assert!(b.times.len() < 20 && b.bpm < 300.0, "{name}: {} BPM, {} beats", b.bpm, b.times.len());

@@ -1,5 +1,5 @@
 //! One catalog for all content: built-in effects, filters, transitions, sounds and stickers
-//! (package „Grundausstattung“, `cutline.standard`) and content from packages (`asset-pack`).
+//! (package „Essentials“, `cutline.standard`) and content from packages (`asset-pack`).
 //!
 //! Built-in entries stay in the code (IDs unchanged), packages are registered with
 //! [`load_packs`]. Preview, export and the tabs read from here.
@@ -146,11 +146,11 @@ fn read<T>(f: impl FnOnce(&[Pack]) -> T) -> T {
 pub fn standard_info() -> PackInfo {
     PackInfo {
         id: STANDARD.into(),
-        name: "Grundausstattung".into(),
+        name: "Essentials".into(),
         version: env!("CARGO_PKG_VERSION").into(),
-        description: "Eingebaute Effekte, Filter, Übergänge, Sounds und Sticker".into(),
+        description: "Built-in effects, filters, transitions, sounds and stickers".into(),
         license: "MPL-2.0".into(),
-        author: "Cutline-Projekt".into(),
+        author: "Cutline project".into(),
         source: Some("https://github.com/zqqqqx/cutline".into()),
     }
 }
@@ -304,16 +304,16 @@ pub fn credits(packs: &[Pack], tr: &dyn Fn(&str) -> String) -> String {
         enabled: true,
         entries: Vec::new(),
     };
-    let mut out = format!("# {}\n", tr("Quellen und Lizenzen"));
+    let mut out = format!("# {}\n", tr("Sources and licenses"));
     for p in std::iter::once(&std).chain(packs) {
         let i = &p.info;
         out += &format!("\n## {} ({})\n\n", tr(&i.name), i.id);
-        out += &format!("- {}: {}\n", tr("Lizenz"), i.license);
+        out += &format!("- {}: {}\n", tr("License"), i.license);
         if !i.author.is_empty() {
-            out += &format!("- {}: {}\n", tr("Autor"), tr(&i.author));
+            out += &format!("- {}: {}\n", tr("Author"), tr(&i.author));
         }
         if let Some(s) = &i.source {
-            out += &format!("- {}: {s}\n", tr("Quelle"));
+            out += &format!("- {}: {s}\n", tr("Source"));
         }
         // (license, author, source) → names, in order of first appearance
         let mut groups: Vec<((&str, &str, Option<&str>), Vec<&str>)> = Vec::new();
@@ -328,15 +328,15 @@ pub fn credits(packs: &[Pack], tr: &dyn Fn(&str) -> String) -> String {
             }
         }
         if !groups.is_empty() {
-            out += &format!("\n{}:\n\n", tr("Abweichende Angaben"));
+            out += &format!("\n{}:\n\n", tr("Different details"));
         }
         for ((lic, author, src), names) in groups {
-            let mut parts = vec![format!("{} {lic}", tr("Lizenz"))];
+            let mut parts = vec![format!("{} {lic}", tr("License"))];
             if !author.is_empty() {
-                parts.push(format!("{} {}", tr("Autor"), tr(author)));
+                parts.push(format!("{} {}", tr("Author"), tr(author)));
             }
             if let Some(s) = src {
-                parts.push(format!("{} {s}", tr("Quelle")));
+                parts.push(format!("{} {s}", tr("Source")));
             }
             out += &format!("- {}: {}\n", names.join(", "), parts.join(" · "));
         }
@@ -389,7 +389,7 @@ mod tests {
             id: format!("t.pack/{id}"),
             kind,
             name: id.into(),
-            categories: vec!["Licht".into()],
+            categories: vec!["Light".into()],
             pack: "t.pack".into(),
             license: license.into(),
             author: "A".into(),
@@ -466,9 +466,9 @@ mod tests {
     #[test]
     fn credits_group_deviating_assets() {
         let c = credits(&[pack(true)], &|s| s.to_string());
-        assert!(c.contains("## Grundausstattung (cutline.standard)"), "{c}");
-        assert!(c.contains("## Test (t.pack)\n\n- Lizenz: CC0-1.0\n- Autor: A\n"), "{c}");
-        assert!(c.contains("- warm, hot: Lizenz CC-BY-4.0 · Autor A\n"), "{c}");
+        assert!(c.contains("## Essentials (cutline.standard)"), "{c}");
+        assert!(c.contains("## Test (t.pack)\n\n- License: CC0-1.0\n- Author: A\n"), "{c}");
+        assert!(c.contains("- warm, hot: License CC-BY-4.0 · Author A\n"), "{c}");
         assert!(!c.contains("glow"), "details as the package: not listed separately");
     }
 
@@ -477,7 +477,7 @@ mod tests {
         let mut p = Project::new("x");
         let mut c = Clip::new(ClipContent::Effect(FxRef::new("t.pack/glow")), Time::ZERO, Time::from_secs_f64(1.0));
         c.fx.filter = Some(FxRef::new("noir"));
-        let mut d = Clip::new(ClipContent::Filter(FxRef::new("weg/filter")), Time::ZERO, Time::from_secs_f64(1.0));
+        let mut d = Clip::new(ClipContent::Filter(FxRef::new("gone/filter")), Time::ZERO, Time::from_secs_f64(1.0));
         d.fx.effects.push(FxRef::new("blur"));
         let mut t = Track::new(TrackKind::Effect);
         t.clips = vec![c, d];
@@ -487,13 +487,13 @@ mod tests {
             m,
             vec![
                 ("t.pack/glow".to_string(), "t.pack/glow".to_string()),
-                ("weg/filter".to_string(), "weg/filter".to_string())
+                ("gone/filter".to_string(), "gone/filter".to_string())
             ]
         );
         assert_eq!(missing_in(&[pack(true)], &p).len(), 1);
         // name even with the package disabled; only entirely missing packages stay at the id
         assert_eq!(name_any_in(&[pack(false)], "t.pack/warm").as_deref(), Some("warm"));
-        assert_eq!(name_any_in(&[pack(false)], "weg/filter"), None);
+        assert_eq!(name_any_in(&[pack(false)], "gone/filter"), None);
     }
 
     fn shader_pack(enabled: bool) -> Pack {
@@ -501,8 +501,8 @@ mod tests {
         p.entries = vec![Entry {
             id: "t.pack/swirl".into(),
             kind: Kind::Transition,
-            name: "Wirbel".into(),
-            categories: vec!["Effekt".into()],
+            name: "Whirl".into(),
+            categories: vec!["Effect".into()],
             pack: "t.pack".into(),
             license: "MIT".into(),
             author: "A".into(),

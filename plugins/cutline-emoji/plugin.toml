@@ -14,7 +14,7 @@ source = "https://github.com/microsoft/fluentui-emoji"
 id = "face-with-tears-of-joy"
 kind = "sticker"
 name = { de = "Lachen mit Tränen", en = "Tears of joy" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/face-with-tears-of-joy.svg"
 tags = ["emoji", "tears of joy"]
 
@@ -22,7 +22,7 @@ tags = ["emoji", "tears of joy"]
 id = "rolling-on-the-floor-laughing"
 kind = "sticker"
 name = { de = "Vor Lachen am Boden", en = "Rolling on the floor" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/rolling-on-the-floor-laughing.svg"
 tags = ["emoji", "rolling on the floor"]
 
@@ -30,7 +30,7 @@ tags = ["emoji", "rolling on the floor"]
 id = "grinning-face"
 kind = "sticker"
 name = { de = "Grinsen", en = "Grinning face" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/grinning-face.svg"
 tags = ["emoji", "grinning face"]
 
@@ -38,7 +38,7 @@ tags = ["emoji", "grinning face"]
 id = "grinning-face-with-big-eyes"
 kind = "sticker"
 name = { de = "Grinsen große Augen", en = "Grinning, big eyes" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/grinning-face-with-big-eyes.svg"
 tags = ["emoji", "grinning, big eyes"]
 
@@ -46,7 +46,7 @@ tags = ["emoji", "grinning, big eyes"]
 id = "smiling-face-with-smiling-eyes"
 kind = "sticker"
 name = { de = "Lächeln", en = "Smiling" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/smiling-face-with-smiling-eyes.svg"
 tags = ["emoji", "smiling"]
 
@@ -54,7 +54,7 @@ tags = ["emoji", "smiling"]
 id = "winking-face"
 kind = "sticker"
 name = { de = "Zwinkern", en = "Wink" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/winking-face.svg"
 tags = ["emoji", "wink"]
 
@@ -62,7 +62,7 @@ tags = ["emoji", "wink"]
 id = "zany-face"
 kind = "sticker"
 name = { de = "Verrückt", en = "Zany" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/zany-face.svg"
 tags = ["emoji", "zany"]
 
@@ -70,7 +70,7 @@ tags = ["emoji", "zany"]
 id = "smirking-face"
 kind = "sticker"
 name = { de = "Grinsen frech", en = "Smirk" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/smirking-face.svg"
 tags = ["emoji", "smirk"]
 
@@ -78,7 +78,7 @@ tags = ["emoji", "smirk"]
 id = "unamused-face"
 kind = "sticker"
 name = { de = "Genervt", en = "Unamused" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/unamused-face.svg"
 tags = ["emoji", "unamused"]
 
@@ -86,7 +86,7 @@ tags = ["emoji", "unamused"]
 id = "face-with-rolling-eyes"
 kind = "sticker"
 name = { de = "Augenrollen", en = "Eye roll" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/face-with-rolling-eyes.svg"
 tags = ["emoji", "eye roll"]
 
@@ -94,7 +94,7 @@ tags = ["emoji", "eye roll"]
 id = "thinking-face"
 kind = "sticker"
 name = { de = "Nachdenken", en = "Thinking" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/thinking-face.svg"
 tags = ["emoji", "thinking"]
 
@@ -102,7 +102,7 @@ tags = ["emoji", "thinking"]
 id = "nerd-face"
 kind = "sticker"
 name = { de = "Nerd", en = "Nerd" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/nerd-face.svg"
 tags = ["emoji", "nerd"]
 
@@ -110,7 +110,7 @@ tags = ["emoji", "nerd"]
 id = "smiling-face-with-sunglasses"
 kind = "sticker"
 name = { de = "Cool", en = "Cool" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/smiling-face-with-sunglasses.svg"
 tags = ["emoji", "cool"]
 
@@ -118,7 +118,7 @@ tags = ["emoji", "cool"]
 id = "star-struck"
 kind = "sticker"
 name = { de = "Begeistert", en = "Star-struck" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/star-struck.svg"
 tags = ["emoji", "star-struck"]
 
@@ -126,7 +126,7 @@ tags = ["emoji", "star-struck"]
 id = "partying-face"
 kind = "sticker"
 name = { de = "Party-Gesicht", en = "Partying face" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/partying-face.svg"
 tags = ["emoji", "partying face"]
 
@@ -134,7 +134,7 @@ tags = ["emoji", "partying face"]
 id = "smiling-face-with-heart-eyes"
 kind = "sticker"
 name = { de = "Herzaugen", en = "Heart eyes" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/smiling-face-with-heart-eyes.svg"
 tags = ["emoji", "heart eyes"]
 
@@ -142,7 +142,7 @@ tags = ["emoji", "heart eyes"]
 id = "face-blowing-a-kiss"
 kind = "sticker"
 name = { de = "Kusshand", en = "Blowing a kiss" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/face-blowing-a-kiss.svg"
 tags = ["emoji", "blowing a kiss"]
 
@@ -150,7 +150,7 @@ tags = ["emoji", "blowing a kiss"]
 id = "smiling-face-with-halo"
 kind = "sticker"
 name = { de = "Engel", en = "Angel" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/smiling-face-with-halo.svg"
 tags = ["emoji", "angel"]
 
@@ -158,7 +158,7 @@ tags = ["emoji", "angel"]
 id = "smiling-face-with-horns"
 kind = "sticker"
 name = { de = "Teufelchen", en = "Devilish" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/smiling-face-with-horns.svg"
 tags = ["emoji", "devilish"]
 
@@ -166,7 +166,7 @@ tags = ["emoji", "devilish"]
 id = "angry-face-with-horns"
 kind = "sticker"
 name = { de = "Böser Teufel", en = "Angry devil" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/angry-face-with-horns.svg"
 tags = ["emoji", "angry devil"]
 
@@ -174,7 +174,7 @@ tags = ["emoji", "angry devil"]
 id = "smiling-face-with-tear"
 kind = "sticker"
 name = { de = "Gerührt", en = "Touched" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/smiling-face-with-tear.svg"
 tags = ["emoji", "touched"]
 
@@ -182,7 +182,7 @@ tags = ["emoji", "touched"]
 id = "pleading-face"
 kind = "sticker"
 name = { de = "Bettelblick", en = "Pleading" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/pleading-face.svg"
 tags = ["emoji", "pleading"]
 
@@ -190,7 +190,7 @@ tags = ["emoji", "pleading"]
 id = "loudly-crying-face"
 kind = "sticker"
 name = { de = "Heulen", en = "Sobbing" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/loudly-crying-face.svg"
 tags = ["emoji", "sobbing"]
 
@@ -198,7 +198,7 @@ tags = ["emoji", "sobbing"]
 id = "crying-face"
 kind = "sticker"
 name = { de = "Weinen", en = "Crying" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/crying-face.svg"
 tags = ["emoji", "crying"]
 
@@ -206,7 +206,7 @@ tags = ["emoji", "crying"]
 id = "face-holding-back-tears"
 kind = "sticker"
 name = { de = "Tränen zurückhalten", en = "Holding back tears" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/face-holding-back-tears.svg"
 tags = ["emoji", "holding back tears"]
 
@@ -214,7 +214,7 @@ tags = ["emoji", "holding back tears"]
 id = "sad-but-relieved-face"
 kind = "sticker"
 name = { de = "Traurig erleichtert", en = "Sad but relieved" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/sad-but-relieved-face.svg"
 tags = ["emoji", "sad but relieved"]
 
@@ -222,7 +222,7 @@ tags = ["emoji", "sad but relieved"]
 id = "disappointed-face"
 kind = "sticker"
 name = { de = "Enttäuscht", en = "Disappointed" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/disappointed-face.svg"
 tags = ["emoji", "disappointed"]
 
@@ -230,7 +230,7 @@ tags = ["emoji", "disappointed"]
 id = "worried-face"
 kind = "sticker"
 name = { de = "Besorgt", en = "Worried" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/worried-face.svg"
 tags = ["emoji", "worried"]
 
@@ -238,7 +238,7 @@ tags = ["emoji", "worried"]
 id = "fearful-face"
 kind = "sticker"
 name = { de = "Ängstlich", en = "Fearful" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/fearful-face.svg"
 tags = ["emoji", "fearful"]
 
@@ -246,7 +246,7 @@ tags = ["emoji", "fearful"]
 id = "face-screaming-in-fear"
 kind = "sticker"
 name = { de = "Schreien vor Angst", en = "Screaming in fear" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/face-screaming-in-fear.svg"
 tags = ["emoji", "screaming in fear"]
 
@@ -254,7 +254,7 @@ tags = ["emoji", "screaming in fear"]
 id = "downcast-face-with-sweat"
 kind = "sticker"
 name = { de = "Kalter Schweiß", en = "Cold sweat" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/downcast-face-with-sweat.svg"
 tags = ["emoji", "cold sweat"]
 
@@ -262,7 +262,7 @@ tags = ["emoji", "cold sweat"]
 id = "weary-face"
 kind = "sticker"
 name = { de = "Erschöpft", en = "Weary" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/weary-face.svg"
 tags = ["emoji", "weary"]
 
@@ -270,7 +270,7 @@ tags = ["emoji", "weary"]
 id = "yawning-face"
 kind = "sticker"
 name = { de = "Gähnen", en = "Yawn" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/yawning-face.svg"
 tags = ["emoji", "yawn"]
 
@@ -278,7 +278,7 @@ tags = ["emoji", "yawn"]
 id = "sleeping-face"
 kind = "sticker"
 name = { de = "Schlafen", en = "Sleeping" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/sleeping-face.svg"
 tags = ["emoji", "sleeping"]
 
@@ -286,7 +286,7 @@ tags = ["emoji", "sleeping"]
 id = "pouting-face"
 kind = "sticker"
 name = { de = "Schmollen", en = "Pouting" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/pouting-face.svg"
 tags = ["emoji", "pouting"]
 
@@ -294,7 +294,7 @@ tags = ["emoji", "pouting"]
 id = "angry-face"
 kind = "sticker"
 name = { de = "Wütend", en = "Angry" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/angry-face.svg"
 tags = ["emoji", "angry"]
 
@@ -302,7 +302,7 @@ tags = ["emoji", "angry"]
 id = "face-with-symbols-on-mouth"
 kind = "sticker"
 name = { de = "Fluchen", en = "Cursing" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/face-with-symbols-on-mouth.svg"
 tags = ["emoji", "cursing"]
 
@@ -310,7 +310,7 @@ tags = ["emoji", "cursing"]
 id = "exploding-head"
 kind = "sticker"
 name = { de = "Explodierender Kopf", en = "Exploding head" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/exploding-head.svg"
 tags = ["emoji", "exploding head"]
 
@@ -318,7 +318,7 @@ tags = ["emoji", "exploding head"]
 id = "astonished-face"
 kind = "sticker"
 name = { de = "Erstaunt", en = "Astonished" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/astonished-face.svg"
 tags = ["emoji", "astonished"]
 
@@ -326,7 +326,7 @@ tags = ["emoji", "astonished"]
 id = "face-with-open-mouth"
 kind = "sticker"
 name = { de = "Offener Mund", en = "Open mouth" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/face-with-open-mouth.svg"
 tags = ["emoji", "open mouth"]
 
@@ -334,7 +334,7 @@ tags = ["emoji", "open mouth"]
 id = "face-with-hand-over-mouth"
 kind = "sticker"
 name = { de = "Hand vor dem Mund", en = "Hand over mouth" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/face-with-hand-over-mouth.svg"
 tags = ["emoji", "hand over mouth"]
 
@@ -342,7 +342,7 @@ tags = ["emoji", "hand over mouth"]
 id = "shushing-face"
 kind = "sticker"
 name = { de = "Psst", en = "Shushing" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/shushing-face.svg"
 tags = ["emoji", "shushing"]
 
@@ -350,7 +350,7 @@ tags = ["emoji", "shushing"]
 id = "melting-face"
 kind = "sticker"
 name = { de = "Schmelzen", en = "Melting" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/melting-face.svg"
 tags = ["emoji", "melting"]
 
@@ -358,7 +358,7 @@ tags = ["emoji", "melting"]
 id = "hugging-face"
 kind = "sticker"
 name = { de = "Umarmung", en = "Hug" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/hugging-face.svg"
 tags = ["emoji", "hug"]
 
@@ -366,7 +366,7 @@ tags = ["emoji", "hug"]
 id = "money-mouth-face"
 kind = "sticker"
 name = { de = "Geldgesicht", en = "Money face" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/money-mouth-face.svg"
 tags = ["emoji", "money face"]
 
@@ -374,7 +374,7 @@ tags = ["emoji", "money face"]
 id = "knocked-out-face"
 kind = "sticker"
 name = { de = "K.o.", en = "Knocked out" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/knocked-out-face.svg"
 tags = ["emoji", "knocked out"]
 
@@ -382,7 +382,7 @@ tags = ["emoji", "knocked out"]
 id = "clown-face"
 kind = "sticker"
 name = { de = "Clown", en = "Clown" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/clown-face.svg"
 tags = ["emoji", "clown"]
 
@@ -390,7 +390,7 @@ tags = ["emoji", "clown"]
 id = "ghost"
 kind = "sticker"
 name = { de = "Geist", en = "Ghost" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/ghost.svg"
 tags = ["emoji", "ghost"]
 
@@ -398,7 +398,7 @@ tags = ["emoji", "ghost"]
 id = "skull"
 kind = "sticker"
 name = { de = "Totenkopf", en = "Skull" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/skull.svg"
 tags = ["emoji", "skull"]
 
@@ -406,7 +406,7 @@ tags = ["emoji", "skull"]
 id = "alien"
 kind = "sticker"
 name = { de = "Alien", en = "Alien" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/alien.svg"
 tags = ["emoji", "alien"]
 
@@ -414,7 +414,7 @@ tags = ["emoji", "alien"]
 id = "robot"
 kind = "sticker"
 name = { de = "Roboter", en = "Robot" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/robot.svg"
 tags = ["emoji", "robot"]
 
@@ -422,7 +422,7 @@ tags = ["emoji", "robot"]
 id = "pile-of-poo"
 kind = "sticker"
 name = { de = "Haufen", en = "Pile of poo" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/pile-of-poo.svg"
 tags = ["emoji", "pile of poo"]
 
@@ -430,7 +430,7 @@ tags = ["emoji", "pile of poo"]
 id = "thumbs-up"
 kind = "sticker"
 name = { de = "Daumen hoch", en = "Thumbs up" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/thumbs-up.svg"
 tags = ["emoji", "thumbs up"]
 
@@ -438,7 +438,7 @@ tags = ["emoji", "thumbs up"]
 id = "thumbs-down"
 kind = "sticker"
 name = { de = "Daumen runter", en = "Thumbs down" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/thumbs-down.svg"
 tags = ["emoji", "thumbs down"]
 
@@ -446,7 +446,7 @@ tags = ["emoji", "thumbs down"]
 id = "clapping-hands"
 kind = "sticker"
 name = { de = "Klatschen", en = "Clapping" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/clapping-hands.svg"
 tags = ["emoji", "clapping"]
 
@@ -454,7 +454,7 @@ tags = ["emoji", "clapping"]
 id = "folded-hands"
 kind = "sticker"
 name = { de = "Bitte danke", en = "Folded hands" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/folded-hands.svg"
 tags = ["emoji", "folded hands"]
 
@@ -462,7 +462,7 @@ tags = ["emoji", "folded hands"]
 id = "raised-fist"
 kind = "sticker"
 name = { de = "Faust", en = "Raised fist" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/raised-fist.svg"
 tags = ["emoji", "raised fist"]
 
@@ -470,7 +470,7 @@ tags = ["emoji", "raised fist"]
 id = "flexed-biceps"
 kind = "sticker"
 name = { de = "Bizeps", en = "Flexed biceps" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/flexed-biceps.svg"
 tags = ["emoji", "flexed biceps"]
 
@@ -478,7 +478,7 @@ tags = ["emoji", "flexed biceps"]
 id = "waving-hand"
 kind = "sticker"
 name = { de = "Winken", en = "Waving" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/waving-hand.svg"
 tags = ["emoji", "waving"]
 
@@ -486,7 +486,7 @@ tags = ["emoji", "waving"]
 id = "victory-hand"
 kind = "sticker"
 name = { de = "Victory", en = "Victory" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/victory-hand.svg"
 tags = ["emoji", "victory"]
 
@@ -494,7 +494,7 @@ tags = ["emoji", "victory"]
 id = "crossed-fingers"
 kind = "sticker"
 name = { de = "Daumen drücken", en = "Crossed fingers" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/crossed-fingers.svg"
 tags = ["emoji", "crossed fingers"]
 
@@ -502,7 +502,7 @@ tags = ["emoji", "crossed fingers"]
 id = "raising-hands"
 kind = "sticker"
 name = { de = "Hände hoch", en = "Raising hands" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/raising-hands.svg"
 tags = ["emoji", "raising hands"]
 
@@ -510,7 +510,7 @@ tags = ["emoji", "raising hands"]
 id = "handshake"
 kind = "sticker"
 name = { de = "Handschlag", en = "Handshake" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/handshake.svg"
 tags = ["emoji", "handshake"]
 
@@ -518,7 +518,7 @@ tags = ["emoji", "handshake"]
 id = "heart-hands"
 kind = "sticker"
 name = { de = "Herz-Hände", en = "Heart hands" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/heart-hands.svg"
 tags = ["emoji", "heart hands"]
 
@@ -526,7 +526,7 @@ tags = ["emoji", "heart hands"]
 id = "backhand-index-pointing-right"
 kind = "sticker"
 name = { de = "Zeigen rechts", en = "Pointing right" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/backhand-index-pointing-right.svg"
 tags = ["emoji", "pointing right"]
 
@@ -534,7 +534,7 @@ tags = ["emoji", "pointing right"]
 id = "backhand-index-pointing-down"
 kind = "sticker"
 name = { de = "Zeigen nach unten", en = "Pointing down" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/backhand-index-pointing-down.svg"
 tags = ["emoji", "pointing down"]
 
@@ -542,7 +542,7 @@ tags = ["emoji", "pointing down"]
 id = "eyes"
 kind = "sticker"
 name = { de = "Augen", en = "Eyes" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/eyes.svg"
 tags = ["emoji", "eyes"]
 
@@ -550,7 +550,7 @@ tags = ["emoji", "eyes"]
 id = "red-heart"
 kind = "sticker"
 name = { de = "Rotes Herz", en = "Red heart" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/red-heart.svg"
 tags = ["emoji", "red heart"]
 
@@ -558,7 +558,7 @@ tags = ["emoji", "red heart"]
 id = "green-heart"
 kind = "sticker"
 name = { de = "Grünes Herz", en = "Green heart" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/green-heart.svg"
 tags = ["emoji", "green heart"]
 
@@ -566,7 +566,7 @@ tags = ["emoji", "green heart"]
 id = "blue-heart"
 kind = "sticker"
 name = { de = "Blaues Herz", en = "Blue heart" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/blue-heart.svg"
 tags = ["emoji", "blue heart"]
 
@@ -574,7 +574,7 @@ tags = ["emoji", "blue heart"]
 id = "purple-heart"
 kind = "sticker"
 name = { de = "Lila Herz", en = "Purple heart" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/purple-heart.svg"
 tags = ["emoji", "purple heart"]
 
@@ -582,7 +582,7 @@ tags = ["emoji", "purple heart"]
 id = "broken-heart"
 kind = "sticker"
 name = { de = "Gebrochenes Herz", en = "Broken heart" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/broken-heart.svg"
 tags = ["emoji", "broken heart"]
 
@@ -590,7 +590,7 @@ tags = ["emoji", "broken heart"]
 id = "heart-on-fire"
 kind = "sticker"
 name = { de = "Brennendes Herz", en = "Heart on fire" }
-category = ["Reaktionen"]
+category = ["Reactions"]
 file = "svg/heart-on-fire.svg"
 tags = ["emoji", "heart on fire"]
 
@@ -598,7 +598,7 @@ tags = ["emoji", "heart on fire"]
 id = "fire"
 kind = "sticker"
 name = { de = "Feuer", en = "Fire" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/fire.svg"
 tags = ["emoji", "fire"]
 
@@ -606,7 +606,7 @@ tags = ["emoji", "fire"]
 id = "hundred-points"
 kind = "sticker"
 name = { de = "100 Punkte", en = "100 points" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/hundred-points.svg"
 tags = ["emoji", "100 points"]
 
@@ -614,7 +614,7 @@ tags = ["emoji", "100 points"]
 id = "glowing-star"
 kind = "sticker"
 name = { de = "Leuchtender Stern", en = "Glowing star" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/glowing-star.svg"
 tags = ["emoji", "glowing star"]
 
@@ -622,7 +622,7 @@ tags = ["emoji", "glowing star"]
 id = "star"
 kind = "sticker"
 name = { de = "Stern", en = "Star" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/star.svg"
 tags = ["emoji", "star"]
 
@@ -630,7 +630,7 @@ tags = ["emoji", "star"]
 id = "sparkles"
 kind = "sticker"
 name = { de = "Funkeln", en = "Sparkles" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/sparkles.svg"
 tags = ["emoji", "sparkles"]
 
@@ -638,7 +638,7 @@ tags = ["emoji", "sparkles"]
 id = "high-voltage"
 kind = "sticker"
 name = { de = "Blitz", en = "High voltage" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/high-voltage.svg"
 tags = ["emoji", "high voltage"]
 
@@ -646,7 +646,7 @@ tags = ["emoji", "high voltage"]
 id = "collision"
 kind = "sticker"
 name = { de = "Knall", en = "Collision" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/collision.svg"
 tags = ["emoji", "collision"]
 
@@ -654,7 +654,7 @@ tags = ["emoji", "collision"]
 id = "party-popper"
 kind = "sticker"
 name = { de = "Konfetti-Kanone", en = "Party popper" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/party-popper.svg"
 tags = ["emoji", "party popper"]
 
@@ -662,7 +662,7 @@ tags = ["emoji", "party popper"]
 id = "balloon"
 kind = "sticker"
 name = { de = "Luftballon", en = "Balloon" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/balloon.svg"
 tags = ["emoji", "balloon"]
 
@@ -670,7 +670,7 @@ tags = ["emoji", "balloon"]
 id = "wrapped-gift"
 kind = "sticker"
 name = { de = "Geschenk", en = "Gift" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/wrapped-gift.svg"
 tags = ["emoji", "gift"]
 
@@ -678,7 +678,7 @@ tags = ["emoji", "gift"]
 id = "trophy"
 kind = "sticker"
 name = { de = "Pokal", en = "Trophy" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/trophy.svg"
 tags = ["emoji", "trophy"]
 
@@ -686,7 +686,7 @@ tags = ["emoji", "trophy"]
 id = "1st-place-medal"
 kind = "sticker"
 name = { de = "Goldmedaille", en = "Gold medal" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/1st-place-medal.svg"
 tags = ["emoji", "gold medal"]
 
@@ -694,7 +694,7 @@ tags = ["emoji", "gold medal"]
 id = "crown"
 kind = "sticker"
 name = { de = "Krone", en = "Crown" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/crown.svg"
 tags = ["emoji", "crown"]
 
@@ -702,7 +702,7 @@ tags = ["emoji", "crown"]
 id = "gem-stone"
 kind = "sticker"
 name = { de = "Edelstein", en = "Gem" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/gem-stone.svg"
 tags = ["emoji", "gem"]
 
@@ -710,7 +710,7 @@ tags = ["emoji", "gem"]
 id = "money-bag"
 kind = "sticker"
 name = { de = "Geldsack", en = "Money bag" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/money-bag.svg"
 tags = ["emoji", "money bag"]
 
@@ -718,7 +718,7 @@ tags = ["emoji", "money bag"]
 id = "dollar-banknote"
 kind = "sticker"
 name = { de = "Dollarschein", en = "Dollar bill" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/dollar-banknote.svg"
 tags = ["emoji", "dollar bill"]
 
@@ -726,7 +726,7 @@ tags = ["emoji", "dollar bill"]
 id = "rocket"
 kind = "sticker"
 name = { de = "Rakete", en = "Rocket" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/rocket.svg"
 tags = ["emoji", "rocket"]
 
@@ -734,7 +734,7 @@ tags = ["emoji", "rocket"]
 id = "bullseye"
 kind = "sticker"
 name = { de = "Volltreffer", en = "Bullseye" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/bullseye.svg"
 tags = ["emoji", "bullseye"]
 
@@ -742,7 +742,7 @@ tags = ["emoji", "bullseye"]
 id = "bomb"
 kind = "sticker"
 name = { de = "Bombe", en = "Bomb" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/bomb.svg"
 tags = ["emoji", "bomb"]
 
@@ -750,7 +750,7 @@ tags = ["emoji", "bomb"]
 id = "crossed-swords"
 kind = "sticker"
 name = { de = "Gekreuzte Schwerter", en = "Crossed swords" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/crossed-swords.svg"
 tags = ["emoji", "crossed swords"]
 
@@ -758,7 +758,7 @@ tags = ["emoji", "crossed swords"]
 id = "video-game"
 kind = "sticker"
 name = { de = "Controller", en = "Game controller" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/video-game.svg"
 tags = ["emoji", "game controller"]
 
@@ -766,7 +766,7 @@ tags = ["emoji", "game controller"]
 id = "game-die"
 kind = "sticker"
 name = { de = "Würfel", en = "Die" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/game-die.svg"
 tags = ["emoji", "die"]
 
@@ -774,7 +774,7 @@ tags = ["emoji", "die"]
 id = "puzzle-piece"
 kind = "sticker"
 name = { de = "Puzzleteil", en = "Puzzle piece" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/puzzle-piece.svg"
 tags = ["emoji", "puzzle piece"]
 
@@ -782,7 +782,7 @@ tags = ["emoji", "puzzle piece"]
 id = "warning"
 kind = "sticker"
 name = { de = "Warnung", en = "Warning" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/warning.svg"
 tags = ["emoji", "warning"]
 
@@ -790,7 +790,7 @@ tags = ["emoji", "warning"]
 id = "check-mark-button"
 kind = "sticker"
 name = { de = "Haken", en = "Check mark" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/check-mark-button.svg"
 tags = ["emoji", "check mark"]
 
@@ -798,7 +798,7 @@ tags = ["emoji", "check mark"]
 id = "cross-mark"
 kind = "sticker"
 name = { de = "Kreuz", en = "Cross mark" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/cross-mark.svg"
 tags = ["emoji", "cross mark"]
 
@@ -806,7 +806,7 @@ tags = ["emoji", "cross mark"]
 id = "prohibited"
 kind = "sticker"
 name = { de = "Verboten", en = "Prohibited" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/prohibited.svg"
 tags = ["emoji", "prohibited"]
 
@@ -814,7 +814,7 @@ tags = ["emoji", "prohibited"]
 id = "red-question-mark"
 kind = "sticker"
 name = { de = "Fragezeichen", en = "Question mark" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/red-question-mark.svg"
 tags = ["emoji", "question mark"]
 
@@ -822,7 +822,7 @@ tags = ["emoji", "question mark"]
 id = "red-exclamation-mark"
 kind = "sticker"
 name = { de = "Ausrufezeichen", en = "Exclamation mark" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/red-exclamation-mark.svg"
 tags = ["emoji", "exclamation mark"]
 
@@ -830,7 +830,7 @@ tags = ["emoji", "exclamation mark"]
 id = "right-arrow"
 kind = "sticker"
 name = { de = "Pfeil rechts", en = "Right arrow" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/right-arrow.svg"
 tags = ["emoji", "right arrow"]
 
@@ -838,7 +838,7 @@ tags = ["emoji", "right arrow"]
 id = "left-arrow"
 kind = "sticker"
 name = { de = "Pfeil links", en = "Left arrow" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/left-arrow.svg"
 tags = ["emoji", "left arrow"]
 
@@ -846,7 +846,7 @@ tags = ["emoji", "left arrow"]
 id = "up-arrow"
 kind = "sticker"
 name = { de = "Pfeil nach oben", en = "Up arrow" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/up-arrow.svg"
 tags = ["emoji", "up arrow"]
 
@@ -854,7 +854,7 @@ tags = ["emoji", "up arrow"]
 id = "down-arrow"
 kind = "sticker"
 name = { de = "Pfeil nach unten", en = "Down arrow" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/down-arrow.svg"
 tags = ["emoji", "down arrow"]
 
@@ -862,7 +862,7 @@ tags = ["emoji", "down arrow"]
 id = "counterclockwise-arrows-button"
 kind = "sticker"
 name = { de = "Wiederholen", en = "Repeat" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/counterclockwise-arrows-button.svg"
 tags = ["emoji", "repeat"]
 
@@ -870,7 +870,7 @@ tags = ["emoji", "repeat"]
 id = "play-button"
 kind = "sticker"
 name = { de = "Abspielen", en = "Play" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/play-button.svg"
 tags = ["emoji", "play"]
 
@@ -878,7 +878,7 @@ tags = ["emoji", "play"]
 id = "pause-button"
 kind = "sticker"
 name = { de = "Pause", en = "Pause" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/pause-button.svg"
 tags = ["emoji", "pause"]
 
@@ -886,7 +886,7 @@ tags = ["emoji", "pause"]
 id = "speaker-high-volume"
 kind = "sticker"
 name = { de = "Lautsprecher", en = "Speaker" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/speaker-high-volume.svg"
 tags = ["emoji", "speaker"]
 
@@ -894,7 +894,7 @@ tags = ["emoji", "speaker"]
 id = "megaphone"
 kind = "sticker"
 name = { de = "Megafon", en = "Megaphone" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/megaphone.svg"
 tags = ["emoji", "megaphone"]
 
@@ -902,7 +902,7 @@ tags = ["emoji", "megaphone"]
 id = "bell"
 kind = "sticker"
 name = { de = "Glocke", en = "Bell" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/bell.svg"
 tags = ["emoji", "bell"]
 
@@ -910,7 +910,7 @@ tags = ["emoji", "bell"]
 id = "microphone"
 kind = "sticker"
 name = { de = "Mikrofon", en = "Microphone" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/microphone.svg"
 tags = ["emoji", "microphone"]
 
@@ -918,7 +918,7 @@ tags = ["emoji", "microphone"]
 id = "headphone"
 kind = "sticker"
 name = { de = "Kopfhörer", en = "Headphones" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/headphone.svg"
 tags = ["emoji", "headphones"]
 
@@ -926,7 +926,7 @@ tags = ["emoji", "headphones"]
 id = "musical-notes"
 kind = "sticker"
 name = { de = "Noten", en = "Musical notes" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/musical-notes.svg"
 tags = ["emoji", "musical notes"]
 
@@ -934,7 +934,7 @@ tags = ["emoji", "musical notes"]
 id = "video-camera"
 kind = "sticker"
 name = { de = "Videokamera", en = "Video camera" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/video-camera.svg"
 tags = ["emoji", "video camera"]
 
@@ -942,7 +942,7 @@ tags = ["emoji", "video camera"]
 id = "camera-with-flash"
 kind = "sticker"
 name = { de = "Kamera mit Blitz", en = "Camera with flash" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/camera-with-flash.svg"
 tags = ["emoji", "camera with flash"]
 
@@ -950,7 +950,7 @@ tags = ["emoji", "camera with flash"]
 id = "clapper-board"
 kind = "sticker"
 name = { de = "Klappe", en = "Clapper board" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/clapper-board.svg"
 tags = ["emoji", "clapper board"]
 
@@ -958,7 +958,7 @@ tags = ["emoji", "clapper board"]
 id = "light-bulb"
 kind = "sticker"
 name = { de = "Glühbirne", en = "Light bulb" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/light-bulb.svg"
 tags = ["emoji", "light bulb"]
 
@@ -966,7 +966,7 @@ tags = ["emoji", "light bulb"]
 id = "magnifying-glass-tilted-left"
 kind = "sticker"
 name = { de = "Lupe", en = "Magnifying glass" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/magnifying-glass-tilted-left.svg"
 tags = ["emoji", "magnifying glass"]
 
@@ -974,7 +974,7 @@ tags = ["emoji", "magnifying glass"]
 id = "chart-increasing"
 kind = "sticker"
 name = { de = "Kurs steigt", en = "Chart up" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/chart-increasing.svg"
 tags = ["emoji", "chart up"]
 
@@ -982,7 +982,7 @@ tags = ["emoji", "chart up"]
 id = "speech-balloon"
 kind = "sticker"
 name = { de = "Sprechblase", en = "Speech balloon" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/speech-balloon.svg"
 tags = ["emoji", "speech balloon"]
 
@@ -990,7 +990,7 @@ tags = ["emoji", "speech balloon"]
 id = "alarm-clock"
 kind = "sticker"
 name = { de = "Wecker", en = "Alarm clock" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/alarm-clock.svg"
 tags = ["emoji", "alarm clock"]
 
@@ -998,7 +998,7 @@ tags = ["emoji", "alarm clock"]
 id = "hourglass-done"
 kind = "sticker"
 name = { de = "Sanduhr", en = "Hourglass" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/hourglass-done.svg"
 tags = ["emoji", "hourglass"]
 
@@ -1006,7 +1006,7 @@ tags = ["emoji", "hourglass"]
 id = "stopwatch"
 kind = "sticker"
 name = { de = "Stoppuhr", en = "Stopwatch" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/stopwatch.svg"
 tags = ["emoji", "stopwatch"]
 
@@ -1014,7 +1014,7 @@ tags = ["emoji", "stopwatch"]
 id = "rainbow"
 kind = "sticker"
 name = { de = "Regenbogen", en = "Rainbow" }
-category = ["Symbole"]
+category = ["Symbols"]
 file = "svg/rainbow.svg"
 tags = ["emoji", "rainbow"]
 
@@ -1022,7 +1022,7 @@ tags = ["emoji", "rainbow"]
 id = "dog-face"
 kind = "sticker"
 name = { de = "Hund", en = "Dog" }
-category = ["Tiere & Essen"]
+category = ["Animals & food"]
 file = "svg/dog-face.svg"
 tags = ["emoji", "dog"]
 
@@ -1030,7 +1030,7 @@ tags = ["emoji", "dog"]
 id = "cat-face"
 kind = "sticker"
 name = { de = "Katze", en = "Cat" }
-category = ["Tiere & Essen"]
+category = ["Animals & food"]
 file = "svg/cat-face.svg"
 tags = ["emoji", "cat"]
 
@@ -1038,7 +1038,7 @@ tags = ["emoji", "cat"]
 id = "bear"
 kind = "sticker"
 name = { de = "Bär", en = "Bear" }
-category = ["Tiere & Essen"]
+category = ["Animals & food"]
 file = "svg/bear.svg"
 tags = ["emoji", "bear"]
 
@@ -1046,7 +1046,7 @@ tags = ["emoji", "bear"]
 id = "panda"
 kind = "sticker"
 name = { de = "Panda", en = "Panda" }
-category = ["Tiere & Essen"]
+category = ["Animals & food"]
 file = "svg/panda.svg"
 tags = ["emoji", "panda"]
 
@@ -1054,7 +1054,7 @@ tags = ["emoji", "panda"]
 id = "frog"
 kind = "sticker"
 name = { de = "Frosch", en = "Frog" }
-category = ["Tiere & Essen"]
+category = ["Animals & food"]
 file = "svg/frog.svg"
 tags = ["emoji", "frog"]
 
@@ -1062,7 +1062,7 @@ tags = ["emoji", "frog"]
 id = "penguin"
 kind = "sticker"
 name = { de = "Pinguin", en = "Penguin" }
-category = ["Tiere & Essen"]
+category = ["Animals & food"]
 file = "svg/penguin.svg"
 tags = ["emoji", "penguin"]
 
@@ -1070,7 +1070,7 @@ tags = ["emoji", "penguin"]
 id = "pizza"
 kind = "sticker"
 name = { de = "Pizza", en = "Pizza" }
-category = ["Tiere & Essen"]
+category = ["Animals & food"]
 file = "svg/pizza.svg"
 tags = ["emoji", "pizza"]
 
@@ -1078,7 +1078,7 @@ tags = ["emoji", "pizza"]
 id = "hamburger"
 kind = "sticker"
 name = { de = "Burger", en = "Burger" }
-category = ["Tiere & Essen"]
+category = ["Animals & food"]
 file = "svg/hamburger.svg"
 tags = ["emoji", "burger"]
 
@@ -1086,7 +1086,7 @@ tags = ["emoji", "burger"]
 id = "french-fries"
 kind = "sticker"
 name = { de = "Pommes", en = "Fries" }
-category = ["Tiere & Essen"]
+category = ["Animals & food"]
 file = "svg/french-fries.svg"
 tags = ["emoji", "fries"]
 
@@ -1094,7 +1094,7 @@ tags = ["emoji", "fries"]
 id = "doughnut"
 kind = "sticker"
 name = { de = "Donut", en = "Doughnut" }
-category = ["Tiere & Essen"]
+category = ["Animals & food"]
 file = "svg/doughnut.svg"
 tags = ["emoji", "doughnut"]
 
@@ -1102,7 +1102,7 @@ tags = ["emoji", "doughnut"]
 id = "beer-mug"
 kind = "sticker"
 name = { de = "Bier", en = "Beer" }
-category = ["Tiere & Essen"]
+category = ["Animals & food"]
 file = "svg/beer-mug.svg"
 tags = ["emoji", "beer"]
 
@@ -1110,533 +1110,533 @@ tags = ["emoji", "beer"]
 id = "bottle-with-popping-cork"
 kind = "sticker"
 name = { de = "Sektkorken", en = "Popping cork" }
-category = ["Tiere & Essen"]
+category = ["Animals & food"]
 file = "svg/bottle-with-popping-cork.svg"
 tags = ["emoji", "popping cork"]
 
 [[asset]]
-id = "face-with-tears-of-joy-bewegt"
+id = "face-with-tears-of-joy-animated"
 kind = "sticker"
 name = { de = "Lachen mit Tränen (bewegt)", en = "Tears of joy (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/face-with-tears-of-joy.png"
+category = ["Reactions"]
+file = "animated/face-with-tears-of-joy.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "tears of joy"]
 
 [[asset]]
-id = "rolling-on-the-floor-laughing-bewegt"
+id = "rolling-on-the-floor-laughing-animated"
 kind = "sticker"
 name = { de = "Vor Lachen am Boden (bewegt)", en = "Rolling on the floor (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/rolling-on-the-floor-laughing.png"
+category = ["Reactions"]
+file = "animated/rolling-on-the-floor-laughing.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "rolling on the floor"]
 
 [[asset]]
-id = "smiling-face-with-heart-eyes-bewegt"
+id = "smiling-face-with-heart-eyes-animated"
 kind = "sticker"
 name = { de = "Herzaugen (bewegt)", en = "Heart eyes (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/smiling-face-with-heart-eyes.png"
+category = ["Reactions"]
+file = "animated/smiling-face-with-heart-eyes.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "heart eyes"]
 
 [[asset]]
-id = "star-struck-bewegt"
+id = "star-struck-animated"
 kind = "sticker"
 name = { de = "Begeistert (bewegt)", en = "Star-struck (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/star-struck.png"
+category = ["Reactions"]
+file = "animated/star-struck.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "star-struck"]
 
 [[asset]]
-id = "partying-face-bewegt"
+id = "partying-face-animated"
 kind = "sticker"
 name = { de = "Party-Gesicht (bewegt)", en = "Partying face (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/partying-face.png"
+category = ["Reactions"]
+file = "animated/partying-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "partying face"]
 
 [[asset]]
-id = "smiling-face-with-sunglasses-bewegt"
+id = "smiling-face-with-sunglasses-animated"
 kind = "sticker"
 name = { de = "Cool (bewegt)", en = "Cool (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/smiling-face-with-sunglasses.png"
+category = ["Reactions"]
+file = "animated/smiling-face-with-sunglasses.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "cool"]
 
 [[asset]]
-id = "loudly-crying-face-bewegt"
+id = "loudly-crying-face-animated"
 kind = "sticker"
 name = { de = "Heulen (bewegt)", en = "Sobbing (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/loudly-crying-face.png"
+category = ["Reactions"]
+file = "animated/loudly-crying-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "sobbing"]
 
 [[asset]]
-id = "crying-face-bewegt"
+id = "crying-face-animated"
 kind = "sticker"
 name = { de = "Weinen (bewegt)", en = "Crying (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/crying-face.png"
+category = ["Reactions"]
+file = "animated/crying-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "crying"]
 
 [[asset]]
-id = "exploding-head-bewegt"
+id = "exploding-head-animated"
 kind = "sticker"
 name = { de = "Explodierender Kopf (bewegt)", en = "Exploding head (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/exploding-head.png"
+category = ["Reactions"]
+file = "animated/exploding-head.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "exploding head"]
 
 [[asset]]
-id = "thinking-face-bewegt"
+id = "thinking-face-animated"
 kind = "sticker"
 name = { de = "Nachdenken (bewegt)", en = "Thinking (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/thinking-face.png"
+category = ["Reactions"]
+file = "animated/thinking-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "thinking"]
 
 [[asset]]
-id = "pleading-face-bewegt"
+id = "pleading-face-animated"
 kind = "sticker"
 name = { de = "Bettelblick (bewegt)", en = "Pleading (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/pleading-face.png"
+category = ["Reactions"]
+file = "animated/pleading-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "pleading"]
 
 [[asset]]
-id = "face-screaming-in-fear-bewegt"
+id = "face-screaming-in-fear-animated"
 kind = "sticker"
 name = { de = "Schreien vor Angst (bewegt)", en = "Screaming in fear (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/face-screaming-in-fear.png"
+category = ["Reactions"]
+file = "animated/face-screaming-in-fear.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "screaming in fear"]
 
 [[asset]]
-id = "angry-face-bewegt"
+id = "angry-face-animated"
 kind = "sticker"
 name = { de = "Wütend (bewegt)", en = "Angry (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/angry-face.png"
+category = ["Reactions"]
+file = "animated/angry-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "angry"]
 
 [[asset]]
-id = "skull-bewegt"
+id = "skull-animated"
 kind = "sticker"
 name = { de = "Totenkopf (bewegt)", en = "Skull (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/skull.png"
+category = ["Reactions"]
+file = "animated/skull.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "skull"]
 
 [[asset]]
-id = "ghost-bewegt"
+id = "ghost-animated"
 kind = "sticker"
 name = { de = "Geist (bewegt)", en = "Ghost (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/ghost.png"
+category = ["Reactions"]
+file = "animated/ghost.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "ghost"]
 
 [[asset]]
-id = "melting-face-bewegt"
+id = "melting-face-animated"
 kind = "sticker"
 name = { de = "Schmelzen (bewegt)", en = "Melting (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/melting-face.png"
+category = ["Reactions"]
+file = "animated/melting-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "melting"]
 
 [[asset]]
-id = "winking-face-bewegt"
+id = "winking-face-animated"
 kind = "sticker"
 name = { de = "Zwinkern (bewegt)", en = "Wink (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/winking-face.png"
+category = ["Reactions"]
+file = "animated/winking-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "wink"]
 
 [[asset]]
-id = "face-with-rolling-eyes-bewegt"
+id = "face-with-rolling-eyes-animated"
 kind = "sticker"
 name = { de = "Augenrollen (bewegt)", en = "Eye roll (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/face-with-rolling-eyes.png"
+category = ["Reactions"]
+file = "animated/face-with-rolling-eyes.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "eye roll"]
 
 [[asset]]
-id = "zany-face-bewegt"
+id = "zany-face-animated"
 kind = "sticker"
 name = { de = "Verrückt (bewegt)", en = "Zany (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/zany-face.png"
+category = ["Reactions"]
+file = "animated/zany-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "zany"]
 
 [[asset]]
-id = "smirking-face-bewegt"
+id = "smirking-face-animated"
 kind = "sticker"
 name = { de = "Grinsen frech (bewegt)", en = "Smirk (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/smirking-face.png"
+category = ["Reactions"]
+file = "animated/smirking-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "smirk"]
 
 [[asset]]
-id = "yawning-face-bewegt"
+id = "yawning-face-animated"
 kind = "sticker"
 name = { de = "Gähnen (bewegt)", en = "Yawn (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/yawning-face.png"
+category = ["Reactions"]
+file = "animated/yawning-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "yawn"]
 
 [[asset]]
-id = "nerd-face-bewegt"
+id = "nerd-face-animated"
 kind = "sticker"
 name = { de = "Nerd (bewegt)", en = "Nerd (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/nerd-face.png"
+category = ["Reactions"]
+file = "animated/nerd-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "nerd"]
 
 [[asset]]
-id = "money-mouth-face-bewegt"
+id = "money-mouth-face-animated"
 kind = "sticker"
 name = { de = "Geldgesicht (bewegt)", en = "Money face (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/money-mouth-face.png"
+category = ["Reactions"]
+file = "animated/money-mouth-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "money face"]
 
 [[asset]]
-id = "hugging-face-bewegt"
+id = "hugging-face-animated"
 kind = "sticker"
 name = { de = "Umarmung (bewegt)", en = "Hug (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/hugging-face.png"
+category = ["Reactions"]
+file = "animated/hugging-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "hug"]
 
 [[asset]]
-id = "shushing-face-bewegt"
+id = "shushing-face-animated"
 kind = "sticker"
 name = { de = "Psst (bewegt)", en = "Shushing (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/shushing-face.png"
+category = ["Reactions"]
+file = "animated/shushing-face.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "shushing"]
 
 [[asset]]
-id = "smiling-face-with-tear-bewegt"
+id = "smiling-face-with-tear-animated"
 kind = "sticker"
 name = { de = "Gerührt (bewegt)", en = "Touched (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/smiling-face-with-tear.png"
+category = ["Reactions"]
+file = "animated/smiling-face-with-tear.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "touched"]
 
 [[asset]]
-id = "thumbs-up-bewegt"
+id = "thumbs-up-animated"
 kind = "sticker"
 name = { de = "Daumen hoch (bewegt)", en = "Thumbs up (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/thumbs-up.png"
+category = ["Reactions"]
+file = "animated/thumbs-up.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "thumbs up"]
 
 [[asset]]
-id = "thumbs-down-bewegt"
+id = "thumbs-down-animated"
 kind = "sticker"
 name = { de = "Daumen runter (bewegt)", en = "Thumbs down (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/thumbs-down.png"
+category = ["Reactions"]
+file = "animated/thumbs-down.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "thumbs down"]
 
 [[asset]]
-id = "clapping-hands-bewegt"
+id = "clapping-hands-animated"
 kind = "sticker"
 name = { de = "Klatschen (bewegt)", en = "Clapping (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/clapping-hands.png"
+category = ["Reactions"]
+file = "animated/clapping-hands.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "clapping"]
 
 [[asset]]
-id = "folded-hands-bewegt"
+id = "folded-hands-animated"
 kind = "sticker"
 name = { de = "Bitte danke (bewegt)", en = "Folded hands (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/folded-hands.png"
+category = ["Reactions"]
+file = "animated/folded-hands.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "folded hands"]
 
 [[asset]]
-id = "raised-fist-bewegt"
+id = "raised-fist-animated"
 kind = "sticker"
 name = { de = "Faust (bewegt)", en = "Raised fist (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/raised-fist.png"
+category = ["Reactions"]
+file = "animated/raised-fist.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "raised fist"]
 
 [[asset]]
-id = "flexed-biceps-bewegt"
+id = "flexed-biceps-animated"
 kind = "sticker"
 name = { de = "Bizeps (bewegt)", en = "Flexed biceps (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/flexed-biceps.png"
+category = ["Reactions"]
+file = "animated/flexed-biceps.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "flexed biceps"]
 
 [[asset]]
-id = "waving-hand-bewegt"
+id = "waving-hand-animated"
 kind = "sticker"
 name = { de = "Winken (bewegt)", en = "Waving (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/waving-hand.png"
+category = ["Reactions"]
+file = "animated/waving-hand.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "waving"]
 
 [[asset]]
-id = "victory-hand-bewegt"
+id = "victory-hand-animated"
 kind = "sticker"
 name = { de = "Victory (bewegt)", en = "Victory (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/victory-hand.png"
+category = ["Reactions"]
+file = "animated/victory-hand.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "victory"]
 
 [[asset]]
-id = "raising-hands-bewegt"
+id = "raising-hands-animated"
 kind = "sticker"
 name = { de = "Hände hoch (bewegt)", en = "Raising hands (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/raising-hands.png"
+category = ["Reactions"]
+file = "animated/raising-hands.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "raising hands"]
 
 [[asset]]
-id = "handshake-bewegt"
+id = "handshake-animated"
 kind = "sticker"
 name = { de = "Handschlag (bewegt)", en = "Handshake (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/handshake.png"
+category = ["Reactions"]
+file = "animated/handshake.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "handshake"]
 
 [[asset]]
-id = "heart-hands-bewegt"
+id = "heart-hands-animated"
 kind = "sticker"
 name = { de = "Herz-Hände (bewegt)", en = "Heart hands (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/heart-hands.png"
+category = ["Reactions"]
+file = "animated/heart-hands.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "heart hands"]
 
 [[asset]]
-id = "fire-bewegt"
+id = "fire-animated"
 kind = "sticker"
 name = { de = "Feuer (bewegt)", en = "Fire (animated)" }
-category = ["Symbole"]
-file = "bewegt/fire.png"
+category = ["Symbols"]
+file = "animated/fire.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "fire"]
 
 [[asset]]
-id = "hundred-points-bewegt"
+id = "hundred-points-animated"
 kind = "sticker"
 name = { de = "100 Punkte (bewegt)", en = "100 points (animated)" }
-category = ["Symbole"]
-file = "bewegt/hundred-points.png"
+category = ["Symbols"]
+file = "animated/hundred-points.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "100 points"]
 
 [[asset]]
-id = "red-heart-bewegt"
+id = "red-heart-animated"
 kind = "sticker"
 name = { de = "Rotes Herz (bewegt)", en = "Red heart (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/red-heart.png"
+category = ["Reactions"]
+file = "animated/red-heart.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "red heart"]
 
 [[asset]]
-id = "broken-heart-bewegt"
+id = "broken-heart-animated"
 kind = "sticker"
 name = { de = "Gebrochenes Herz (bewegt)", en = "Broken heart (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/broken-heart.png"
+category = ["Reactions"]
+file = "animated/broken-heart.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "broken heart"]
 
 [[asset]]
-id = "party-popper-bewegt"
+id = "party-popper-animated"
 kind = "sticker"
 name = { de = "Konfetti-Kanone (bewegt)", en = "Party popper (animated)" }
-category = ["Symbole"]
-file = "bewegt/party-popper.png"
+category = ["Symbols"]
+file = "animated/party-popper.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "party popper"]
 
 [[asset]]
-id = "rocket-bewegt"
+id = "rocket-animated"
 kind = "sticker"
 name = { de = "Rakete (bewegt)", en = "Rocket (animated)" }
-category = ["Symbole"]
-file = "bewegt/rocket.png"
+category = ["Symbols"]
+file = "animated/rocket.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "rocket"]
 
 [[asset]]
-id = "eyes-bewegt"
+id = "eyes-animated"
 kind = "sticker"
 name = { de = "Augen (bewegt)", en = "Eyes (animated)" }
-category = ["Reaktionen"]
-file = "bewegt/eyes.png"
+category = ["Reactions"]
+file = "animated/eyes.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "eyes"]
 
 [[asset]]
-id = "high-voltage-bewegt"
+id = "high-voltage-animated"
 kind = "sticker"
 name = { de = "Blitz (bewegt)", en = "High voltage (animated)" }
-category = ["Symbole"]
-file = "bewegt/high-voltage.png"
+category = ["Symbols"]
+file = "animated/high-voltage.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "high voltage"]
 
 [[asset]]
-id = "glowing-star-bewegt"
+id = "glowing-star-animated"
 kind = "sticker"
 name = { de = "Leuchtender Stern (bewegt)", en = "Glowing star (animated)" }
-category = ["Symbole"]
-file = "bewegt/glowing-star.png"
+category = ["Symbols"]
+file = "animated/glowing-star.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "glowing star"]
 
 [[asset]]
-id = "alarm-clock-bewegt"
+id = "alarm-clock-animated"
 kind = "sticker"
 name = { de = "Wecker (bewegt)", en = "Alarm clock (animated)" }
-category = ["Symbole"]
-file = "bewegt/alarm-clock.png"
+category = ["Symbols"]
+file = "animated/alarm-clock.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"
 tags = ["bewegt", "emoji", "alarm clock"]
 
 [[asset]]
-id = "bottle-with-popping-cork-bewegt"
+id = "bottle-with-popping-cork-animated"
 kind = "sticker"
 name = { de = "Sektkorken (bewegt)", en = "Popping cork (animated)" }
-category = ["Symbole"]
-file = "bewegt/bottle-with-popping-cork.png"
+category = ["Symbols"]
+file = "animated/bottle-with-popping-cork.png"
 license = "MIT"
 author = "Microsoft Corporation"
 source = "https://github.com/microsoft/fluentui-emoji-animated"

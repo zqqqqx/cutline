@@ -16,7 +16,7 @@ use crate::theme::{self, icon};
 use crate::timeline::menu_item;
 use crate::widgets;
 
-/// Confirmation or window of the „Inhalte“ page.
+/// Confirmation or window of the „Content“ page.
 #[derive(Debug, Clone)]
 pub enum ContentsDialog {
     /// A pack with the same ID is already installed: replace?
@@ -34,7 +34,7 @@ fn media_title(path: &Path, data: &Path, pack: impl Fn(&Path) -> Option<String>)
     let stem = path.file_stem()?.to_str()?;
     let dir = path.parent()?;
     if dir == data.join("Freeze") {
-        Some("Standbild".into())
+        Some("Freeze frame".into())
     } else if dir == data.join("Stickers") {
         cl_fx::stickers::sticker(stem).map(|s| s.name.to_string())
     } else if dir == data.join("Sfx") {
@@ -47,7 +47,7 @@ fn media_title(path: &Path, data: &Path, pack: impl Fn(&Path) -> Option<String>)
 /// Pack files → name (cleared on `refresh_catalog`)
 static PACK_NAMES: std::sync::Mutex<Option<std::collections::HashMap<PathBuf, String>>> = std::sync::Mutex::new(None);
 
-/// Name of a clip for the timeline and inspector (translated): catalog name or „Standbild“ instead of
+/// Name of a clip for the timeline and inspector (translated): catalog name or „Freeze frame“ instead of
 /// technical file names, otherwise like [`cl_core::Clip::label`].
 pub fn clip_title(c: &cl_core::Clip, p: &cl_core::Project) -> String {
     if let cl_core::ClipContent::Media { media, .. } = &c.content {
@@ -146,7 +146,7 @@ pub fn catalog_packs(reg: &cl_plugin::Registry, lang: &str) -> Vec<Pack> {
                         categories: if a.category.is_empty() {
                             vec![info.name.clone()]
                         } else {
-                            a.category.clone()
+                            a.category.iter().map(|c| crate::legacy::category(c)).collect()
                         },
                         pack: m.id.clone(),
                         license: a.license.clone().unwrap_or_else(|| info.license.clone()),
@@ -166,7 +166,7 @@ pub fn catalog_packs(reg: &cl_plugin::Registry, lang: &str) -> Vec<Pack> {
         .collect()
 }
 
-/// „12 Effekte · 3 Sounds“
+/// "12 effects · 3 sounds"
 pub fn counts_text(counts: &BTreeMap<Kind, usize>) -> String {
     counts
         .iter()
@@ -174,15 +174,16 @@ pub fn counts_text(counts: &BTreeMap<Kind, usize>) -> String {
         .map(|(k, n)| {
             let one = *n == 1;
             crate::tr(match k {
-                Kind::Effect if one => format!("{n} Effekt"),
-                Kind::Effect => format!("{n} Effekte"),
-                // „1 Filter“/„1 Sticker“: own dictionary lines (same in German, singular in English)
-                Kind::Filter => format!("{n} Filter"),
-                Kind::Transition if one => format!("{n} Übergang"),
-                Kind::Transition => format!("{n} Übergänge"),
-                Kind::Sound if one => format!("{n} Sound"),
-                Kind::Sound => format!("{n} Sounds"),
-                Kind::Sticker => format!("{n} Sticker"),
+                Kind::Effect if one => format!("{n} effect"),
+                Kind::Effect => format!("{n} effects"),
+                Kind::Filter if one => format!("{n} filter"),
+                Kind::Filter => format!("{n} filters"),
+                Kind::Transition if one => format!("{n} transition"),
+                Kind::Transition => format!("{n} transitions"),
+                Kind::Sound if one => format!("{n} sound"),
+                Kind::Sound => format!("{n} sounds"),
+                Kind::Sticker if one => format!("{n} sticker"),
+                Kind::Sticker => format!("{n} stickers"),
             })
         })
         .collect::<Vec<_>>()
@@ -312,7 +313,7 @@ impl PackDownloads {
             let r = match packs::fetch_index(&src) {
                 Ok(v) => ListState::Ready(v),
                 Err(IndexError::Newer) => ListState::Newer,
-                Err(IndexError::Unreachable(e) | IndexError::Broken(e)) => ListState::Failed(cl_update::friendly(&crate::applog::warned("paket", e))),
+                Err(IndexError::Unreachable(e) | IndexError::Broken(e)) => ListState::Failed(cl_update::friendly(&crate::applog::warned("pack", e))),
             };
             lock(&shared).list = r;
             ctx.request_repaint();
@@ -349,14 +350,14 @@ impl PackDownloads {
             };
             let r = match source() {
                 Some(src) => fetch_install(&src, &p, &download_dir(), &user_root(), progress, &cancel),
-                None => Err("Nachladen ist ausgeschaltet".into()),
+                None => Err("Downloads are turned off".into()),
             };
             let mut s = lock(&shared);
             s.active = None;
             match r {
                 Ok(()) => s.installed.push(p),
                 Err(_) if cancel.load(Ordering::Relaxed) => {}
-                Err(e) => drop(s.errors.insert(p.id.clone(), cl_update::friendly(&crate::applog::warned("paket", e)))),
+                Err(e) => drop(s.errors.insert(p.id.clone(), cl_update::friendly(&crate::applog::warned("pack", e)))),
             }
             drop(s);
             ctx.request_repaint();
@@ -379,11 +380,11 @@ enum PackAction {
     Cancel(String),
 }
 
-/// Right button: „Laden“/„Aktualisieren“, while queued or downloading „Abbrechen“.
+/// Right button: „Download“/„Update“, while queued or downloading „Cancel“.
 fn pack_button(ui: &mut egui::Ui, snap: &Shared, p: &IndexPack, label: String) -> Option<PackAction> {
     let busy = snap.queue.iter().any(|q| q.id == p.id) || snap.active.as_ref().is_some_and(|a| a.0 == p.id);
     if busy {
-        return ui.add(theme::secondary("Abbrechen")).clicked().then(|| PackAction::Cancel(p.id.clone()));
+        return ui.add(theme::secondary("Cancel")).clicked().then(|| PackAction::Cancel(p.id.clone()));
     }
     let ok = p.api == cl_plugin::API_VERSION;
     ui.add_enabled(ok, theme::secondary(label)).clicked().then(|| PackAction::Load(p.clone()))
@@ -398,7 +399,7 @@ fn job_lines(ui: &mut egui::Ui, snap: &Shared, id: &str) {
         widgets::progress_line(ui.painter(), ui.id().with(("pack", id)), r, (*done as f64 / (*total).max(1) as f64) as f32);
         ui.label(RichText::new(progress_text(*done, *total, comma)).small().color(theme::TEXT_DIM()));
     } else if snap.queue.iter().any(|q| q.id == id) {
-        ui.label(RichText::new(crate::tr("Wartet …")).small().color(theme::TEXT_DIM()));
+        ui.label(RichText::new(crate::tr("Waiting …")).small().color(theme::TEXT_DIM()));
     } else if let Some(e) = snap.errors.get(id) {
         ui.label(RichText::new(format!("{}  {}", icon::WARNING_CIRCLE, crate::tr(e))).small().color(theme::WARN_TEXT()));
     }
@@ -415,11 +416,11 @@ impl App {
         let lang = self.i18n.lang().code();
         for p in done {
             let name = packs::text(&p.name, lang, &p.id).to_string();
-            self.toast(format!("{}  Paket „{name}“ installiert", icon::CHECK));
+            self.toast(format!("{}  Pack “{name}” installed", icon::CHECK));
         }
     }
 
-    /// „Verfügbar“ section: packs of the list that are not installed
+    /// „Available“ section: packs of the list that are not installed
     fn available_packs(&mut self, ui: &mut egui::Ui, snap: &Shared, avail: &[&IndexPack]) {
         ui.add_space(6.0);
         let r = ui.available_rect_before_wrap();
@@ -427,9 +428,9 @@ impl App {
         ui.add_space(9.0);
         let loading = matches!(snap.list, ListState::Idle | ListState::Loading);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(crate::tr("Verfügbar")).size(theme::FS_UI).color(theme::TEXT()).strong());
+            ui.label(RichText::new(crate::tr("Available")).size(theme::FS_UI).color(theme::TEXT()).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if theme::icon_button(ui, icon::ARROWS_CLOCKWISE, "Liste neu laden", !loading, false).clicked() {
+                if theme::icon_button(ui, icon::ARROWS_CLOCKWISE, "Reload list", !loading, false).clicked() {
                     self.packs.fetch(ui.ctx());
                 }
             });
@@ -448,20 +449,20 @@ impl App {
         }
         let mut action = None;
         match &snap.list {
-            ListState::Off => theme::empty_state(ui, icon::CLOUD_SLASH, "Nachladen ist ausgeschaltet", ""),
+            ListState::Off => theme::empty_state(ui, icon::CLOUD_SLASH, "Downloads are turned off", ""),
             ListState::Newer => {
-                ui.label(RichText::new(format!("{}  {}", icon::WARNING_CIRCLE, crate::tr("Neuere Version nötig"))).small().color(theme::WARN_TEXT()));
+                ui.label(RichText::new(format!("{}  {}", icon::WARNING_CIRCLE, crate::tr("Newer version required"))).small().color(theme::WARN_TEXT()));
             }
             ListState::Failed(e) => {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("{}  {}", icon::WARNING_CIRCLE, crate::tr("Liste nicht erreichbar"))).small().color(theme::WARN_TEXT()))
+                    ui.label(RichText::new(format!("{}  {}", icon::WARNING_CIRCLE, crate::tr("List not reachable"))).small().color(theme::WARN_TEXT()))
                         .on_hover_text(crate::tr(e));
-                    if ui.add(theme::ghost(format!("{}  Erneut versuchen", icon::ARROWS_CLOCKWISE))).clicked() {
+                    if ui.add(theme::ghost(format!("{}  Try again", icon::ARROWS_CLOCKWISE))).clicked() {
                         self.packs.fetch(ui.ctx());
                     }
                 });
             }
-            ListState::Ready(_) if avail.is_empty() => theme::empty_state(ui, icon::CHECK_CIRCLE, "Alle Pakete sind installiert", ""),
+            ListState::Ready(_) if avail.is_empty() => theme::empty_state(ui, icon::CHECK_CIRCLE, "All packs are installed", ""),
             _ => {
                 let lang = self.i18n.lang().code();
                 let comma = cl_i18n::ui_lang() == cl_i18n::Lang::De;
@@ -477,7 +478,7 @@ impl App {
                                 let meta = if p.license.is_empty() { format!("v{}", p.version) } else { format!("v{} · {}", p.version, p.license) };
                                 ui.label(RichText::new(meta).small().color(theme::TEXT_DIM()));
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    let label = format!("{}  {}", icon::DOWNLOAD_SIMPLE, crate::tr("Laden"));
+                                    let label = format!("{}  {}", icon::DOWNLOAD_SIMPLE, crate::tr("Download"));
                                     action = action.take().or(pack_button(ui, snap, p, label));
                                 });
                             });
@@ -490,7 +491,7 @@ impl App {
                             let line = if counts.is_empty() { size } else { format!("{counts} · {size}") };
                             ui.label(RichText::new(line).small().color(theme::TEXT_DIM()));
                             if p.api > cl_plugin::API_VERSION {
-                                ui.label(RichText::new(crate::tr("Braucht eine neuere Version von Cutline")).small().color(theme::WARN_TEXT()));
+                                ui.label(RichText::new(crate::tr("Needs a newer version of Cutline")).small().color(theme::WARN_TEXT()));
                             }
                             job_lines(ui, snap, &p.id);
                         });
@@ -544,13 +545,13 @@ impl App {
                     .any(|p| p.manifest.plugin.id == id && !p.dir.starts_with(&root));
                 if bundled {
                     let _ = cl_plugin::remove_pack(&root, &root.join(&id));
-                    self.settings_error = Some(crate::tr(format!("„{id}“ ist schon mitgeliefert")));
+                    self.settings_error = Some(crate::tr(format!("“{id}” already ships with Cutline")));
                     return;
                 }
                 self.reload_plugins();
-                self.toast(format!("{}  Paket „{id}“ hinzugefügt", icon::CHECK));
+                self.toast(format!("{}  Pack “{id}” added", icon::CHECK));
             }
-            Err(e) => self.settings_error = Some(crate::applog::warned("paket", e)),
+            Err(e) => self.settings_error = Some(crate::applog::warned("pack", e)),
         }
     }
 
@@ -609,23 +610,23 @@ impl App {
                                 toggled = Some((s.info.id.clone(), on));
                             }
                             let (glyph, tip) = if hidden {
-                                (icon::EYE_SLASH, "Ausgeblendet")
+                                (icon::EYE_SLASH, "Hidden")
                             } else {
-                                (icon::EYE, "In den Tabs anzeigen")
+                                (icon::EYE, "Show in tabs")
                             };
                             if theme::icon_button(ui, glyph, tip, on, false).clicked() {
                                 hide = Some(s.info.id.clone());
                             }
                             if let Some(dir) = &own {
                                 ui.menu_button(icon::DOTS_THREE, |ui| {
-                                    if menu_item(ui, icon::TRASH, "Entfernen", "") {
+                                    if menu_item(ui, icon::TRASH, "Remove", "") {
                                         remove = Some((dir.clone(), s.info.name.clone()));
                                         ui.close_menu();
                                     }
                                 });
                             }
                             if let Some(p) = updates.get(&s.info.id) {
-                                let label = format!("{}  {}", icon::ARROW_CIRCLE_UP, crate::tr("Aktualisieren"));
+                                let label = format!("{}  {}", icon::ARROW_CIRCLE_UP, crate::tr("Update"));
                                 action = action.take().or(pack_button(ui, &snap, p, label));
                             }
                         });
@@ -635,7 +636,7 @@ impl App {
                     }
                     let mut counts = counts_text(&s.counts);
                     if hidden {
-                        counts = format!("{counts} · {}", crate::tr("Ausgeblendet"));
+                        counts = format!("{counts} · {}", crate::tr("Hidden"));
                     }
                     ui.label(RichText::new(counts).small().color(theme::TEXT_DIM()));
                     if updates.contains_key(&s.info.id) {
@@ -664,20 +665,20 @@ impl App {
             ui.label(RichText::new(format!("{} {e}", icon::WARNING)).small().color(theme::WARN_TEXT()));
         }
         ui.horizontal_wrapped(|ui| {
-            if ui.add(theme::secondary(format!("{}  Paket hinzufügen …", icon::PLUS))).clicked() {
+            if ui.add(theme::secondary(format!("{}  Add pack …", icon::PLUS))).clicked() {
                 if let Some(f) = crate::dialog().add_filter("ZIP", &["zip"]).pick_file() {
                     self.add_pack(&f, false);
                 }
             }
-            if ui.add(theme::ghost(format!("{}  Paket-Ordner öffnen", icon::FOLDER_OPEN))).clicked() {
+            if ui.add(theme::ghost(format!("{}  Open pack folder", icon::FOLDER_OPEN))).clicked() {
                 let _ = std::fs::create_dir_all(&root);
                 crate::home::reveal(&root);
             }
-            if ui.add(theme::ghost(format!("{}  Quellen und Lizenzen", icon::INFO))).clicked() {
+            if ui.add(theme::ghost(format!("{}  Sources and licenses", icon::INFO))).clicked() {
                 let packs = catalog_packs(&self.plugins, self.i18n.lang().code());
                 let mut text = catalog::credits(&packs, &|s| crate::tr(s));
                 // downloadable models and runtimes with their licenses (from the model catalog)
-                text += &format!("\n## {}\n\n", crate::tr("KI-Modelle"));
+                text += &format!("\n## {}\n\n", crate::tr("AI models"));
                 for i in cl_analyze::CATALOG.iter().filter(|i| cl_analyze::offered(i.id)) {
                     text += &format!("- {}: {}\n", crate::tr(i.name), crate::tr(i.about));
                 }
@@ -696,30 +697,30 @@ impl App {
         let modal = crate::dialog::modal(ctx, "contents-dialog").show(ctx, |ui| match &d {
             ContentsDialog::Replace { id, .. } => {
                 ui.set_width(340.0);
-                close |= crate::dialog::title(ui, "Paket ersetzen?");
-                ui.label(crate::tr(format!("„{id}“ ist schon installiert. Durch das neue Paket ersetzen?")));
-                let (m, c) = crate::dialog::buttons(ui, theme::primary("Ersetzen"), true);
+                close |= crate::dialog::title(ui, "Replace pack?");
+                ui.label(crate::tr(format!("“{id}” is already installed. Replace it with the new pack?")));
+                let (m, c) = crate::dialog::buttons(ui, theme::primary("Replace"), true);
                 ok |= m;
                 close |= c;
             }
             ContentsDialog::Remove { name, .. } => {
                 ui.set_width(340.0);
-                close |= crate::dialog::title(ui, "Paket entfernen?");
+                close |= crate::dialog::title(ui, "Remove pack?");
                 ui.label(crate::tr(format!(
-                    "„{name}“ wird gelöscht. Projekte, die seine Inhalte nutzen, melden sie danach als fehlend."
+                    "“{name}” will be deleted. Projects that use its content will report it as missing."
                 )));
-                let (m, c) = crate::dialog::buttons(ui, theme::danger("Entfernen"), true);
+                let (m, c) = crate::dialog::buttons(ui, theme::danger("Remove"), true);
                 ok |= m;
                 close |= c;
             }
             ContentsDialog::Credits(text) => {
                 ui.set_width(520.0);
-                close |= crate::dialog::title(ui, "Quellen und Lizenzen");
+                close |= crate::dialog::title(ui, "Sources and licenses");
                 egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
                     ui.label(RichText::new(text).monospace().size(theme::FS_HINT));
                 });
                 crate::dialog::footer(ui, |ui| {
-                    if ui.add(theme::primary(format!("{}  Kopieren", icon::COPY))).clicked() {
+                    if ui.add(theme::primary(format!("{}  Copy", icon::COPY))).clicked() {
                         ui.ctx().copy_text(text.clone());
                         ok = true;
                     }
@@ -738,11 +739,11 @@ impl App {
                 ContentsDialog::Remove { dir, .. } => match cl_plugin::remove_pack(&user_root(), &dir) {
                     Ok(()) => {
                         self.reload_plugins();
-                        self.toast(format!("{}  Paket entfernt", icon::CHECK));
+                        self.toast(format!("{}  Pack removed", icon::CHECK));
                     }
-                    Err(e) => self.settings_error = Some(crate::applog::warned("paket", e)),
+                    Err(e) => self.settings_error = Some(crate::applog::warned("pack", e)),
                 },
-                ContentsDialog::Credits(_) => self.toast(format!("{}  In die Zwischenablage kopiert", icon::CHECK)),
+                ContentsDialog::Credits(_) => self.toast(format!("{}  Copied to the clipboard", icon::CHECK)),
             }
         }
     }
@@ -756,12 +757,12 @@ mod tests {
     fn generated_media_get_readable_titles() {
         let data = Path::new("C:/daten");
         let none = |_: &Path| None;
-        assert_eq!(media_title(&data.join("Freeze").join("freeze-1794710580502.png"), data, none).as_deref(), Some("Standbild"));
+        assert_eq!(media_title(&data.join("Freeze").join("freeze-1794710580502.png"), data, none).as_deref(), Some("Freeze frame"));
         let st = &cl_fx::stickers::STICKERS[0];
         assert_eq!(media_title(&data.join("Stickers").join(format!("{}.png", st.id)), data, none).as_deref(), Some(st.name));
-        assert_eq!(media_title(&data.join("Sfx").join("riser-0a1b2c3d.wav"), data, none).as_deref(), Some("Anstieg"));
-        let pack = |p: &Path| p.ends_with("abonnieren-rot.png").then(|| "Abonnieren (rot)".to_string());
-        assert_eq!(media_title(Path::new("D:/p/elemente/abonnieren-rot.png"), data, pack).as_deref(), Some("Abonnieren (rot)"));
+        assert_eq!(media_title(&data.join("Sfx").join("riser-0a1b2c3d.wav"), data, none).as_deref(), Some("Riser"));
+        let pack = |p: &Path| p.ends_with("subscribe-red.png").then(|| "Subscribe (red)".to_string());
+        assert_eq!(media_title(Path::new("D:/p/elements/subscribe-red.png"), data, pack).as_deref(), Some("Subscribe (red)"));
         // own file: the file name stays
         assert_eq!(media_title(Path::new("D:/Videos/urlaub.mp4"), data, none), None);
     }
@@ -806,9 +807,8 @@ These are separate programs and libraries that Cutline starts or loads; they are
 - **FFmpeg 8.1.3** (`ffmpeg/` in the Linux package), static \"linux64-gpl\" build `ffmpeg-n8.1.3-36-ge22a4510c9-linux64-gpl-8.1` by BtbN, licensed under the GNU General Public License v3. Unmodified binaries from <https://github.com/BtbN/FFmpeg-Builds/releases> (a copy is kept in this repository's `ci-tools` release); source code: FFmpeg commit `e22a4510c9` on the `release/8.1` branch at <https://git.ffmpeg.org/ffmpeg.git> (also <https://github.com/FFmpeg/FFmpeg>), build scripts at <https://github.com/BtbN/FFmpeg-Builds>.
 - **ONNX Runtime 1.31.1** (`onnxruntime.dll` / `libonnxruntime.so`), MIT License, <https://github.com/microsoft/onnxruntime>.
 ";
-        // the file in the repo is English: English pack names and the English UI texts
-        let en: std::collections::HashMap<&str, &str> = cl_i18n::ui_entries().into_iter().collect();
-        let want = catalog::credits(&packs, &|s| en.get(s).copied().unwrap_or(s).to_string()) + bundled;
+        // the file in the repo is English: English pack names and the UI texts as written in the code
+        let want = catalog::credits(&packs, &|s| s.to_string()) + bundled;
         let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../THIRD_PARTY.md");
         if std::env::var_os("CUTLINE_WRITE_THIRD_PARTY").is_some() {
             std::fs::write(&file, &want).unwrap();
@@ -884,15 +884,15 @@ license = "CC-BY-4.0"
         let snd = catalog::list_in(&packs, Kind::Sound);
         let e = snd.last().unwrap();
         assert_eq!(e.id, "test.pack/ding");
-        assert_eq!(e.category(), "Oberfläche");
+        assert_eq!(e.category(), "Interface", "a pack made for an older version names its category in German");
         assert_eq!(e.payload, Payload::File(pack.join("ding.wav")));
         assert_eq!(e.tags, ["Klingel"], "tags reach the search");
         let st = catalog::get_in(&packs, Kind::Sticker, "test.pack/star").unwrap();
         assert_eq!((st.license.as_str(), st.author.as_str()), ("CC-BY-4.0", "Jemand"));
         assert_eq!(st.category(), "Test pack", "without a category: folder with the pack name");
-        assert_eq!(counts_text(&catalog::packs_in(&packs)[1].counts), "1 Sound · 1 Sticker");
+        assert_eq!(counts_text(&catalog::packs_in(&packs)[1].counts), "1 sound · 1 sticker");
         let dict: std::collections::HashMap<_, _> = cl_i18n::ui_entries().into_iter().collect();
-        assert_eq!((dict.get("1 Filter"), dict.get("1 Sticker")), (Some(&"1 filter"), Some(&"1 sticker")), "English singular");
+        assert_eq!((dict.get("1 filter"), dict.get("1 sticker")), (Some(&"1 Filter"), Some(&"1 Sticker")), "one of each has its German line");
         // switched off: gone
         reg.apply_states(&[("test.pack".to_string(), false)].into_iter().collect());
         let packs = catalog_packs(&reg, "en");
@@ -903,7 +903,7 @@ license = "CC-BY-4.0"
         std::fs::write(pack.join("plugin.toml"), manifest.replace("file = \"ding.wav\"", "file = \"../x.wav\"")).unwrap();
         let reg = cl_plugin::Registry::scan([dir.path()]);
         assert!(reg.plugins.is_empty());
-        assert!(reg.errors[0].contains("innerhalb"), "{:?}", reg.errors);
+        assert!(reg.errors[0].contains("inside the plugin"), "{:?}", reg.errors);
     }
 
     /// The extensions of the packs are a subset of what the own library can handle.
@@ -921,7 +921,7 @@ license = "CC-BY-4.0"
     fn pack_card_texts() {
         let c: BTreeMap<String, usize> = [("sound".into(), 213), ("sticker".into(), 1), ("neuart".into(), 4)].into_iter().collect();
         assert_eq!(index_counts(&c), [(Kind::Sound, 213), (Kind::Sticker, 1)].into_iter().collect());
-        assert_eq!(counts_text(&index_counts(&c)), "213 Sounds · 1 Sticker");
+        assert_eq!(counts_text(&index_counts(&c)), "213 sounds · 1 sticker");
         assert_eq!(size_text(22_707, true), "23 KB");
         assert_eq!(size_text(1_351_277, true), "1,3 MB");
         assert_eq!(size_text(1_351_277, false), "1.3 MB");
@@ -974,7 +974,7 @@ file = "star.svg"
         let data = std::fs::read(&zp).unwrap();
         IndexPack {
             id: id.into(),
-            name: [("de".to_string(), "Laden".to_string())].into_iter().collect(),
+            name: [("de".to_string(), "Download".to_string())].into_iter().collect(),
             version: "1.0.0".into(),
             api: 1,
             description: BTreeMap::new(),
@@ -1003,7 +1003,7 @@ file = "star.svg"
         // wrong checksum: nothing installed
         let mut bad = p.clone();
         bad.sha256 = cl_update::sha256_hex(b"anders");
-        assert!(fetch_install(&src, &bad, &tmp, &root, |_, _| {}, &no).unwrap_err().contains("Prüfsumme"));
+        assert!(fetch_install(&src, &bad, &tmp, &root, |_, _| {}, &no).unwrap_err().contains("hecksum"));
         assert!(!root.join("test.laden").exists());
         assert_eq!(files_in(&tmp), 0);
         // larger than in the list
@@ -1014,16 +1014,16 @@ file = "star.svg"
         assert_eq!(files_in(&tmp), 0);
         // the ID in the pack does not match the list
         let other = IndexPack { id: "test.anders".into(), ..p.clone() };
-        assert!(fetch_install(&src, &other, &tmp, &root, |_, _| {}, &no).unwrap_err().contains("passt nicht"));
+        assert!(fetch_install(&src, &other, &tmp, &root, |_, _| {}, &no).unwrap_err().contains("does not match"));
         assert_eq!(files_in(&root), 0);
         assert_eq!(files_in(&tmp), 0);
         // cancelled
         let cancel = AtomicBool::new(true);
-        assert_eq!(fetch_install(&src, &p, &tmp, &root, |_, _| {}, &cancel).unwrap_err(), "Abgebrochen");
+        assert_eq!(fetch_install(&src, &p, &tmp, &root, |_, _| {}, &cancel).unwrap_err(), "Canceled");
         assert_eq!(files_in(&tmp), 0);
         // list not reachable
         assert!(matches!(packs::fetch_index(&src), Err(IndexError::Unreachable(_))));
-        // correct: installed, in the catalog, no longer „verfügbar“
+        // correct: installed, in the catalog, no longer "available"
         let mut seen = 0;
         fetch_install(&src, &p, &tmp, &root, |d, _| seen = d, &no).unwrap();
         assert_eq!(seen, p.size);
@@ -1073,16 +1073,16 @@ file = "star.svg"
         let mut reg = cl_plugin::Registry::scan([root.as_path()]);
         let packs = catalog_packs(&reg, "de");
         let tr = catalog::list_in(&packs, Kind::Transition);
-        let own: Vec<_> = tr.iter().filter(|e| e.pack == "cutline.uebergaenge").collect();
+        let own: Vec<_> = tr.iter().filter(|e| e.pack == "cutline.transitions").collect();
         assert!(own.len() >= 25, "{}", own.len());
         assert!(own.iter().all(|e| matches!(e.payload, Payload::Shader { .. })));
-        let plan = catalog::transition_plan_in(&packs, "cutline.uebergaenge/wuerfel");
+        let plan = catalog::transition_plan_in(&packs, "cutline.transitions/cube");
         assert_eq!(plan.xfade, "slideright");
         assert!(plan.shader.is_some_and(|(f, _)| f.is_file()));
         // pack off: only the fallback remains
-        reg.apply_states(&[("cutline.uebergaenge".to_string(), false)].into_iter().collect());
+        reg.apply_states(&[("cutline.transitions".to_string(), false)].into_iter().collect());
         let packs = catalog_packs(&reg, "de");
-        let plan = catalog::transition_plan_in(&packs, "cutline.uebergaenge/wuerfel");
+        let plan = catalog::transition_plan_in(&packs, "cutline.transitions/cube");
         assert_eq!((plan.xfade, plan.shader), ("slideright", None));
     }
 }

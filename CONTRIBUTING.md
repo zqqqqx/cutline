@@ -19,7 +19,7 @@ For local captions and background removal, place an ONNX Runtime 1.31 library (`
 - Run `cargo test --workspace` and `cargo clippy --workspace`.
 - A bug fix comes with a test that fails without it.
 - Every change that users notice gets a line under `## Unreleased` in [`CHANGELOG.md`](CHANGELOG.md), in English and German, written for users rather than developers. The release notes on GitHub and the "What's new" view in Cutline are taken from that file.
-- New interface texts are written in German in the code and translated in `crates/cl-i18n/locales/ui.en.tsv`.
+- The code is English: names, comments, log lines and interface texts. Every new interface text gets its German line in `translations/de_DE/ui.tsv` (`English<TAB>German`; a test fails without it).
 - Product texts follow [`docs/POSITIONING.md`](docs/POSITIONING.md) and [`docs/BRAND.md`](docs/BRAND.md).
 
 The export test renders every project in `crates/cl-export/tests/projects` with generated stand-in media. To add a case, save a project there. To run it before every commit:

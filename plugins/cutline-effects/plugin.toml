@@ -4,13 +4,13 @@
 # Each chain is on ONE line `ffmpeg = "…"` (the test in crates/cl-fx reads them line by line).
 # No `geq`, no fixed pixel sizes for image size or borders; only filters of the bundled FFmpeg.
 [plugin]
-id = "cutline.effekte"
+id = "cutline.effects"
 version = "1.0.0"
 api = 1
 kind = "asset-pack"
 name = { de = "Effekte und Filter", en = "Effects and filters" }
 description = { de = "Weitere Effekte und Farblooks für Videos, Shorts und Vlogs", en = "More effects and colour looks for videos, shorts and vlogs" }
-authors = ["Cutline-Projekt"]
+authors = ["Cutline project"]
 license = "CC0-1.0"
 source = "https://github.com/zqqqqx/cutline"
 
@@ -21,7 +21,7 @@ source = "https://github.com/zqqqqx/cutline"
 id = "hdr-look"
 kind = "video-effect"
 name = { de = "HDR-Look", en = "HDR look" }
-category = ["Basis"]
+category = ["Basic"]
 tags = ["klarheit", "details", "clarity"]
 ffmpeg = "format=yuva420p,shuffleplanes=map3=0,lutyuv=a='clip((val-16)*255/219,0,255)',boxblur=luma_radius=0:chroma_radius=0:alpha_radius='min(w,h)/30':alpha_power=2,format=rgba,colorchannelmixer=rr='1+0.36*{intensity}':rg='0.708*{intensity}':rb='0.132*{intensity}':ra='-1.2*{intensity}':gr='0.36*{intensity}':gg='1+0.708*{intensity}':gb='0.132*{intensity}':ga='-1.2*{intensity}':br='0.36*{intensity}':bg='0.708*{intensity}':bb='1+0.132*{intensity}':ba='-1.2*{intensity}',format=rgb24"
 
@@ -36,7 +36,7 @@ tags = ["film", "vintage", "korn"]
 ffmpeg = "lutrgb=r='val*(1+0.05*{intensity})+10*{intensity}':g='val+4*{intensity}':b='val*(1-0.12*{intensity})+6*{intensity}',eq=saturation='1-0.15*{intensity}':contrast='1+0.08*{intensity}':brightness='{intensity}*(0.02+0.035*sin(t*29)*sin(t*11))':eval=frame,gblur=sigma=0.9*{intensity},noise=alls=16*{intensity}:allf=t,vignette=angle=0.55*{intensity},scale=w='iw+2*trunc(iw*0.012*{intensity})':h='ih+2*trunc(ih*0.012*{intensity})',crop=w='iw-2*trunc(iw*0.012*{intensity}/(1+0.024*{intensity})+1e-6)':h='ih-2*trunc(ih*0.012*{intensity}/(1+0.024*{intensity})+1e-6)':x='(iw-ow)/2*(1+0.3*sin(t*9))':y='(ih-oh)/2*(1+0.8*sin(t*13)*sin(t*4.1))'"
 
 [[asset]]
-id = "roehrenfernseher"
+id = "crt-tv"
 kind = "video-effect"
 name = { de = "Röhrenfernseher", en = "CRT TV" }
 category = ["Retro"]
@@ -44,7 +44,7 @@ tags = ["crt", "tv", "zeilen"]
 ffmpeg = "lenscorrection=k1=-0.2*{intensity}:k2=-0.05*{intensity},eq=saturation='1+0.25*{intensity}':contrast='1+0.1*{intensity}':brightness='{intensity}*(0.03+0.02*sin(t*90))':eval=frame,gblur=sigma=0.8*{intensity},drawgrid=w=0:h='max(3,ih/180)':t='max(1,ih/540)':c=0x00000059:enable='gt({intensity},0.05)',vignette=angle=0.5*{intensity}"
 
 [[asset]]
-id = "ueberwachungskamera"
+id = "security-camera"
 kind = "video-effect"
 name = { de = "Überwachungskamera", en = "Security camera" }
 category = ["Retro"]
@@ -57,37 +57,37 @@ ffmpeg = "hue=s='1-0.85*{intensity}',lutyuv=u='val-4*{intensity}':v='val-3*{inte
 # floor(S*c/(1+2c)) = floor(W*c).
 
 [[asset]]
-id = "handkamera"
+id = "handheld-camera"
 kind = "video-effect"
 name = { de = "Handkamera", en = "Handheld camera" }
-category = ["Bewegung"]
+category = ["Motion"]
 tags = ["wackeln", "shake"]
 ffmpeg = "scale=w='iw+2*trunc(iw*0.035*{intensity})':h='ih+2*trunc(ih*0.035*{intensity})',crop=w='iw-2*trunc(iw*0.035*{intensity}/(1+0.07*{intensity})+1e-6)':h='ih-2*trunc(ih*0.035*{intensity}/(1+0.07*{intensity})+1e-6)':x='(iw-ow)/2*(1+0.5*sin(t*1.3)+0.3*sin(t*2.9+1)+0.15*sin(t*6.1+2))':y='(ih-oh)/2*(1+0.5*sin(t*1.1+2)+0.3*sin(t*3.3)+0.15*sin(t*5.3+4))'"
 
-# Hit at the clip start (like "Blitz"): a punch that decays, with a short brightening
+# Hit at the clip start (like "Flash"): a punch that decays, with a short brightening
 [[asset]]
-id = "einschlag"
+id = "impact"
 kind = "video-effect"
 name = { de = "Einschlag", en = "Impact" }
-category = ["Bewegung"]
+category = ["Motion"]
 tags = ["treffer", "erdbeben", "shake"]
 ffmpeg = "scale=w='iw+2*trunc(iw*0.03*{intensity})':h='ih+2*trunc(ih*0.03*{intensity})',crop=w='iw-2*trunc(iw*0.03*{intensity}/(1+0.06*{intensity})+1e-6)':h='ih-2*trunc(ih*0.03*{intensity}/(1+0.06*{intensity})+1e-6)':x='(iw-ow)/2*(1+exp(-3.5*t)*sin(t*55))':y='(ih-oh)/2*(1+exp(-3.5*t)*cos(t*47))',eq=brightness='{intensity}*0.3*exp(-t*9)':contrast='1+{intensity}*0.2*exp(-t*6)':eval=frame"
 
 # Punch on the beat (120 BPM)
 [[asset]]
-id = "bass-wackeln"
+id = "bass-shake"
 kind = "video-effect"
 name = { de = "Bass-Wackeln", en = "Bass shake" }
-category = ["Bewegung"]
+category = ["Motion"]
 tags = ["beat", "musik", "takt"]
 ffmpeg = "scale=w='iw+2*trunc(iw*0.02*{intensity})':h='ih+2*trunc(ih*0.02*{intensity})',crop=w='iw-2*trunc(iw*0.02*{intensity}/(1+0.04*{intensity})+1e-6)':h='ih-2*trunc(ih*0.02*{intensity}/(1+0.04*{intensity})+1e-6)':x='(iw-ow)/2*(1+exp(-mod(t,0.5)*12)*sin(t*70))':y='(ih-oh)/2*(1+exp(-mod(t,0.5)*12)*cos(t*61))'"
 
 # Semi-transparent copy swaying back and forth
 [[asset]]
-id = "doppelbild"
+id = "double-vision"
 kind = "video-effect"
 name = { de = "Doppelbild", en = "Double vision" }
-category = ["Bewegung"]
+category = ["Motion"]
 tags = ["schwindel", "betrunken", "dizzy"]
 ffmpeg = "format=rgba,colorchannelmixer=aa=0.5*{intensity},split,overlay=x='W*0.035*sin(t*2.3)':y='H*0.02*sin(t*1.7)':eval=frame,format=rgb24"
 
@@ -95,122 +95,122 @@ ffmpeg = "format=rgba,colorchannelmixer=aa=0.5*{intensity},split,overlay=x='W*0.
 # Glow: copy brightness into the alpha channel, blur only there, then add it on top
 
 [[asset]]
-id = "ueberstrahlen"
+id = "bloom"
 kind = "video-effect"
 name = { de = "Überstrahlen", en = "Bloom" }
-category = ["Licht"]
+category = ["Light"]
 tags = ["leuchten", "glow"]
 ffmpeg = "format=yuva420p,shuffleplanes=map3=0,lutyuv=a='clip((val-70)*1.5,0,255)',boxblur=luma_radius=0:chroma_radius=0:alpha_radius='min(w,h)/24':alpha_power=2,format=rgba,colorchannelmixer=ra=1.0*{intensity}:ga=0.9*{intensity}:ba=0.75*{intensity},format=rgb24"
 
 # Partly replace brightness with blurred brightness, colors stay
 [[asset]]
-id = "weichzeichner"
+id = "soft-focus"
 kind = "video-effect"
 name = { de = "Weichzeichner", en = "Soft focus" }
-category = ["Licht"]
+category = ["Light"]
 tags = ["weich", "porträt", "soft"]
 ffmpeg = "format=yuva420p,shuffleplanes=map3=0,lutyuv=a='clip((val-16)*255/219,0,255)',boxblur=luma_radius=0:chroma_radius=0:alpha_radius='min(w,h)/90':alpha_power=2,format=rgba,colorchannelmixer=rr='1-0.135*{intensity}':rg='-0.2655*{intensity}':rb='-0.0495*{intensity}':ra='0.45*{intensity}':gr='-0.135*{intensity}':gg='1-0.2655*{intensity}':gb='-0.0495*{intensity}':ga='0.45*{intensity}':br='-0.135*{intensity}':bg='-0.2655*{intensity}':bb='1-0.0495*{intensity}':ba='0.45*{intensity}',format=rgb24,eq=brightness=0.03*{intensity}"
 
 [[asset]]
-id = "weisse-vignette"
+id = "white-vignette"
 kind = "video-effect"
 name = { de = "Weiße Vignette", en = "White vignette" }
-category = ["Licht"]
+category = ["Light"]
 tags = ["hochzeit", "traum", "vignette"]
 ffmpeg = "lutyuv=y='255-val',vignette=angle=0.9*{intensity},lutyuv=y='255-val'"
 
 [[asset]]
-id = "flackern"
+id = "flicker"
 kind = "video-effect"
 name = { de = "Flackern", en = "Flicker" }
-category = ["Licht"]
+category = ["Light"]
 tags = ["belichtung", "licht"]
 ffmpeg = "eq=brightness='{intensity}*0.13*(sin(t*23)*sin(t*7.1)+0.5*sin(t*53))':contrast='1+{intensity}*0.06*sin(t*31)':eval=frame"
 
 # Brightness, contrast and color punch on the beat (120 BPM)
 [[asset]]
-id = "takt-puls"
+id = "beat-pulse"
 kind = "video-effect"
 name = { de = "Takt-Puls", en = "Beat pulse" }
-category = ["Licht"]
+category = ["Light"]
 tags = ["beat", "musik", "takt"]
 ffmpeg = "eq=brightness='0.14*{intensity}*exp(-mod(t,0.5)*9)':contrast='1+0.2*{intensity}*exp(-mod(t,0.5)*9)':saturation='1+0.7*{intensity}*exp(-mod(t,0.5)*9)':eval=frame"
 
 # Bright areas leave trails (night, lights, fireworks)
 [[asset]]
-id = "lichtspuren"
+id = "light-trails"
 kind = "video-effect"
 name = { de = "Lichtspuren", en = "Light trails" }
-category = ["Licht"]
+category = ["Light"]
 tags = ["nacht", "spur", "trails"]
 ffmpeg = "lagfun=decay=0.95*{intensity}"
 
 # ---------- Effects: style ----------
 
 [[asset]]
-id = "rueckblende"
+id = "flashback"
 kind = "video-effect"
 name = { de = "Rückblende", en = "Flashback" }
-category = ["Stil"]
+category = ["Style"]
 tags = ["erinnerung", "traum", "flashback"]
 ffmpeg = "hue=s='1-0.7*{intensity}',format=yuva420p,shuffleplanes=map3=0,lutyuv=a='clip((val-30)*1.2,0,255)',boxblur=luma_radius=0:chroma_radius=0:alpha_radius='min(w,h)/40':alpha_power=2,format=rgba,colorchannelmixer=rr='1-0.3*{intensity}':gg='1-0.3*{intensity}':bb='1-0.3*{intensity}':ra=0.55*{intensity}:ga=0.5*{intensity}:ba=0.4*{intensity},format=rgb24,vignette=angle=0.4*{intensity}"
 
 [[asset]]
-id = "hologramm"
+id = "hologram"
 kind = "video-effect"
 name = { de = "Hologramm", en = "Hologram" }
-category = ["Stil"]
+category = ["Style"]
 tags = ["sci-fi", "zukunft"]
 ffmpeg = "colorchannelmixer=rr='1-0.95*{intensity}':rg=0.1*{intensity}:rb=0.02*{intensity}:gr=0.25*{intensity}:gg='1-0.45*{intensity}':gb=0.15*{intensity}:br=0.3*{intensity}:bg=0.65*{intensity}:bb='1-0.8*{intensity}',eq=brightness='{intensity}*(0.05+0.05*sin(t*37)*sin(t*11))':contrast='1+0.15*{intensity}':eval=frame,drawgrid=w=0:h='max(3,ih/120)':t='max(1,ih/360)':c=0x60ffff2e:enable='gt({intensity},0.05)',noise=alls=8*{intensity}:allf=t"
 
 [[asset]]
-id = "farbakzent-rot"
+id = "color-pop-red"
 kind = "video-effect"
 name = { de = "Farbakzent Rot", en = "Color pop red" }
-category = ["Stil"]
+category = ["Style"]
 tags = ["color splash", "rot"]
 ffmpeg = "huesaturation=saturation=-{intensity}:colors=y+g+c+b+m:strength=8"
 
 [[asset]]
-id = "solarisation"
+id = "solarize"
 kind = "video-effect"
 name = { de = "Solarisation", en = "Solarize" }
-category = ["Stil"]
+category = ["Style"]
 tags = ["psychedelisch", "kunst"]
 ffmpeg = "lutrgb=r='val+{intensity}*(if(lt(val,128),2*val,2*(255-val))-val)':g='val+{intensity}*(if(lt(val,128),2*val,2*(255-val))-val)':b='val+{intensity}*(if(lt(val,128),2*val,2*(255-val))-val)'"
 
 # ---------- Filters (color looks; strength = blend with the original) ----------
 
 [[asset]]
-id = "kino-warm"
+id = "cinema-warm"
 kind = "filter"
 name = { de = "Kino warm", en = "Cinema warm" }
 category = ["Film"]
 ffmpeg = "curves=r='0/0 0.25/0.22 0.5/0.53 0.75/0.82 1/0.98':g='0/0.01 0.25/0.23 0.5/0.5 0.75/0.77 1/0.96':b='0/0.05 0.25/0.26 0.5/0.46 0.75/0.68 1/0.88',eq=saturation=0.95"
 
 [[asset]]
-id = "kino-kuehl"
+id = "cinema-cool"
 kind = "filter"
 name = { de = "Kino kühl", en = "Cinema cool" }
 category = ["Film"]
 ffmpeg = "curves=r='0/0 0.25/0.2 0.5/0.46 0.75/0.74 1/0.95':g='0/0.01 0.25/0.23 0.5/0.5 0.75/0.77 1/0.97':b='0/0.06 0.25/0.3 0.5/0.56 0.75/0.8 1/1',eq=saturation=0.8"
 
 [[asset]]
-id = "warmer-film"
+id = "warm-film"
 kind = "filter"
 name = { de = "Warmer Film", en = "Warm film" }
 category = ["Film"]
 ffmpeg = "curves=r='0/0.04 0.5/0.54 1/0.98':g='0/0.03 0.5/0.51 1/0.96':b='0/0.06 0.5/0.47 1/0.9',eq=saturation=0.92"
 
 [[asset]]
-id = "verblasst"
+id = "faded-analog"
 kind = "filter"
 name = { de = "Analog verblasst", en = "Faded analog" }
 category = ["Film"]
 ffmpeg = "curves=r='0/0.12 0.5/0.52 1/0.9':g='0/0.14 0.5/0.52 1/0.9':b='0/0.16 0.5/0.48 1/0.85',eq=saturation=0.75"
 
 [[asset]]
-id = "diafilm"
+id = "slide-film"
 kind = "filter"
 name = { de = "Diafilm", en = "Slide film" }
 category = ["Film"]
@@ -220,77 +220,77 @@ ffmpeg = "curves=r='0/0 0.3/0.27 0.7/0.75 1/1':g='0/0 0.3/0.27 0.7/0.73 1/1':b='
 id = "vlog"
 kind = "filter"
 name = { de = "Vlog", en = "Vlog" }
-category = ["Porträt"]
+category = ["Portrait"]
 ffmpeg = "curves=r='0/0.03 0.5/0.58 1/1':g='0/0.03 0.5/0.56 1/1':b='0/0.03 0.5/0.53 1/0.97',vibrance=intensity=0.25"
 
 [[asset]]
-id = "hautton"
+id = "skin-tone"
 kind = "filter"
 name = { de = "Hautton", en = "Skin tone" }
-category = ["Porträt"]
+category = ["Portrait"]
 ffmpeg = "curves=r='0/0.02 0.5/0.55 1/1':g='0/0.02 0.5/0.53 1/0.98':b='0/0.03 0.5/0.5 1/0.95',huesaturation=saturation=-0.1:colors=r"
 
 [[asset]]
 id = "rose"
 kind = "filter"
 name = { de = "Rosé", en = "Rosé" }
-category = ["Porträt"]
+category = ["Portrait"]
 ffmpeg = "curves=r='0/0.06 0.5/0.55 1/1':g='0/0.04 0.5/0.49 1/0.96':b='0/0.07 0.5/0.52 1/0.98',eq=saturation=0.9"
 
 [[asset]]
-id = "herbst"
+id = "autumn"
 kind = "filter"
 name = { de = "Herbst", en = "Autumn" }
-category = ["Landschaft"]
+category = ["Landscape"]
 ffmpeg = "huesaturation=hue=-45:colors=g,huesaturation=hue=-15:saturation=0.1:colors=y,curves=r='0/0 0.5/0.55 1/1':b='0/0 0.5/0.45 1/0.92',eq=saturation=1.1"
 
 [[asset]]
 id = "winter"
 kind = "filter"
 name = { de = "Winter", en = "Winter" }
-category = ["Landschaft"]
+category = ["Landscape"]
 ffmpeg = "curves=r='0/0.03 0.5/0.5 1/0.97':g='0/0.04 0.5/0.53 1/1':b='0/0.08 0.5/0.6 1/1',eq=saturation=0.75"
 
 [[asset]]
-id = "lagune"
+id = "lagoon"
 kind = "filter"
 name = { de = "Lagune", en = "Lagoon" }
-category = ["Landschaft"]
+category = ["Landscape"]
 ffmpeg = "huesaturation=hue=-15:saturation=0.25:colors=b+c,curves=r='0/0 0.5/0.47 1/0.97':g='0/0 0.5/0.52 1/1':b='0/0.02 0.5/0.52 1/1',eq=saturation=1.1"
 
 [[asset]]
-id = "blaue-stunde"
+id = "blue-hour"
 kind = "filter"
 name = { de = "Blaue Stunde", en = "Blue hour" }
-category = ["Landschaft"]
+category = ["Landscape"]
 ffmpeg = "curves=r='0/0 0.25/0.2 0.75/0.78 1/1':g='0/0 0.5/0.48 1/0.97':b='0/0.06 0.25/0.32 0.75/0.78 1/0.98',eq=saturation=1.05"
 
 [[asset]]
 id = "gaming"
 kind = "filter"
 name = { de = "Gaming", en = "Gaming" }
-category = ["Stimmung"]
+category = ["Mood"]
 ffmpeg = "unsharp=5:5:0.6,eq=contrast=1.12:saturation=1.15,vibrance=intensity=0.35,curves=b='0/0.02 0.5/0.52 1/1'"
 
 [[asset]]
-id = "mondnacht"
+id = "moonlit-night"
 kind = "filter"
 name = { de = "Mondnacht", en = "Moonlit night" }
-category = ["Stimmung"]
+category = ["Mood"]
 tags = ["tag zu nacht", "day for night"]
 ffmpeg = "eq=brightness=-0.1:saturation=0.4:gamma=0.85,curves=r='0/0 0.5/0.3 1/0.7':g='0/0 0.5/0.36 1/0.8':b='0/0.05 0.5/0.5 1/0.95'"
 
 [[asset]]
-id = "sw-rotfilter"
+id = "bw-red-filter"
 kind = "filter"
 name = { de = "SW Rotfilter", en = "B&W red filter" }
-category = ["Schwarzweiß"]
+category = ["Black & white"]
 tags = ["schwarzweiß", "dramatisch"]
 ffmpeg = "colorchannelmixer=.7:.4:-.1:0:.7:.4:-.1:0:.7:.4:-.1,curves=preset=increase_contrast"
 
 [[asset]]
-id = "sepia-modern"
+id = "modern-sepia"
 kind = "filter"
 name = { de = "Sepia modern", en = "Modern sepia" }
-category = ["Schwarzweiß"]
+category = ["Black & white"]
 ffmpeg = "hue=s=0.15,curves=r='0/0.06 0.5/0.56 1/0.98':g='0/0.04 0.5/0.5 1/0.95':b='0/0.02 0.5/0.42 1/0.86'"

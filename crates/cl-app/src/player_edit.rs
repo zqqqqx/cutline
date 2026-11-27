@@ -249,7 +249,7 @@ impl App {
         if resp.drag_started() {
             if let Some(p) = ui.input(|i| i.pointer.press_origin()) {
                 if let Some(m) = hit_handle(p) {
-                    self.gizmo.drag = Some((sel.expect("Griff gehört zur Auswahl").clip, m));
+                    self.gizmo.drag = Some((sel.expect("Handle belongs to the selection").clip, m));
                 } else if let Some(r) = regions.iter().rev().find(|r| r.contains(p)) {
                     if !self.is_selected(r.clip) {
                         self.select_only(Some(r.clip));
@@ -530,7 +530,7 @@ mod tests {
         Region { clip: ClipId::new(), center, size, angle, tr: Transform::default(), crop }
     }
 
-    /// Split screen „Nebeneinander“: the right (upper) clip reaches invisibly into the left half.
+    /// Split screen „Side by side“: the right (upper) clip reaches invisibly into the left half.
     /// Hits only in the visible part, ✕ at the visible corner (on the stage).
     #[test]
     fn hits_and_handles_follow_the_crop() {
@@ -629,7 +629,7 @@ mod tests {
 
 // ---------------------------------------------------------------- player zoom
 
-/// Zoom levels relative to „Ganzes Bild“
+/// Zoom levels relative to „Fit“
 const ZOOM_MIN: f32 = 0.1;
 const ZOOM_MAX: f32 = 16.0;
 
@@ -704,18 +704,18 @@ impl App {
         self.player_zoom = new;
     }
 
-    /// Chip in the player bar with a popover (−, slider, +, Ganzes Bild, 1:1).
+    /// Chip in the player bar with a popover (−, slider, +, Fit, 1:1).
     pub fn player_zoom_chip(&mut self, ui: &mut egui::Ui, compact: bool) {
         let pct = format!("{:.0} %", self.player_zoom * 100.0);
         let label = if compact {
             icon::MAGNIFYING_GLASS.to_string()
         } else if (self.player_zoom - 1.0).abs() < 1e-3 {
-            format!("{} Ganzes Bild", icon::MAGNIFYING_GLASS)
+            format!("{} Fit", icon::MAGNIFYING_GLASS)
         } else {
             format!("{} {pct}", icon::MAGNIFYING_GLASS)
         };
         let resp = theme::chip(ui, &label).on_hover_text(format!(
-            "Player-Zoom {pct} (Strg+Mausrad, Alt+Umschalt+Z: ganzes Bild)"
+            "Player zoom {pct} (Ctrl+wheel, Alt+Shift+Z: fit)"
         ));
         let id = ui.make_persistent_id("player-zoom");
         if resp.clicked() {
@@ -733,7 +733,7 @@ impl App {
                     if theme::icon_button(
                         ui,
                         icon::MAGNIFYING_GLASS_MINUS,
-                        "Herauszoomen (Alt+Umschalt+−)",
+                        "Zoom out (Alt+Shift+−)",
                         true,
                         false,
                     )
@@ -756,7 +756,7 @@ impl App {
                     if theme::icon_button(
                         ui,
                         icon::MAGNIFYING_GLASS_PLUS,
-                        "Heranzoomen (Alt+Umschalt++)",
+                        "Zoom in (Alt+Shift++)",
                         true,
                         false,
                     )
@@ -766,7 +766,7 @@ impl App {
                     }
                 });
                 ui.horizontal(|ui| {
-                    if ui.add(theme::secondary("Ganzes Bild")).clicked() {
+                    if ui.add(theme::secondary("Fit")).clicked() {
                         self.player_zoom = 1.0;
                         self.player_pan = egui::Vec2::ZERO;
                     }

@@ -97,7 +97,7 @@ impl Volume {
         (self.percent / 100.0).max(0.0).min(1.0).powi(3)
     }
 
-    /// One 5 % step (mouse wheel, actions) on the grid of 5; louder lifts „stumm“
+    /// One 5 % step (mouse wheel, actions) on the grid of 5; louder lifts „muted“
     pub fn step(self, up: bool) -> Self {
         let p = ((self.percent / 5.0).round() + if up { 1.0 } else { -1.0 }) * 5.0;
         Self { percent: p.clamp(0.0, 100.0), muted: self.muted && !up }
@@ -403,7 +403,7 @@ fn open_window(project: &Project, plan: WindowPlan, rate: u32, shared: &Arc<Shar
     let (mut child, workdir) = cl_export::spawn_audio_window(project, plan.mix_from, plan.mix_to, rate)
         .map_err(|e| e.to_string())?;
     cl_media::raise_priority(&child);
-    let mut stdout = child.stdout.take().ok_or("kein stdout")?;
+    let mut stdout = child.stdout.take().ok_or("no stdout")?;
     let child = Arc::new(Mutex::new(child));
     {
         let mut kids = shared.kids.lock().unwrap();
@@ -450,7 +450,7 @@ fn open_window(project: &Project, plan: WindowPlan, rate: u32, shared: &Arc<Shar
             // so the next window joins at the right place
             if want > 0 && !sh.stop.load(Ordering::Relaxed) {
                 if crate::app::perf() {
-                    crate::applog::perf_line!("perf: Ton-Fenster ab Frame {} mit {} Frames Stille aufgefüllt", plan.first, want / 2);
+                    crate::applog::perf_line!("perf: audio window from frame {} padded with {} frames of silence", plan.first, want / 2);
                 }
                 ready2.get_or_init(Instant::now);
                 q2.lock().unwrap().extend(std::iter::repeat_n(0.0, want as usize));
@@ -475,7 +475,7 @@ fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: W
                 match open_window(&project, plan, rate, &shared) {
                     Ok(w) => next = Some(w),
                     Err(e) => {
-                        log::warn!("Ton: {e}");
+                        log::warn!("Audio: {e}");
                         break;
                     }
                 }
@@ -509,7 +509,7 @@ fn feed(project: Project, from: Time, rate: u32, shared: Arc<Shared>, mut cur: W
                 // of the window start from the continuous sample counter (must be 0)
                 let lead = n.ready.get().map(|r| r.elapsed().as_secs_f64() * 1000.0);
                 crate::applog::perf_line!(
-                    "perf: Ton-Fensterwechsel bei Frame {}: Vorlauf {} ms (Start nach {:.0} ms), Versatz {} Samples",
+                    "perf: audio window change at frame {}: lead {} ms (start after {:.0} ms), offset {} samples",
                     n.plan.first,
                     lead.map_or("–".into(), |l| format!("{l:.0}")),
                     n.ready.get().map_or(f64::NAN, |r| r.duration_since(n.spawned).as_secs_f64() * 1000.0),
@@ -601,7 +601,7 @@ impl AudioPlayer {
                     let device = wanted
                         .and_then(|w| host.output_devices().ok()?.find(|d| d.name().ok().as_deref() == Some(w.as_str())))
                         .or_else(|| host.default_output_device())
-                        .ok_or("Kein Audio-Ausgabegerät")?;
+                        .ok_or("No audio output device")?;
                     let name = device.name().unwrap_or_default();
                     remembered(&mut out, &name, || device.default_output_config().map(|c| (device.clone(), c)).map_err(|e| e.to_string()))?
                 }
@@ -701,7 +701,7 @@ impl AudioPlayer {
                 cpal::SampleFormat::U16 => build!(u16, |v: f32| ((v.clamp(-1.0, 1.0) * 0.5 + 0.5)
                     * u16::MAX as f32)
                     as u16),
-                f => return Err(format!("Sample-Format {f:?} nicht unterstützt")),
+                f => return Err(format!("Sample format {f:?} not supported")),
             }
             .map_err(|e| e.to_string())?;
             stream.play().map_err(|e| e.to_string())?;
@@ -724,7 +724,7 @@ impl AudioPlayer {
             .name("cl-audio-out".into())
             .spawn(move || {
                 if let Err(e) = out() {
-                    log::warn!("Ton: {e}");
+                    log::warn!("Audio: {e}");
                     fail.store(true, Ordering::Relaxed);
                     // Device unplugged or similar: search again on the next start
                     *OUTPUT.lock().unwrap() = None;
@@ -757,7 +757,7 @@ impl AudioPlayer {
         }
         if let Some(t0) = self.remix_t0.take() {
             if crate::app::perf() {
-                crate::applog::perf_line!("perf: Ton neu gemischt, übernommen nach {:.0} ms (ohne Lücke)", t0.elapsed().as_secs_f64() * 1000.0);
+                crate::applog::perf_line!("perf: sound remixed, taken over after {:.0} ms (without gap)", t0.elapsed().as_secs_f64() * 1000.0);
             }
         }
         let Some(p) = self.queued.take() else { return };
@@ -767,7 +767,7 @@ impl AudioPlayer {
         let Some(plan) = window_plan(from, p.duration(), self.rate, 0) else { return };
         let first = match open_window(&p, plan, self.rate, &self.shared) {
             Ok(w) => w,
-            Err(e) => return log::warn!("Ton: {e}"),
+            Err(e) => return log::warn!("Audio: {e}"),
         };
         let gen = {
             let mut o = self.shared.out.lock().unwrap();
@@ -781,7 +781,7 @@ impl AudioPlayer {
             Ok(_) => self.remix_t0 = Some(Instant::now()),
             Err(e) => {
                 self.shared.out.lock().unwrap().alt = None;
-                log::warn!("Ton: {e}");
+                log::warn!("Audio: {e}");
             }
         }
     }
@@ -897,7 +897,7 @@ mod tests {
         assert_eq!(calls, 3);
         // errors are not remembered
         let mut s2: Option<(String, u32)> = None;
-        assert_eq!(remembered(&mut s2, "C", || Err::<u32, _>("weg")), Err("weg"));
+        assert_eq!(remembered(&mut s2, "C", || Err::<u32, _>("gone")), Err("gone"));
         assert!(s2.is_none());
     }
 
@@ -1238,7 +1238,7 @@ mod tests {
         // pitch changes constantly: any offset by one sample would show
         let a = tone("a.wav", "aevalsrc=0.5*sin(2*PI*(200+20*t)*t):s=48000:d=40");
         let b = tone("b.wav", "sine=f=523:d=40:sample_rate=44100");
-        let mut p = Project::new("fenster");
+        let mut p = Project::new("window");
         p.media.extend([a.clone(), b.clone()]);
         let clip = |m: &MediaRef, start: f64, dur: f64, src: f64| {
             let mut c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Audio }, Time::from_secs_f64(start), Time::from_secs_f64(dur));
@@ -1321,18 +1321,18 @@ mod tests {
         ms
     }
 
-    /// Manual measurement: `CUTLINE_QA_DIR=<folder with PL_schnitt.cutline> cargo test --release -p cl-app
+    /// Manual measurement: `CUTLINE_QA_DIR=<folder with PL_cut.cutline> cargo test --release -p cl-app
     /// -- --ignored first_audio_sample --nocapture`. Old way (full mix to project end) against windows.
     #[test]
     #[ignore]
-    fn first_audio_sample_pl_schnitt() {
+    fn first_audio_sample_pl_cut() {
         let Some(dir) = std::env::var_os("CUTLINE_QA_DIR") else { return };
         let mut ok = false;
-        for name in ["PL_schnitt.cutline", "PL_gross.cutline"] {
+        for name in ["PL_cut.cutline", "PL_large.cutline"] {
             let Ok(json) = std::fs::read_to_string(std::path::Path::new(&dir).join(name)) else { continue };
             let p = Project::from_json(&json).unwrap();
             if p.media.iter().any(|m| m.is_local() && !m.path.exists()) {
-                eprintln!("{name}: Medien fehlen, übersprungen");
+                eprintln!("{name}: media missing, skipped");
                 continue;
             }
             ok = true;
@@ -1349,11 +1349,11 @@ mod tests {
                     old = first_sample_ms(|| cl_export::spawn_audio_preview(&p, from, rate).unwrap(), 0);
                     new = first_sample_ms(|| cl_export::spawn_audio_window(&p, plan.mix_from, plan.mix_to, rate).unwrap(), plan.skip);
                 }
-                eprintln!("{name} ab {secs:>5.0} s: bisher {old:>6.0} ms ({n_old} Eingänge) · Fenster {new:>5.0} ms ({n_new} Eingänge)");
+                eprintln!("{name} from {secs:>5.0} s: so far {old:>6.0} ms ({n_old} inputs) · window {new:>5.0} ms ({n_new} inputs)");
             }
         }
         if !ok {
-            eprintln!("keine Testprojekte in CUTLINE_QA_DIR");
+            eprintln!("no test projects in CUTLINE_QA_DIR");
         }
     }
 
@@ -1380,7 +1380,7 @@ mod tests {
             let first = a.first_sound().map(|t| t.duration_since(t0));
             // clock after the handover = time since the anchor (no jump)
             let diff = a.position().as_secs_f64() - 1.0 - t0.elapsed().as_secs_f64();
-            eprintln!("Lauf {i}: Aufruf {:.0} ms, erstes Sample {:?} ms, Uhr − Systemzeit {:+.1} ms", opened.as_secs_f64() * 1e3, first.map(|d| (d.as_secs_f64() * 1e3).round()), diff * 1e3);
+            eprintln!("run {i}: call {:.0} ms, first sample {:?} ms, clock − system time {:+.1} ms", opened.as_secs_f64() * 1e3, first.map(|d| (d.as_secs_f64() * 1e3).round()), diff * 1e3);
             assert!(diff.abs() < 0.005, "handover without a jump: {diff}");
         }
     }

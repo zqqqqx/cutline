@@ -1,4 +1,4 @@
-//! Change list („Was ist neu“) from `CHANGELOG.md` or the text of a GitHub release note.
+//! Change list („What's new“) from `CHANGELOG.md` or the text of a GitHub release note.
 //!
 //! Structure: per version `## 0.11.1 – 2026-11-15` (or `## Unreleased`), in it `### English` and
 //! `### Deutsch`, groups as a line `**New**`, entries `- **Title.** Sentence.` or `- Sentence.`.
@@ -175,7 +175,7 @@ pub fn between(all: &[Notes], installed: Version, target: Version) -> Vec<&Notes
     v
 }
 
-/// What is offered once as „Was ist neu“ after the start. `last`: last started version
+/// What is offered once as „What's new“ after the start. `last`: last started version
 /// (`None` = never remembered), `known_user`: not a fresh installation.
 pub fn news_after_update(all: &[Notes], last: Option<Version>, current: Version, known_user: bool) -> Vec<&Notes> {
     if !known_user {
@@ -196,18 +196,18 @@ mod tests {
     fn real_changelog_is_complete() {
         let all = parse(CHANGELOG);
         assert!(all.len() >= 5, "{}", all.len());
-        assert_eq!(all[0].version, None, "oben steht Unreleased");
+        assert_eq!(all[0].version, None, "Unreleased is on top");
         for n in &all {
             let name = n.version.map(|v| v.to_string()).unwrap_or("Unreleased".into());
             assert!(!n.en.is_empty() && !n.de.is_empty(), "{name}: en and de");
-            assert_eq!(n.en.len(), n.de.len(), "{name}: gleiche Gruppen in beiden Sprachen");
+            assert_eq!(n.en.len(), n.de.len(), "{name}: same groups in both languages");
             if n.version.is_some() {
-                assert!(n.date.len() == 10, "{name}: Datum");
+                assert!(n.date.len() == 10, "{name}: date");
                 for g in n.en.iter().chain(&n.de) {
                     assert!(!g.title.is_empty(), "{name}: group without title");
-                    assert!(!g.entries.is_empty(), "{name}: leere Gruppe {}", g.title);
+                    assert!(!g.entries.is_empty(), "{name}: empty group {}", g.title);
                     for e in &g.entries {
-                        assert!(!e.text.is_empty() || !e.title.is_empty(), "{name}: leerer Eintrag");
+                        assert!(!e.text.is_empty() || !e.title.is_empty(), "{name}: empty entry");
                     }
                 }
             }
@@ -230,21 +230,21 @@ mod tests {
         let n = &parse("## 1.0.0\n### Deutsch\n**Neu**\n- x\n### English\n**New**\n")[0];
         assert_eq!(n.groups(false)[0].title, "Neu", "an empty language counts as missing");
         // without a language heading: English
-        let n = &parse("## v2.1 - 2026-01-02\n- nur Text\n")[0];
+        let n = &parse("## v2.1 - 2026-01-02\n- text only\n")[0];
         assert_eq!((n.version, n.date.as_str()), (Some(Version(2, 1, 0)), "2026-01-02"));
-        assert_eq!(n.groups(true)[0].entries[0].text, "nur Text");
+        assert_eq!(n.groups(true)[0].entries[0].text, "text only");
     }
 
     #[test]
     fn broken_input_is_tolerated() {
-        for s in ["", "kein Changelog", "## \n###\n- \n**\n****", "- vor jeder Version\n**New**", "## 2026 Pläne\n- x", "## [🎬] – \n- **offen"] {
+        for s in ["", "no changelog", "## \n###\n- \n**\n****", "- before each version\n**New**", "## 2026 Plans\n- x", "## [🎬] – \n- **open"] {
             let all = parse(s);
             assert!(all.iter().all(|n| n.is_empty() || n.version.is_some()), "{s:?}");
         }
-        assert!(parse("## 2026 Pläne\n- x").is_empty(), "a year is not a version");
-        let n = &parse("## [1.2.3] - 2026-02-03\n### English\n#### Fixed:\n- **Kein Ende\n  zweite Zeile\n")[0];
+        assert!(parse("## 2026 Plans\n- x").is_empty(), "a year is not a version");
+        let n = &parse("## [1.2.3] - 2026-02-03\n### English\n#### Fixed:\n- **No end\n  second line\n")[0];
         assert_eq!(n.en[0].title, "Fixed");
-        assert_eq!(n.en[0].entries[0], Entry { title: String::new(), text: "**Kein Ende zweite Zeile".into() });
+        assert_eq!(n.en[0].entries[0], Entry { title: String::new(), text: "**No end second line".into() });
         // release note with header, collapsed older versions and GitHub asset
         let body = "## 1.1.0 – 2026-03-01\r\n### English\r\n**New**\r\n- **N.** x\r\n\r\n<details><summary>Earlier</summary>\r\n\r\n## 1.0.1\r\n**Fixed**\r\n- y\r\n</details>\r\n\r\n**Full Changelog**: https://github.com/x/compare/v1.0.0...v1.1.0\r\n";
         let all = parse(body);
@@ -287,14 +287,14 @@ mod tests {
     fn changes_json_is_read_or_rejected() {
         let ok = r#"{"format": 1, "versions": [
             {"version": "1.2.0", "date": "2026-03-01",
-             "en": [{"group": "New", "items": [{"title": "A.", "text": "b"}, {"text": "nur Satz"}]}],
+             "en": [{"group": "New", "items": [{"title": "A.", "text": "b"}, {"text": "sentence only"}]}],
              "de": [{"group": "Neu", "items": [{"title": "A.", "text": "b \"zitiert\""}]}],
-             "später": true},
+             "later": true},
             {"version": "1.1.0", "en": [{"group": "Fixed", "items": [{"text": "x"}]}]}]}"#;
         let all = parse_json(ok).unwrap();
         assert_eq!(all.len(), 2);
         assert_eq!((all[0].version, all[0].date.as_str()), (Some(Version(1, 2, 0)), "2026-03-01"));
-        assert_eq!(all[0].en[0].entries[1], Entry { title: String::new(), text: "nur Satz".into() });
+        assert_eq!(all[0].en[0].entries[1], Entry { title: String::new(), text: "sentence only".into() });
         assert_eq!(all[0].groups(true)[0].entries[0].text, "b \"zitiert\"");
         // missing language: the other one
         assert_eq!(all[1].groups(true)[0].title, "Fixed");
@@ -350,13 +350,13 @@ mod tests {
         // small example: special characters, continuation lines, entry without group, pre-release
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("CHANGELOG.md");
-        let text = "# Changelog\r\n\r\n## Unreleased\r\n### English\r\n**New**\r\n- offen\r\n\r\n## [1.1.0] - 2026-02-03\r\n### English\r\n- ohne Gruppe\r\n#### Fixed:\r\n- **Pfad \"C:\\x\".**\tTab\r\n  zweite Zeile\r\n### Deutsch\r\n**Behoben**\r\n* Ä ö 🎬\r\n\r\n## 1.0.0\r\n**New**\r\n- alt\r\n";
+        let text = "# Changelog\r\n\r\n## Unreleased\r\n### English\r\n**New**\r\n- open\r\n\r\n## [1.1.0] - 2026-02-03\r\n### English\r\n- without group\r\n#### Fixed:\r\n- **Path \"C:\\x\".**\tTab\r\n  second line\r\n### Deutsch\r\n**Behoben**\r\n* Ä ö 🎬\r\n\r\n## 1.0.0\r\n**New**\r\n- old\r\n";
         std::fs::write(&f, text).unwrap();
         let out = run("1.1.0-rc.1", &f).unwrap();
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
         let got = parse_json(&String::from_utf8(out.stdout).unwrap()).expect("valid");
         assert_eq!(got, parse(text)[1..]);
-        assert_eq!(got[0].en[1].entries[0], Entry { title: "Pfad \"C:\\x\".".into(), text: "Tab zweite Zeile".into() });
+        assert_eq!(got[0].en[1].entries[0], Entry { title: "Path \"C:\\x\".".into(), text: "Tab second line".into() });
         // a missing section aborts without output
         let out = run("9.9.9", &f).unwrap();
         assert!(!out.status.success() && out.stdout.is_empty());

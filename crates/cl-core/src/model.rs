@@ -47,10 +47,14 @@ id_type!(MediaId);
 
 /// Raise this whenever a field is added whose loss would change the user's edit: older versions
 /// then refuse the file instead of loading it and saving it back without that field.
-pub const PROJECT_SCHEMA_VERSION: u32 = 6;
+pub const PROJECT_SCHEMA_VERSION: u32 = 7;
+
+/// Up to this version bundled content had its old (German) ids and file names: such a project is
+/// converted when it is opened (see [`crate::legacy`]) and saved in the current version from then on.
+pub const LAST_GERMAN_ID_VERSION: u32 = 6;
 
 /// Load error for a project saved by a newer Cutline (the UI translates it as a whole).
-pub const NEWER_PROJECT: &str = "Dieses Projekt wurde mit einer neueren Cutline-Version gespeichert. Bitte Cutline aktualisieren.";
+pub const NEWER_PROJECT: &str = "This project was saved with a newer version of Cutline. Please update Cutline.";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
@@ -97,7 +101,16 @@ impl Project {
     }
 
     pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self).expect("Projekt ist immer serialisierbar")
+        serde_json::to_string_pretty(self).expect("a project can always be serialized")
+    }
+
+    /// Version a project file was saved with (`None`: not a project file)
+    pub fn file_version(s: &str) -> Option<u32> {
+        #[derive(Deserialize)]
+        struct Version {
+            schema_version: u32,
+        }
+        serde_json::from_str::<Version>(s).ok().map(|v| v.schema_version)
     }
 
     pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
@@ -106,13 +119,36 @@ impl Project {
             schema_version: u32,
         }
         let newer = || <serde_json::Error as serde::de::Error>::custom(NEWER_PROJECT);
+        let version = serde_json::from_str::<Version>(s).map(|v| v.schema_version);
+        // a project of a version with the old ids: convert them before the fields are read
+        let old = match version {
+            Ok(v) if v <= LAST_GERMAN_ID_VERSION => {
+                let mut v: serde_json::Value = serde_json::from_str(s)?;
+                crate::legacy::upgrade(&mut v, &|_| None);
+                Some(v)
+            }
+            _ => None,
+        };
+        let was_old = old.is_some();
+        let parsed = match old {
+            Some(v) => serde_json::from_value(v),
+            None => serde_json::from_str(s),
+        };
         // a newer file may also fail to parse here: then the version is the better message
-        let mut p: Self = serde_json::from_str(s).map_err(|e| match serde_json::from_str::<Version>(s) {
-            Ok(v) if v.schema_version > PROJECT_SCHEMA_VERSION => newer(),
+        let mut p: Self = parsed.map_err(|e| match version {
+            Ok(v) if v > PROJECT_SCHEMA_VERSION => newer(),
             _ => e,
         })?;
         if p.schema_version > PROJECT_SCHEMA_VERSION {
             return Err(newer());
+        }
+        if was_old {
+            // the caption track is recognized by its name, which those versions saved in German
+            for t in p.timeline.tracks.iter_mut().filter(|t| t.kind == TrackKind::Text) {
+                if t.name.as_deref() == Some(crate::legacy::old("caption_track")) {
+                    t.name = Some(crate::legacy::CAPTION_TRACK.into());
+                }
+            }
         }
         // saved again by this version, the file may get fields an older one would drop
         p.schema_version = PROJECT_SCHEMA_VERSION;
@@ -178,7 +214,7 @@ pub struct ProjectSettings {
     /// Main track magnet: main track clips join without gaps.
     pub main_track_magnet: bool,
     pub snapping: bool,
-    /// „Alles mitziehen“: ripple edits act on all unlocked tracks.
+    /// "Move everything": ripple edits act on all unlocked tracks.
     #[serde(default = "yes")]
     pub ripple_all_tracks: bool,
     /// Chosen target platform (format and export preset), e.g. "shorts"
@@ -294,14 +330,14 @@ pub struct Marker {
 
 /// Color palette for markers and clip labels (name, RGB)
 pub const MARKER_COLORS: [(&str, [u8; 3]); 8] = [
-    ("Blau", [70, 140, 255]),
-    ("Grün", [70, 200, 120]),
-    ("Gelb", [240, 200, 60]),
+    ("Blue", [70, 140, 255]),
+    ("Green", [70, 200, 120]),
+    ("Yellow", [240, 200, 60]),
     ("Orange", [250, 140, 60]),
-    ("Rot", [235, 80, 80]),
+    ("Red", [235, 80, 80]),
     ("Pink", [240, 110, 190]),
-    ("Lila", [160, 110, 240]),
-    ("Grau", [150, 150, 160]),
+    ("Purple", [160, 110, 240]),
+    ("Gray", [150, 150, 160]),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -433,7 +469,7 @@ pub struct Clip {
     /// Audio stream of the file (0 = first); `None` = first
     #[serde(default)]
     pub audio_stream: Option<u32>,
-    /// Audio streams of the file moved to their own clip („Ton extrahieren“): silent in this clip,
+    /// Audio streams of the file moved to their own clip („Extract audio“): silent in this clip,
     /// the other streams keep `volume_db`
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extracted_streams: Vec<u32>,
@@ -718,7 +754,7 @@ impl Clip {
                 .media(*media)
                 .and_then(|m| m.path.file_name())
                 .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| "Medium fehlt".into()),
+                .unwrap_or_else(|| "Media missing".into()),
             ClipContent::Text(t) => t.text.clone(),
             ClipContent::Effect(f) | ClipContent::Filter(f) => f.id.clone(),
         }
@@ -823,7 +859,7 @@ impl Shadow {
 pub struct Karaoke {
     /// Highlight color
     pub color: [u8; 4],
-    /// „Füllen“: words already spoken keep the highlight
+    /// „Fill“: words already spoken keep the highlight
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fill: bool,
     /// Start of each word relative to the clip start (speech recognition); if the word count does not
@@ -888,7 +924,7 @@ impl TextStyle {
 impl Default for TextStyle {
     fn default() -> Self {
         Self {
-            text: "Standardtext".into(),
+            text: "Default text".into(),
             font_family: None,
             size: 64.0,
             color: [255, 255, 255, 255],

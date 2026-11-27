@@ -65,7 +65,7 @@ pub fn hold_space(ctx: &egui::Context, raw: &mut egui::RawInput) -> Vec<egui::Ev
     held
 }
 
-/// Esc in a text or value field only discards its input: the shortcut „Auswahl aufheben" must
+/// Esc in a text or value field only discards its input: the shortcut „Clear selection“ must
 /// no longer act in the same frame (the field releases focus on Esc, afterwards it would see the key).
 fn esc_for_field(typing: bool, esc_pressed: bool) -> bool {
     typing && esc_pressed
@@ -128,7 +128,7 @@ pub enum DragAsset {
     OwnSticker(PathBuf),
     Effect(String),
     Filter(String),
-    /// Built-in (`xfade` name) or package transition (`<paket-id>/<asset-id>`)
+    /// Built-in (`xfade` name) or package transition (`<package-id>/<asset-id>`)
     Transition(String),
     Sfx(&'static str),
     File(PathBuf),
@@ -232,12 +232,12 @@ pub struct App {
     hires_timer: Option<HiresTimer>,
     /// Multicam mode: (angle clips, switches (time, index))
     pub multicam: Option<(Vec<ClipId>, Vec<(Time, usize)>)>,
-    /// Result list of „Highlights finden“ (window open)
+    /// Result list of „Find highlights“ (window open)
     pub shorts: Option<crate::shorts::ShortsState>,
     /// Window „Thumbnail“ (open) and its last used settings
     pub thumb: Option<crate::thumb::ThumbWin>,
     pub thumb_opts: crate::thumb::Opts,
-    /// New aspect ratio waiting for the choice „Clips neu einpassen?“
+    /// New aspect ratio waiting for the choice „Refit clips?“
     pub aspect_fit: Option<cl_core::ProjectSettings>,
     /// Guides for platform controls in the player
     pub safe_area: bool,
@@ -247,7 +247,7 @@ pub struct App {
     pub multicam_audio: usize,
     /// Quick action window (pauses, filler words, ducking, punch-in)
     pub quick: crate::quick::Quick,
-    /// Characters (plugin „Story-Werkzeuge“)
+    /// Characters (plugin „Story tools“)
     pub characters: Vec<crate::story::Character>,
     /// Plugins Freesound and Pexels
     pub stock: crate::stock::StockState,
@@ -338,7 +338,7 @@ pub struct App {
     pub fx_thumbs_requested: HashSet<String>,
     /// Right click → properties
     pub props: Option<crate::props::Props>,
-    /// Window „Exporte“ for this project (name)
+    /// Window „Exports“ for this project (name)
     pub exports_for: Option<crate::exports::ExportsList>,
     /// Lock file of the open project (see `take_lock`)
     lock_file: Option<PathBuf>,
@@ -355,7 +355,7 @@ pub struct App {
     pub layout_name: String,
     /// Error message in the settings window (stays open instead of only a message at the bottom)
     pub settings_error: Option<String>,
-    /// Question/window of the settings page „Inhalte“
+    /// Question/window of the settings page „Content“
     pub contents_dialog: Option<crate::contents::ContentsDialog>,
     /// Downloadable packages: list and downloads
     pub packs: crate::contents::PackDownloads,
@@ -408,6 +408,7 @@ pub struct App {
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, open: Option<PathBuf>) -> Self {
         crate::set_dialog_parent(cc);
+        crate::legacy::rename_data_folders(&paths::data_dir());
         let settings = AppSettings::load();
         let layout_frac = settings.layout.frac;
         theme::select(&cc.egui_ctx, &settings.theme);
@@ -415,10 +416,10 @@ impl App {
         let onboard = (!settings.onboarding_done
             && std::env::var_os("CUTLINE_NO_ONBOARDING").is_none())
         .then(|| crate::onboarding::Onboard::new(&settings.use_cases));
-        perf_mark("Einstellungen");
+        perf_mark("Settings");
         paths::install_bundled_fonts();
         let fonts = cl_fonts::FontLibrary::open(paths::font_dir()).unwrap_or_default();
-        perf_mark("Schriften");
+        perf_mark("Fonts");
         let plugin_dirs = paths::plugin_dirs();
         let mut plugins = cl_plugin::Registry::scan(plugin_dirs.iter().map(|p| p.as_path()));
         plugins.apply_states(&settings.plugin_states);
@@ -426,7 +427,7 @@ impl App {
         perf_mark("Plugins");
         cl_fx::catalog::load_packs(crate::contents::catalog_packs(&plugins, lang.code()));
         cl_fx::catalog::set_hidden(settings.hidden_packs.clone());
-        perf_mark("Katalog");
+        perf_mark("catalog");
 
         let system_font_count = Arc::new(Mutex::new(None));
         {
@@ -441,7 +442,7 @@ impl App {
         // graphics card runtime for the AI models: used only with files matching the catalog
         std::thread::spawn(|| crate::roto_ui::check_gpu_runtime(&cl_analyze::Models::new(paths::models_dir())));
 
-        let project = Project::new("Neues Projekt");
+        let project = Project::new("New project");
         let screen = if open.is_some() || !settings.start_on_home {
             Screen::Editor
         } else {
@@ -646,7 +647,7 @@ impl App {
                 app.start_import(PathBuf::from(d), &cc.egui_ctx);
             }
         }
-        perf_mark("App bereit");
+        perf_mark("app ready");
         app
     }
 
@@ -656,12 +657,12 @@ impl App {
 
     pub fn toast(&mut self, msg: impl Into<String>) {
         let msg = msg.into();
-        log::info!(target: "meldung", "{}", crate::applog::anon(&msg));
+        log::info!(target: "feedback", "{}", crate::applog::anon(&msg));
         self.push_toast(crate::tr(msg), false);
     }
     pub fn toast_err(&mut self, msg: impl Into<String>) {
         let msg = msg.into();
-        log::error!(target: "meldung", "{}", crate::applog::anon(&msg));
+        log::error!(target: "feedback", "{}", crate::applog::anon(&msg));
         self.push_toast(crate::tr(msg), true);
     }
     fn push_toast(&mut self, msg: String, err: bool) {
@@ -690,7 +691,7 @@ impl App {
     pub fn apply_batch(&mut self, ops: Vec<EditOp>) -> Option<OpOutput> {
         match ops.len() {
             0 => None,
-            1 => self.apply(ops.into_iter().next().expect("eins")),
+            1 => self.apply(ops.into_iter().next().expect("one")),
             _ => self.apply(EditOp::Batch {
                 label: String::new(),
                 ops,
@@ -737,7 +738,7 @@ impl App {
         let n = self.doc.lock().unwrap_or_else(|e| e.into_inner()).step(steps);
         if n > 0 {
             let what = if steps < 0 { self.t("undo") } else { self.t("redo") };
-            self.toast(format!("{what}: {n} {}", crate::tr(if n == 1 { "Schritt" } else { "Schritte" })));
+            self.toast(format!("{what}: {n} {}", crate::tr(if n == 1 { "step" } else { "steps" })));
         }
     }
 
@@ -758,7 +759,7 @@ impl App {
     }
 
     pub fn sync_project(&mut self) {
-        let _s = section("Projekt abgleichen");
+        let _s = section("Sync project");
         let doc = self.doc.lock().unwrap_or_else(|e| e.into_inner());
         if doc.revision() != self.revision {
             self.revision = doc.revision();
@@ -796,8 +797,8 @@ impl App {
                     // audible changes audible shortly after (dragging a slider does not restart the sound at
                     // every step); the picture keeps running
                     self.core.edit(true, self.core_now());
-                    if perf() && self.core.mode() == Mode::Spielen {
-                        self.perf_play = Some(PerfPlay::new("Ton neu (Änderung)", self.playhead));
+                    if perf() && self.core.mode() == Mode::Playing {
+                        self.perf_play = Some(PerfPlay::new("Audio restart (edit)", self.playhead));
                     }
                 }
             }
@@ -809,7 +810,7 @@ impl App {
     /// and when the file check reports something new). No file system access: presence from
     /// the cache, the loading already read the animations of the images.
     fn request_media_previews(&mut self) {
-        let _s = section("Vorschaubilder anfordern");
+        let _s = section("request thumbnails");
         // thumbnails first: they are fast and should not wait behind the waveforms of long
         // files (the jobs run in order)
         for m in self.project.media.iter().filter(|m| self.presence.get(&m.path)) {
@@ -1248,7 +1249,7 @@ impl App {
                 }
             }
         }
-        log::info!(target: "import", "{} Medien übernommen", ids.len());
+        log::info!(target: "import", "{} media taken over", ids.len());
         ids
     }
 
@@ -1328,7 +1329,11 @@ impl App {
         }
         let tpl = template.and_then(|id| cl_fx::text::TEMPLATES.iter().find(|t| t.id == id));
         let style = match tpl {
-            Some(t) => t.make(),
+            Some(t) => {
+                let mut s = t.make();
+                s.text = crate::tr(&s.text);
+                s
+            }
             None => TextStyle {
                 text: self.t("text-default"),
                 font_family: self.brand.font(crate::brand::TEXT).cloned(),
@@ -1584,7 +1589,7 @@ impl App {
                 ..
             }
         ) {
-            self.toast_err("Effekte wirken auf Video-, Bild- und Sticker-Clips");
+            self.toast_err("Effects work on video, image and sticker clips");
             return;
         }
         if c.fx.effects.iter().any(|e| e.id == id) {
@@ -1611,7 +1616,7 @@ impl App {
                 ..
             }
         ) {
-            self.toast_err("Filter wirken auf Video- und Bild-Clips");
+            self.toast_err("Filters work on video and image clips");
             return;
         }
         c.fx.filter = id.map(|i| FxRef {
@@ -1633,7 +1638,7 @@ impl App {
         let dur = Time::from_secs_f64(self.settings.transition_duration as f64);
         let has_next = self.next_adjacent(clip).is_some();
         if id.is_some() && !has_next {
-            self.toast_err("Übergänge liegen zwischen zwei direkt aufeinanderfolgenden Clips");
+            self.toast_err("Transitions sit between two adjacent clips");
             return;
         }
         let keep = self
@@ -1687,7 +1692,7 @@ impl App {
             .map(|c| c.id);
         match best {
             Some(c) => self.set_transition(c, Some(id)),
-            None => self.toast_err("Kein Schnitt zwischen zwei Clips gefunden"),
+            None => self.toast_err("No cut between two clips found"),
         }
     }
 
@@ -1718,7 +1723,7 @@ impl App {
         self.sel_extra = rights.iter().map(|r| r.1).chain(keep).filter(|c| *c != first).collect();
     }
 
-    /// Clips that „Teilen“ hits at the playhead: the selection, otherwise the main track's clip
+    /// Clips that „Split“ hits at the playhead: the selection, otherwise the main track's clip
     pub fn split_targets(&self) -> Vec<ClipId> {
         let fps = self.project.settings.fps;
         let at = self.playhead.snap_to_frame(fps);
@@ -1831,9 +1836,9 @@ impl App {
         clips.sort_by_key(|c| c.1.start);
         if !clips.is_empty() {
             self.toast(format!(
-                "{} {} kopiert",
+                "{} {} copied",
                 clips.len(),
-                if clips.len() == 1 { "Clip" } else { "Clips" }
+                if clips.len() == 1 { "clip" } else { "clips" }
             ));
             // target back to the origin track until a track is clicked again
             self.paste_track = None;
@@ -1912,13 +1917,13 @@ impl App {
             return;
         };
         let Some(m) = self.project.media(media).filter(|m| m.has_audio) else {
-            self.toast_err("Dieser Clip hat keinen Ton");
+            self.toast_err("This clip has no audio");
             return;
         };
         // only the stream the clip plays; the video keeps its volume for the other streams
         let n = c.played_stream(m);
         if c.extracted_streams.contains(&n) {
-            self.toast_err("Diese Tonspur ist schon extrahiert");
+            self.toast_err("This audio track is already extracted");
             return;
         }
         let mut a = c.clone();
@@ -1946,7 +1951,7 @@ impl App {
                 clip: a,
             },
         ]);
-        self.toast(format!("{} Ton extrahiert", icon::WAVEFORM));
+        self.toast(format!("{} audio extracted", icon::WAVEFORM));
     }
 
     /// Still frame: insert the current frame as a 3 s image at the playhead.
@@ -1979,7 +1984,7 @@ impl App {
             kind: MediaKind::Video,
         } = c.content
         else {
-            self.toast_err("Standbilder gibt es nur von Videoclips");
+            self.toast_err("Freeze frames only work on video clips");
             return;
         };
         let Some(m) = self.project.media(media).cloned() else {
@@ -1992,7 +1997,7 @@ impl App {
         let out = paths::data_dir()
             .join("Freeze")
             .join(format!("freeze-{stamp}.png"));
-        let _ = std::fs::create_dir_all(out.parent().expect("Ordner"));
+        let _ = std::fs::create_dir_all(out.parent().expect("Folder"));
         let ok = cl_media::ffmpeg_command()
             .ok()
             .and_then(|mut cmd| {
@@ -2015,7 +2020,7 @@ impl App {
             })
             .is_some_and(|s| s.success());
         if !ok {
-            self.toast_err("Standbild konnte nicht erzeugt werden");
+            self.toast_err("Couldn't create freeze frame");
             return;
         }
         let Some(img) = self.import_media(vec![out]).first().copied() else {
@@ -2088,7 +2093,7 @@ impl App {
         });
         self.saved_revision = self.revision;
         self.last_saved = Some(Instant::now());
-        // new project or „Speichern unter“: the lock moves to the new file
+        // new project or „Save as“: the lock moves to the new file
         if self.lock_file.as_deref() != Some(paths::lock_path(p).as_path()) {
             self.release_lock();
             self.take_lock(p);
@@ -2134,17 +2139,17 @@ impl App {
             (Some(p), false) => Some(p.clone()),
             (None, false) => Some(self.default_project_path()),
             _ => crate::dialog()
-                .add_filter("Cutline-Projekt", &["cutline"])
+                .add_filter("Cutline project", &["cutline"])
                 .set_file_name(format!("{}.cutline", self.project.name))
                 .save_file(),
         };
         if let Some(p) = path {
             if !self.write_project(&p) {
-                self.toast_err("Dieses Projekt ist schon in einem anderen Cutline-Fenster geöffnet");
+                self.toast_err("This project is already open in another Cutline window");
                 return;
             }
-            crate::applog::project("gespeichert", &self.project, Some(t0));
-            self.toast(format!("{} Gespeichert", icon::CHECK));
+            crate::applog::project("saved", &self.project, Some(t0));
+            self.toast(format!("{} saved", icon::CHECK));
             self.project_path = Some(p);
             self.settings.save();
         }
@@ -2187,7 +2192,7 @@ impl App {
 
     pub fn open_dialog(&mut self) {
         if let Some(p) = crate::dialog()
-            .add_filter("Cutline-Projekt", &["cutline", "json"])
+            .add_filter("Cutline project", &["cutline", "json"])
             .pick_file()
         {
             self.open_project(&p);
@@ -2329,7 +2334,7 @@ impl App {
             self.settings.projects_dir = (new != default).then_some(new.clone());
             paths::set_projects_dir(self.settings.projects_dir.clone());
             self.settings_error = None;
-            self.toast(crate::tr(format!("{} {} Projekte verschoben", icon::CHECK, moved.len())));
+            self.toast(crate::tr(format!("{} {} projects moved", icon::CHECK, moved.len())));
         } else {
             self.settings_error = Some(errs.join("\n"));
         }
@@ -2376,7 +2381,7 @@ impl App {
                 // another window owns the file: this window's edits go to the backups instead
                 let job = crate::saving::Job { kind: crate::saving::Kind::Project, path: p, project: self.project.clone(), revision: self.revision };
                 if let Some(r) = crate::saving::rescue(&job) {
-                    self.toast_err(format!("Stand gesichert in {}", r.display()));
+                    self.toast_err(format!("Current state saved to {}", r.display()));
                     self.saved_revision = self.revision;
                 }
             }
@@ -2387,7 +2392,7 @@ impl App {
         self.saver.last_err = None;
         self.poll_saves();
         if !idle {
-            self.toast_err(format!("Projekt konnte nicht gespeichert werden: {}", crate::tr("Speichern dauert zu lange")));
+            self.toast_err(format!("Could not save the project: {}", crate::tr("Saving is taking too long")));
         }
         if !idle || needs_save(self.revision, self.saved_revision, self.project_path.is_some(), &self.project) {
             return false;
@@ -2404,7 +2409,7 @@ impl App {
         let me = std::process::id();
         if paths::lock_held_by_other(&lock, me) {
             // the other window keeps its lock; this one does not write the file (see `write_project`)
-            self.toast_err("Dieses Projekt ist schon in einem anderen Cutline-Fenster geöffnet");
+            self.toast_err("This project is already open in another Cutline window");
             self.locked_out = Some(p.to_path_buf());
             return;
         }
@@ -2422,8 +2427,8 @@ impl App {
         }
     }
 
-    /// Window close (X, Alt+F4, close request of the system) with „Beim Schließen zur
-    /// Projektübersicht“: back to the start page instead of quitting. Runs after the export's
+    /// Window close (X, Alt+F4, close request of the system) with „Go to projects
+    /// when closing“: back to the start page instead of quitting. Runs after the export's
     /// own question. If leaving fails, the close goes through as before (`on_exit` rescues the
     /// state), so a close request is never blocked for good.
     fn close_to_home(&mut self, ctx: &egui::Context) {
@@ -2445,7 +2450,7 @@ impl App {
             return;
         }
         self.cancel_load();
-        crate::applog::project("geschlossen", &self.project, None);
+        crate::applog::project("closed", &self.project, None);
         // every way back into the editor resets it anyway: free the project's frames, textures and
         // decoder caches right now
         self.reset_editor();
@@ -2542,7 +2547,7 @@ impl App {
         if let Some(mut l) = self.play_log.take() {
             l.stats.add(&self.core.stats());
             if let Some(s) = l.line(l.pressed.elapsed(), self.settings.use_proxies) {
-                log::info!(target: "wiedergabe", "{s}");
+                log::info!(target: "playback", "{s}");
             }
         }
     }
@@ -2609,7 +2614,7 @@ impl App {
                 }
                 self.audio = Some(a);
             }
-            Err(e) => log::warn!("Ton: {e}"),
+            Err(e) => log::warn!("Audio: {e}"),
         }
     }
 
@@ -2648,7 +2653,7 @@ impl App {
                 std::thread::spawn(move || {
                     let a = AudioPlayer::start(&project, at).ok();
                     if perf() {
-                        crate::applog::perf_line!("scrub: Ton ab {:.2} s, ok={}", at.as_secs_f64(), a.is_some());
+                        crate::applog::perf_line!("scrub: audio from {:.2} s, ok={}", at.as_secs_f64(), a.is_some());
                     }
                     // end the snippet after 350 ms (or earlier when the next begins)
                     let t0 = Instant::now();
@@ -2747,7 +2752,7 @@ impl App {
 
     /// Preview an already checked medium (also network addresses, e.g. HLS).
     pub fn preview_media(&mut self, key: String, m: MediaRef) {
-        let mut p = Project::new("vorhören");
+        let mut p = Project::new("preview");
         let id = m.id;
         let dur = m.duration;
         p.media.push(m);
@@ -2947,7 +2952,7 @@ impl App {
             r.0 |= i.consume_key(Modifiers::COMMAND, Key::C);
             r.1 |= i.consume_key(Modifiers::COMMAND, Key::X);
             r.2 |= i.consume_key(Modifiers::COMMAND, Key::V);
-            // Ctrl+Alt+V (Windows: AltGr) is „Attribute einfügen“, not a normal paste
+            // Ctrl+Alt+V (Windows: AltGr) is „Paste attributes“, not a normal paste
             if r.2 && (i.modifiers.alt || actions.contains(&"paste_attrs")) {
                 r.2 = false;
                 if !actions.contains(&"paste_attrs") {
@@ -3047,9 +3052,9 @@ impl App {
                 "loop" => {
                     self.loop_range = !self.loop_range;
                     self.toast(if self.loop_range {
-                        "Schleife an"
+                        "Loop on"
                     } else {
-                        "Schleife aus"
+                        "Loop off"
                     });
                 }
                 "marker" => self.add_marker(),
@@ -3095,7 +3100,7 @@ impl App {
                 "history" => self.show_history(),
                 "layout_edit" => {
                     if self.settings.layout_locked {
-                        self.toast("Layout ist gesperrt (Einstellungen → Allgemein → Anordnung)");
+                        self.toast("Layout is locked (Settings → General → Arrangement)");
                     } else {
                         self.player_max = false;
                         self.layout_edit = true;
@@ -3167,10 +3172,10 @@ impl App {
         if !self.settings.driver_hint_shown && cl_export::old_driver_found() {
             self.settings.driver_hint_shown = true;
             self.settings.save();
-            self.toast_err(crate::tr("Grafiktreiber veraltet: Hardware-Kodierung geht erst nach einem Treiber-Update, bis dahin wird in Software kodiert"));
+            self.toast_err(crate::tr("Graphics driver outdated: hardware encoding needs a driver update, encoding in software until then"));
         }
         if let Some(v) = crate::applog::take_old_ffmpeg() {
-            self.toast_err(format!("FFmpeg {v} gefunden – Cutline braucht {} oder neuer", crate::applog::MIN_FFMPEG));
+            self.toast_err(format!("FFmpeg {v} found – Cutline needs {} or newer", crate::applog::MIN_FFMPEG));
         }
         self.toasts
             .retain(|(_, t, err)| t.elapsed().as_secs_f32() < toast_secs(*err));
@@ -3195,7 +3200,7 @@ impl App {
                 // do not wrap messages word by word (the area has no fixed width)
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 // the area starts with the width of the frame before: a longer new message was
-                // cut off ("Rückgängig: Clip hinzufüg…") although the window had room
+                // cut off ("Undo: Clip added…") although the window had room
                 ui.set_max_width(ui.ctx().screen_rect().width() - 48.0);
                 for (i, (msg, at, err)) in self.toasts.iter().enumerate().rev().take(3) {
                     let age = at.elapsed().as_secs_f32();
@@ -3259,7 +3264,7 @@ impl App {
         // dropped over the sticker or sound list: into the own library
         // where the files were let go (`drops.pos`), not where the pointer was last seen: no mouse
         // events arrive while dragging from outside, so a video dropped on the timeline right after
-        // a click in the sound list went into the sound library ("Keine passenden Dateien")
+        // a click in the sound list went into the sound library ("No matching files")
         if let (Some((kind, rect)), Some(pos)) =
             (self.lib_drop, self.drops.pos.or(ctx.input(|i| i.pointer.hover_pos())))
         {
@@ -3308,7 +3313,7 @@ impl App {
     /// (`predicted_dt`, fixed 1/60 s), so it is added here. The deadline is only exact
     /// with the fine timer ([`HiresTimer`]); otherwise Windows snaps to ~15.6 ms.
     pub fn play_repaint_delay(&self) -> Duration {
-        let wait = if self.core.mode() == Mode::Puffern {
+        let wait = if self.core.mode() == Mode::Buffering {
             Duration::from_millis(10)
         } else {
             next_frame_delay(self.playhead, self.project.settings.fps, self.core.rate())
@@ -3333,7 +3338,7 @@ impl App {
             if !p.sound && t >= p.pressed {
                 p.sound = true;
                 crate::applog::perf_line!(
-                    "perf: {} → erster Ton {:.0} ms",
+                    "perf: {} → first audio {:.0} ms",
                     p.what,
                     t.saturating_duration_since(p.pressed).as_secs_f64() * 1000.0
                 );
@@ -3341,7 +3346,7 @@ impl App {
         }
         let (n, d) = a.take_underruns();
         if n > 0 {
-            crate::applog::perf_line!("perf: Ton-Aussetzer {n}× zusammen {:.0} ms bei {:.2} s", d.as_secs_f64() * 1000.0, self.playhead.as_secs_f64());
+            crate::applog::perf_line!("perf: audio dropouts {n}× together {:.0} ms at {:.2} s", d.as_secs_f64() * 1000.0, self.playhead.as_secs_f64());
         }
     }
 
@@ -3352,7 +3357,7 @@ impl App {
         }
         if let Some(p) = self.perf_play.as_mut().filter(|p| !p.frame && self.playhead > p.at) {
             p.frame = true;
-            crate::applog::perf_line!("perf: {} → erstes Bild weitergeschaltet {:.0} ms", p.what, p.pressed.elapsed().as_secs_f64() * 1000.0);
+            crate::applog::perf_line!("perf: {} → first frame advanced {:.0} ms", p.what, p.pressed.elapsed().as_secs_f64() * 1000.0);
         }
     }
 }
@@ -3383,7 +3388,7 @@ impl eframe::App for App {
         let _frame_time = perf().then(|| PerfFrame(Instant::now()));
         if perf() {
             static FIRST: std::sync::Once = std::sync::Once::new();
-            FIRST.call_once(|| perf_mark("erstes Bild"));
+            FIRST.call_once(|| perf_mark("first frame"));
             self.perf_ui += 1;
             let el = self.perf_since.elapsed().as_secs_f64();
             if el >= 1.0 {
@@ -3393,7 +3398,7 @@ impl eframe::App for App {
                 }
                 let ord = std::sync::atomic::Ordering::Relaxed;
                 crate::applog::perf_line!(
-                    "perf: {:.0} ui/s, {:.0} Strombilder/s, {} Ströme geöffnet, größte Lücke {:.0} ms, playing={}, Bildzeit Ø {:.2} / max {:.1} ms, Player Ø {:.2} / max {:.1} ms",
+                    "perf: {:.0} ui/s, {:.0} stream frames/s, {} streams opened, longest gap {:.0} ms, playing={}, frame time avg {:.2} / max {:.1} ms, player avg {:.2} / max {:.1} ms",
                     self.perf_ui as f64 / el,
                     st.frames as f64 / el,
                     st.opens,
@@ -3404,13 +3409,13 @@ impl eframe::App for App {
                     crate::player::PERF_PLAYER_SUM_US.swap(0, ord) as f64 / 1000.0 / self.perf_ui.max(1) as f64,
                     crate::player::PERF_PLAYER_MAX_US.swap(0, ord) as f64 / 1000.0
                 );
-                if self.core.mode() == Mode::Spielen {
+                if self.core.mode() == Mode::Playing {
                     if let Some(ms) = self.core.av_offset_ms() {
-                        let clock = if self.audio.as_ref().is_some_and(|a| a.started()) { "Ton-Uhr" } else { "Systemuhr" };
-                        crate::applog::perf_line!("perf: Bild-Ton-Versatz {ms:.0} ms ({clock})");
+                        let clock = if self.audio.as_ref().is_some_and(|a| a.started()) { "audio clock" } else { "Systemuhr" };
+                        crate::applog::perf_line!("perf: picture-audio offset {ms:.0} ms ({clock})");
                     }
                     crate::applog::perf_line!(
-                        "perf: verworfen {:.0}/s, Rückstand max {:.0} ms, aufgeholt {}×, hängend {}×, Qualitätsstufe {}",
+                        "perf: dropped {:.0}/s, lag max {:.0} ms, caught up {}×, stalled {}×, quality level {}",
                         st.dropped as f64 / el,
                         st.max_lag * 1000.0,
                         st.catch_ups,
@@ -3429,7 +3434,7 @@ impl eframe::App for App {
         self.apply_pending_fonts(ctx);
         // „System“ follows a change of the operating system at once
         theme::select(ctx, &self.settings.theme);
-        // preview finished → button back to „Abspielen“
+        // preview finished → button back to „Play“
         if let Some((_, a)) = &self.sfx_preview {
             if a.started() && a.position() + Time::from_millis(40) >= self.sfx_preview_len {
                 self.sfx_preview = None;
@@ -3450,11 +3455,11 @@ impl eframe::App for App {
         self.handle_dropped_files(ctx);
         self.warm_silent_channels();
         {
-            let _s = section("Vorschaubilder empfangen");
+            let _s = section("receive thumbnails");
             self.receive_decoded(ctx);
         }
         {
-            let _s = section("Aufgaben");
+            let _s = section("tasks");
             self.poll_tasks();
             self.roto_watch(ctx);
             self.poll_file_drops();
@@ -3465,7 +3470,7 @@ impl eframe::App for App {
         if let Some((msg, done)) = self.export.poll(ctx) {
             // a successful export with Epidemic music is reported (terms of use) – for the
             // project it comes from
-            if let Some(p) = done.filter(|_| msg.contains("Export fertig")) {
+            if let Some(p) = done.filter(|_| msg.contains("Export finishedv")) {
                 self.report_epidemic_export(ctx, &p);
                 // only if nothing is being previewed: `preview_sound` toggles and would abort it
                 if self.settings.export_sound
@@ -3652,7 +3657,7 @@ impl eframe::App for App {
         }
         if let Some(id) = self.export.take_picked_platform() {
             if let Some(s) = &mut self.aspect_fit {
-                // format change waits for „Clips neu einpassen?“: the platform comes along (Esc discards both)
+                // format change waits for „Refit clips?“: the platform comes along (Esc discards both)
                 s.platform = Some(id.to_string());
             } else if self.project.settings.platform.as_deref() != Some(id) {
                 let mut s = self.project.settings.clone();
@@ -3689,7 +3694,7 @@ impl eframe::App for App {
         let flushed = self.flush_before_leaving();
         // let everything waiting be written (save thread) before the program ends
         if !self.saver.wait_idle(Duration::from_secs(60)) {
-            eprintln!("Speichern beim Beenden dauert zu lange");
+            eprintln!("Saving on exit takes too long");
         }
         self.poll_saves();
         if !flushed || self.saved_revision == UNSAVED {
@@ -3760,7 +3765,7 @@ fn audio_signature(p: &Project) -> u64 {
 /// Moving an audio slider must rebuild the preview sound
 #[test]
 fn audio_signature_follows_reverb_and_strengths() {
-    let mut p = Project::new("Hall");
+    let mut p = Project::new("Reverb");
     let mut t = Track::new(TrackKind::Audio);
     t.clips.push(Clip::new(ClipContent::Media { media: MediaId::new(), kind: MediaKind::Audio }, Time::ZERO, Time::from_secs_f64(2.0)));
     p.timeline.tracks.push(t);
@@ -3886,7 +3891,7 @@ impl Drop for PerfFrame {
         let sections = PERF_SECTIONS.with(|s| std::mem::take(&mut *s.borrow_mut()));
         if took > SLOW_FRAME {
             let (what, d) = slowest_section(took, &sections);
-            eprintln!("perf: langes Bild {:.0} ms, davon {what} {:.0} ms", took.as_secs_f64() * 1000.0, d.as_secs_f64() * 1000.0);
+            eprintln!("perf: long frame {:.0} ms, of which {what} {:.0} ms", took.as_secs_f64() * 1000.0, d.as_secs_f64() * 1000.0);
         }
         PERF_LAST.with(|l| *l.borrow_mut() = (took, sections));
     }
@@ -3961,7 +3966,7 @@ pub fn last_frame() -> (Duration, Vec<(&'static str, Duration)>) {
     PERF_LAST.with(|l| l.borrow().clone())
 }
 
-/// Most expensive section of a frame; whatever belongs to no section counts as „übrige Oberfläche“.
+/// Most expensive section of a frame; whatever belongs to no section counts as "rest of the UI".
 fn slowest_section(total: Duration, sections: &[(&'static str, Duration)]) -> (&'static str, Duration) {
     let mut sum: std::collections::HashMap<&'static str, Duration> = std::collections::HashMap::new();
     for (w, d) in sections {
@@ -3969,9 +3974,9 @@ fn slowest_section(total: Duration, sections: &[(&'static str, Duration)]) -> (&
     }
     let rest = total.saturating_sub(sum.values().sum());
     sum.into_iter()
-        .chain([("übrige Oberfläche", rest)])
+        .chain([("rest of the interface", rest)])
         .max_by_key(|(_, d)| *d)
-        .unwrap_or(("übrige Oberfläche", rest))
+        .unwrap_or(("rest of the interface", rest))
 }
 
 /// Measurement (`CUTLINE_PERF`): one playback or one audio restart
@@ -4019,7 +4024,7 @@ impl PlayLog {
         let ms = |d: Option<Duration>| d.map_or_else(|| "–".to_string(), |d| format!("{} ms", d.as_millis()));
         let s = &self.stats;
         Some(format!(
-            "{:.1} s · erstes Bild {} · erster Ton {} · {} Ströme geöffnet · {} verworfen · Rückstand max {:.0} ms · Lücke max {:.0} ms · aufgeholt {}× · hängend {}× · Qualitätsstufe max {} · Proxys {}",
+            "{:.1} s · first frame {} · first sound {} · {} streams opened · {} dropped · lag max {:.0} ms · gap max {:.0} ms · caught up {}× · stalled {}× · quality level max {} · proxies {}",
             took.as_secs_f64(),
             ms(self.frame),
             ms(self.sound),
@@ -4030,7 +4035,7 @@ impl PlayLog {
             s.catch_ups,
             s.stalls,
             self.quality,
-            if proxies { "an" } else { "aus" }
+            if proxies { "on" } else { "off" }
         ))
     }
 }
@@ -4048,7 +4053,7 @@ mod play_log_tests {
         l.quality = 1;
         assert_eq!(
             l.line(Duration::from_millis(4200), true).as_deref(),
-            Some("4.2 s · erstes Bild 180 ms · erster Ton – · 3 Ströme geöffnet · 3 verworfen · Rückstand max 200 ms · Lücke max 90 ms · aufgeholt 1× · hängend 0× · Qualitätsstufe max 1 · Proxys an")
+            Some("4.2 s · first frame 180 ms · first sound – · 3 streams opened · 3 dropped · lag max 200 ms · gap max 90 ms · caught up 1× · stalled 0× · quality level max 1 · proxies on")
         );
     }
 
@@ -4177,7 +4182,7 @@ pub fn perf_mark(what: &str) {
     static T0: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
     let t0 = *T0.get_or_init(Instant::now);
     if perf() {
-        crate::applog::perf_line!("perf: Start {what} nach {} ms", t0.elapsed().as_millis());
+        crate::applog::perf_line!("perf: start {what} after {} ms", t0.elapsed().as_millis());
     }
 }
 
@@ -4230,7 +4235,7 @@ pub fn fixed_width(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
 
 /// Display time of a toast: errors stay longer (and close on click)
 /// Text of a toast with an icon in front; if the message already brings its own icon,
-/// that one stays (otherwise two check marks would stand before „Gespeichert“).
+/// that one stays (otherwise two check marks would stand before „Saved“).
 /// Narrowest inspector: below this its rows (label, slider, value field) ran out of the panel
 /// and the value fields were cut off (window test of 0.19.1 in a 1080 px wide window)
 const INSPECTOR_MIN: f32 = 300.0;
@@ -4307,12 +4312,12 @@ mod toast_tests {
 
     #[test]
     fn toast_shows_one_symbol() {
-        let saved = toast_line(&format!("{} Gespeichert", icon::CHECK), false);
+        let saved = toast_line(&format!("{} saved", icon::CHECK), false);
         assert_eq!(saved.matches(icon::CHECK).count() + saved.matches(icon::CHECK_CIRCLE).count(), 1, "{saved}");
-        assert_eq!(toast_line(&format!("{} Export fertig (1.0 s)", icon::CHECK_CIRCLE), false).matches(icon::CHECK_CIRCLE).count(), 1);
+        assert_eq!(toast_line(&format!("{} Export done (1.0 s)", icon::CHECK_CIRCLE), false).matches(icon::CHECK_CIRCLE).count(), 1);
         // without its own icon: check mark or warning in front
-        assert_eq!(toast_line("Kopiert", false), format!("{}  Kopiert", icon::CHECK_CIRCLE));
-        assert!(toast_line("Fehler", true).starts_with(icon::WARNING_CIRCLE));
+        assert_eq!(toast_line("Copied", false), format!("{}  Copied", icon::CHECK_CIRCLE));
+        assert!(toast_line("Error", true).starts_with(icon::WARNING_CIRCLE));
     }
 
     #[test]
@@ -4341,7 +4346,7 @@ mod frame_rate_tests {
             let mut ids = (egui::Id::NULL, egui::Id::NULL);
             let _ = ctx.run(egui::RawInput::default(), |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    ids.0 = ui.button("Kachel").id;
+                    ids.0 = ui.button("Tile").id;
                     ids.1 = ui.text_edit_singleline(&mut text).id;
                 });
             });
@@ -4465,12 +4470,12 @@ mod load_perf;
 #[test]
 fn unreadable_file_gives_a_short_message() {
     let mut app = crate::saving::tests::test_app();
-    app.set_doc(Project::new("Kaputt"));
-    let f = app.dir().join("kaputt.mp4");
-    std::fs::write(&f, b"kein Video").unwrap();
+    app.set_doc(Project::new("Broken"));
+    let f = app.dir().join("broken.mp4");
+    std::fs::write(&f, b"no video").unwrap();
     assert!(app.import_media(vec![f]).is_empty());
     let msgs: Vec<&str> = app.toasts.iter().map(|t| t.0.as_str()).collect();
-    assert_eq!(msgs, ["Datei kann nicht gelesen werden: „kaputt.mp4“"]);
+    assert_eq!(msgs, ["Cannot read file: “broken.mp4”"]);
 }
 
 /// A stock download still running when the project changes is not inserted into the new project
@@ -4482,11 +4487,11 @@ fn download_running_at_a_project_change_is_not_inserted() {
     app.es.loading_track = Some("t1".into());
     app.reset_editor();
     assert!(app.stock.stray && app.es.stray);
-    app.set_doc(Project::new("Neu"));
-    app.stock.test_downloaded("Klang");
+    app.set_doc(Project::new("New"));
+    app.stock.test_downloaded("Sound");
     app.poll_stock();
     assert!(app.project.media.is_empty() && app.project.timeline.tracks.iter().all(|t| t.clips.is_empty()));
-    assert!(!app.stock.stray && app.toasts.iter().any(|t| t.0.contains("Klang")));
+    assert!(!app.stock.stray && app.toasts.iter().any(|t| t.0.contains("Sound")));
 }
 
 /// Project change: the export's rebuild snapshot belongs to the old project (same state 0,
@@ -4504,7 +4509,7 @@ fn export_reframe_snapshot_is_dropped_with_the_project() {
 #[test]
 fn command_search_keys_stay_in_the_search() {
     let mut app = crate::saving::tests::test_app();
-    app.set_doc(Project::new("Suche"));
+    app.set_doc(Project::new("Search"));
     let ctx = egui::Context::default();
     let key = |key: Key, modifiers: Modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
     let frame = |app: &mut App, events: Vec<egui::Event>| {
@@ -4533,7 +4538,7 @@ fn command_search_keys_stay_in_the_search() {
     assert_eq!(app.selected, Some(clip));
     // open again (field empty), type, Enter runs the first hit
     frame(&mut app, vec![key(Key::K, Modifiers::COMMAND)]);
-    frame(&mut app, vec![egui::Event::Text("einstellungen".into())]);
+    frame(&mut app, vec![egui::Event::Text("settings".into())]);
     frame(&mut app, vec![key(Key::Enter, Modifiers::NONE)]);
     assert!(app.settings_open && !app.palette.open);
     assert_eq!(app.selected, Some(clip));
@@ -4544,7 +4549,7 @@ fn command_search_keys_stay_in_the_search() {
 #[test]
 fn font_search_enter_picks_and_esc_keeps_the_selection() {
     let mut app = crate::saving::tests::test_app();
-    let mut p = Project::new("Schrift");
+    let mut p = Project::new("Font");
     let mut tr = cl_core::Track::new(cl_core::TrackKind::Text);
     let c = Clip::new(ClipContent::Text(cl_core::TextStyle::default()), Time::ZERO, Time::from_secs_f64(2.0));
     let clip = c.id;
@@ -4626,7 +4631,7 @@ fn esc_with_an_open_popup_keeps_the_selection() {
         let _ = ctx.run(raw, |ctx| {
             #[allow(deprecated)]
             if popup {
-                ctx.memory_mut(|m| m.open_popup(egui::Id::new("farbe")));
+                ctx.memory_mut(|m| m.open_popup(egui::Id::new("color")));
             }
             app.shortcuts(ctx);
         });
@@ -4651,7 +4656,7 @@ fn esc_in_a_field_is_not_a_shortcut() {
 #[test]
 fn long_toast_stays_inside_the_window() {
     let mut app = crate::saving::tests::test_app();
-    app.toast(format!("Vorlage „{}“ gespeichert", "sehr lang ".repeat(40)));
+    app.toast(format!("Template “{}” saved", "very long ".repeat(40)));
     let ctx = egui::Context::default();
     let raw = || egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(800.0, 600.0))), ..Default::default() };
     for _ in 0..3 {
@@ -4666,12 +4671,12 @@ fn long_toast_stays_inside_the_window() {
 fn repeated_toast_is_shown_once() {
     let mut app = crate::saving::tests::test_app();
     for _ in 0..200 {
-        app.toast_err("Ungültige Dauer");
+        app.toast_err("Invalid duration");
     }
-    app.toast("Ungültige Dauer");
-    app.toast_err("Keine Sprache erkannt");
+    app.toast("Invalid duration");
+    app.toast_err("No speech detected");
     let msgs: Vec<(&str, bool)> = app.toasts.iter().map(|t| (t.0.as_str(), t.2)).collect();
-    assert_eq!(msgs, [("Ungültige Dauer", true), ("Ungültige Dauer", false), ("Keine Sprache erkannt", true)]);
+    assert_eq!(msgs, [("Invalid duration", true), ("Invalid duration", false), ("No speech detected", true)]);
 }
 
 /// Q / W with clips on several tracks selected: every selected clip under the playhead is cut,
@@ -4771,12 +4776,12 @@ fn cut_left_and_right_leave_no_slivers() {
     }
 }
 
-/// 23 × „Ein Bild vor“ from 0 at 30 fps lands on frame 23, where clip B starts: the paused
+/// 23 × „Next frame“ from 0 at 30 fps lands on frame 23, where clip B starts: the paused
 /// preview shows B (before: the playhead stood 8 µs before it and still showed the clip before)
 #[test]
 fn frame_steps_reach_a_cut_on_its_frame() {
     let mut app = crate::saving::tests::test_app();
-    let mut p = Project::new("Bild");
+    let mut p = Project::new("Image");
     p.settings.fps = Rational::new(30, 1);
     let mut tr = cl_core::Track::new(cl_core::TrackKind::Text);
     let at = Time::from_secs_f64(23.0 / 30.0);
@@ -4812,7 +4817,7 @@ fn close_goes_home_only_with_the_setting_and_an_open_project() {
     }
 }
 
-/// Closing the window with „Beim Schließen zur Projektübersicht“ on: start page, project saved,
+/// Closing the window with „Go to projects when closing“ on: start page, project saved,
 /// lock released, the close cancelled; off: the close goes through and the project stays
 #[test]
 fn window_close_goes_to_the_start_page_when_switched_on() {
@@ -4825,12 +4830,12 @@ fn window_close_goes_to_the_start_page_when_switched_on() {
     for on in [true, false] {
         let mut app = crate::saving::tests::test_app();
         app.settings.close_to_home = on;
-        app.set_doc(Project::new("Schließen"));
+        app.set_doc(Project::new("Close"));
         let p = app.dir().join("schliessen.cutline");
         app.project_path = Some(p.clone());
         app.take_lock(&p);
         app.screen = Screen::Editor;
-        app.apply(EditOp::Rename { name: "Geändert".into() });
+        app.apply(EditOp::Rename { name: "Modified".into() });
         let out = ctx.run(close(), |ctx| {
             app.export.guard_close(ctx);
             app.close_to_home(ctx);
@@ -4839,7 +4844,7 @@ fn window_close_goes_to_the_start_page_when_switched_on() {
         assert_eq!(cancelled, on, "{on}");
         if on {
             assert!(app.screen == Screen::Home);
-            assert_eq!(Project::from_json(&std::fs::read_to_string(&p).unwrap()).unwrap().name, "Geändert");
+            assert_eq!(Project::from_json(&std::fs::read_to_string(&p).unwrap()).unwrap().name, "Modified");
             assert!(!paths::lock_path(&p).exists(), "lock released");
             // on the start page the next close quits
             let out = ctx.run(close(), |ctx| app.close_to_home(ctx));
@@ -4856,7 +4861,7 @@ fn window_close_goes_to_the_start_page_when_switched_on() {
 fn split_keeps_every_selected_clip_selected() {
     let mut app = crate::saving::tests::test_app();
     let t = Time::from_secs_f64;
-    let mut p = Project::new("Teilen");
+    let mut p = Project::new("Split");
     let mut ids = Vec::new();
     for at in [0.0, 0.0, 0.0, 10.0] {
         let mut tr = cl_core::Track::new(cl_core::TrackKind::Text);
@@ -4890,10 +4895,10 @@ fn split_keeps_every_selected_clip_selected() {
 #[test]
 fn extracting_two_audio_streams_keeps_both_audible() {
     let mut app = crate::saving::tests::test_app();
-    let path = app.dir().join("zwei spuren.mp4");
+    let path = app.dir().join("two tracks.mp4");
     std::fs::write(&path, b"x").unwrap();
     let m = MediaRef { id: MediaId::new(), path, kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 2, video_codec: None, audio_codec: None, has_alpha: false };
-    let mut p = Project::new("Spuren");
+    let mut p = Project::new("Tracks");
     let mut t = Track::new(TrackKind::Video);
     t.main = true;
     let mut v = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(4.0));

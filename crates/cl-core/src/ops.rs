@@ -196,48 +196,48 @@ impl EditOp {
     /// Label for the undo history (a given batch name takes precedence).
     pub fn label(&self) -> String {
         let l: &str = match self {
-            EditOp::ImportMedia { .. } => "Medium importieren",
-            EditOp::AddTrack { .. } => "Spur hinzufügen",
-            EditOp::SetTrackFlags { .. } => "Spur-Eigenschaften",
-            EditOp::SetTrackView { .. } => "Spuransicht",
-            EditOp::AddClip { .. } => "Clip hinzufügen",
-            EditOp::RemoveClip { .. } => "Clip löschen",
-            EditOp::SplitClip { .. } => "Teilen",
-            EditOp::TrimClip { .. } => "Trimmen",
-            EditOp::MoveClip { .. } => "Clip verschieben",
-            EditOp::SetText { .. } => "Text bearbeiten",
-            EditOp::SetTransform { .. } => "Transformieren",
-            EditOp::SetCrop { .. } => "Zuschnitt",
-            EditOp::SetOpacity { .. } => "Deckkraft",
-            EditOp::SetVolume { .. } => "Lautstärke",
-            EditOp::SetSettings { .. } => "Projekteinstellungen",
-            EditOp::AddProjectFont { .. } => "Projektschrift hinzufügen",
-            EditOp::Rename { .. } => "Projekt umbenennen",
-            EditOp::SetSpeed { .. } => "Tempo",
-            EditOp::SetFx { .. } => "Effekte/Anpassen",
+            EditOp::ImportMedia { .. } => "Import media",
+            EditOp::AddTrack { .. } => "Add track",
+            EditOp::SetTrackFlags { .. } => "Track properties",
+            EditOp::SetTrackView { .. } => "Track view",
+            EditOp::AddClip { .. } => "Add clip",
+            EditOp::RemoveClip { .. } => "Delete clip",
+            EditOp::SplitClip { .. } => "Split",
+            EditOp::TrimClip { .. } => "Trim",
+            EditOp::MoveClip { .. } => "Move clip",
+            EditOp::SetText { .. } => "Edit text",
+            EditOp::SetTransform { .. } => "Transform",
+            EditOp::SetCrop { .. } => "Crop",
+            EditOp::SetOpacity { .. } => "Opacity",
+            EditOp::SetVolume { .. } => "Volume",
+            EditOp::SetSettings { .. } => "Project settings",
+            EditOp::AddProjectFont { .. } => "Add project font",
+            EditOp::Rename { .. } => "Rename project",
+            EditOp::SetSpeed { .. } => "Speed",
+            EditOp::SetFx { .. } => "Effects/Adjust",
             EditOp::SetKeyframes { .. } => "Keyframe",
             EditOp::SetAnimations { .. } => "Animation",
-            EditOp::SetTransition { .. } => "Übergang",
-            EditOp::SetClipDisabled { .. } => "Clip deaktivieren",
-            EditOp::SetFades { .. } => "Ein-/Ausblenden",
-            EditOp::ReplaceClip { .. } => "Clip bearbeiten",
-            EditOp::InsertTrack { .. } => "Spur hinzufügen",
-            EditOp::RemoveTrack { .. } => "Spur löschen",
-            EditOp::MoveTrack { .. } => "Spur verschieben",
-            EditOp::MoveClipToNewTrack { .. } => "Auf neue Spur verschieben",
-            EditOp::CloseGaps { .. } => "Lücken schließen",
-            EditOp::SetMarkers { .. } => "Marker",
-            EditOp::RelinkMedia { .. } => "Medium neu verknüpfen",
-            EditOp::SetClipTiming { .. } => "Clip-Zeit",
-            EditOp::RenameTrack { .. } => "Spur umbenennen",
-            EditOp::RippleRange { .. } => "Bereich entfernen",
+            EditOp::SetTransition { .. } => "Transition",
+            EditOp::SetClipDisabled { .. } => "Disable clip",
+            EditOp::SetFades { .. } => "Fade in/out",
+            EditOp::ReplaceClip { .. } => "Edit clip",
+            EditOp::InsertTrack { .. } => "Add track",
+            EditOp::RemoveTrack { .. } => "Delete track",
+            EditOp::MoveTrack { .. } => "Move track",
+            EditOp::MoveClipToNewTrack { .. } => "Move to new track",
+            EditOp::CloseGaps { .. } => "Close gaps",
+            EditOp::SetMarkers { .. } => "Markers",
+            EditOp::RelinkMedia { .. } => "Relink media~one",
+            EditOp::SetClipTiming { .. } => "Clip timing",
+            EditOp::RenameTrack { .. } => "Rename track",
+            EditOp::RippleRange { .. } => "Remove range",
             EditOp::Batch { label, .. } if !label.is_empty() => label,
             EditOp::Batch { ops, .. } => match ops.first() {
-                Some(EditOp::RemoveClip { .. }) => "Clips löschen",
-                Some(EditOp::MoveClip { .. }) => "Clips verschieben",
-                Some(EditOp::AddClip { .. }) => "Clips einfügen",
-                Some(EditOp::RippleRange { .. }) => "Bereich entfernen",
-                _ => "Mehrere Änderungen",
+                Some(EditOp::RemoveClip { .. }) => "Delete clips",
+                Some(EditOp::MoveClip { .. }) => "Move clips",
+                Some(EditOp::AddClip { .. }) => "Paste clips",
+                Some(EditOp::RippleRange { .. }) => "Remove range",
+                _ => "Multiple changes",
             },
         };
         l.to_string()
@@ -351,7 +351,7 @@ impl EditOp {
                     .clips
                     .iter_mut()
                     .find(|c| c.id == clip)
-                    .expect("geprüft");
+                    .expect("checked");
                 if at <= c.start || at >= c.end() {
                     return Err(CoreError::InvalidSplit);
                 }
@@ -404,7 +404,7 @@ impl EditOp {
                 let ti = clip_track_index(p, clip)?;
                 let (src_len, is_audio, has_source, prev_end, next_start) = {
                     let t = &p.timeline.tracks[ti];
-                    let c = t.clips.iter().find(|c| c.id == clip).expect("geprüft");
+                    let c = t.clips.iter().find(|c| c.id == clip).expect("checked");
                     // without magnet don't extend into the neighbouring clip (overlap otherwise)
                     let free = !(t.main && p.settings.main_track_magnet);
                     let others = t.clips.iter().filter(|o| free && o.id != clip);
@@ -423,7 +423,7 @@ impl EditOp {
                     .clips
                     .iter_mut()
                     .find(|c| c.id == clip)
-                    .expect("geprüft");
+                    .expect("checked");
                 let speed = c.speed.max(0.01) as f64;
                 let to_src = |d: Time| Time((d.0 as f64 * speed).round() as i64);
                 let to_tl = |d: Time| Time((d.0 as f64 / speed).round() as i64);
@@ -501,7 +501,7 @@ impl EditOp {
                     .clips
                     .iter()
                     .position(|c| c.id == clip)
-                    .expect("geprüft");
+                    .expect("checked");
                 let mut c = p.timeline.tracks[ti].clips.remove(pos);
                 c.start = Time(start.0.max(0));
                 after_change(p, ti);
@@ -521,7 +521,7 @@ impl EditOp {
                     .clips
                     .iter_mut()
                     .find(|c| c.id == clip)
-                    .expect("geprüft");
+                    .expect("checked");
                 let speed = speed.clamp(MIN_SPEED, MAX_SPEED);
                 let span = c.source_span();
                 let old = c.duration;
@@ -659,7 +659,7 @@ impl EditOp {
                     .clips
                     .iter()
                     .position(|c| c.id == clip)
-                    .expect("geprüft");
+                    .expect("checked");
                 let mut c = p.timeline.tracks[ti].clips.remove(pos);
                 c.start = Time(start.0.max(0));
                 after_change(p, ti);
@@ -718,7 +718,7 @@ impl EditOp {
                             EditOp::SplitClip { clip, at }.apply(p)?;
                         }
                     }
-                    let ti = p.timeline.tracks.iter().position(|t| t.id == id).expect("geprüft");
+                    let ti = p.timeline.tracks.iter().position(|t| t.id == id).expect("checked");
                     let t = &mut p.timeline.tracks[ti];
                     let had = !t.clips.is_empty();
                     t.clips.retain(|c| c.start < from || c.start >= to);
@@ -918,7 +918,7 @@ fn clip_mut(p: &mut Project, id: ClipId) -> Result<&mut Clip> {
         .clips
         .iter_mut()
         .find(|c| c.id == id)
-        .expect("geprüft"))
+        .expect("checked"))
 }
 
 /// Push the main track together without gaps (ripple, main track magnet).

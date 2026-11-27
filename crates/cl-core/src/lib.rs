@@ -6,6 +6,7 @@
 
 mod document;
 mod fx;
+pub mod legacy;
 mod model;
 mod ops;
 mod paste;
@@ -25,25 +26,25 @@ pub use tracks::{
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum CoreError {
-    #[error("Clip {0} nicht gefunden")]
+    #[error("Clip {0} not found")]
     ClipNotFound(ClipId),
-    #[error("Spur {0} nicht gefunden")]
+    #[error("Track {0} not found")]
     TrackNotFound(TrackId),
-    #[error("Medium {0} nicht gefunden")]
+    #[error("Media {0} not found")]
     MediaNotFound(MediaId),
-    #[error("Spur ist gesperrt")]
+    #[error("Track is locked")]
     TrackLocked,
-    #[error("Schnittpunkt liegt nicht innerhalb des Clips")]
+    #[error("Split point is outside the clip")]
     InvalidSplit,
-    #[error("Ungültige Dauer")]
+    #[error("Invalid duration")]
     InvalidDuration,
-    #[error("Ungültiger Wert")]
+    #[error("Invalid value")]
     InvalidValue,
-    #[error("Clip-Typ passt nicht zur Spur ({clip:?} auf {track:?})")]
+    #[error("Clip type does not fit the track ({clip:?} on {track:?})")]
     KindMismatch { clip: TrackKind, track: TrackKind },
-    #[error("Nichts zum Rückgängigmachen")]
+    #[error("Nothing to undo")]
     NothingToUndo,
-    #[error("Nichts zum Wiederherstellen")]
+    #[error("Nothing to redo")]
     NothingToRedo,
 }
 

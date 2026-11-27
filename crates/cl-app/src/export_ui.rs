@@ -1,4 +1,4 @@
-//! Export dialog: without Pro lock, without „Urheberrecht überprüfen“, with real progress.
+//! Export dialog: without Pro lock, without "copyright check", with real progress.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -62,7 +62,7 @@ pub const PLATFORMS: &[Platform] = &[
     },
     Platform {
         id: "instagram",
-        name: "Instagram-Beitrag (1080×1350)",
+        name: "Instagram post (1080×1350)",
         w: 1080,
         h: 1350,
         fps: Some(30),
@@ -71,7 +71,7 @@ pub const PLATFORMS: &[Platform] = &[
     },
     Platform {
         id: "twitch",
-        name: "Twitch-Clip (1080p60)",
+        name: "Twitch clip (1080p60)",
         w: 1920,
         h: 1080,
         fps: Some(60),
@@ -80,7 +80,7 @@ pub const PLATFORMS: &[Platform] = &[
     },
     Platform {
         id: "small",
-        name: "Kleine Datei zum Teilen (720p)",
+        name: "Small file for sharing (720p)",
         w: 1280,
         h: 720,
         fps: Some(30),
@@ -129,14 +129,14 @@ pub fn youtube_kbps(short_edge: u32, fps: f64) -> Option<u32> {
 /// Name of a resolution choice (shorter edge, 0 = project size `pw`×`ph`)
 fn res_label(e: u32, (pw, ph): (u32, u32)) -> String {
     match e {
-        0 => format!("Projekt ({pw}×{ph})"),
+        0 => format!("Project ({pw}×{ph})"),
         1440 => "2K (1440p)".into(),
         2160 => "4K (2160p)".into(),
         e => format!("{e}p"),
     }
 }
 
-/// Choice „Seitenverhältnis“ in the export (after „Projekt“)
+/// Choice „Aspect ratio“ in the export (after „Project“)
 pub const ASPECTS: [(u32, u32); 4] = [(16, 9), (9, 16), (1, 1), (4, 5)];
 
 /// Aspect ratio of a platform as a choice in the export: 0 (project) if it fits the project
@@ -167,9 +167,9 @@ struct Queued {
     project: Arc<Project>,
     /// Project file (assignment in the exports list)
     project_path: Option<PathBuf>,
-    /// Settings at queueing (fingerprint for „Erneut exportieren“)
+    /// Settings at queueing (fingerprint for „Export again“)
     settings: ExportSettings,
-    /// Target file; with „In Teile aufteilen“ the folder of the parts (one group, one entry)
+    /// Target file; with „Split into parts“ the folder of the parts (one group, one entry)
     out: PathBuf,
     /// exported one after another; a normal export has exactly one part with `out`
     parts: Vec<Part>,
@@ -190,7 +190,7 @@ struct Part {
 }
 
 impl Queued {
-    /// Parts in their own folder („In Teile aufteilen“)
+    /// Parts in their own folder („Split into parts“)
     fn group(&self) -> bool {
         self.parts.first().is_none_or(|x| x.out != self.out)
     }
@@ -201,7 +201,7 @@ struct Running {
     /// running part (from 0) and finished parts
     part: Arc<std::sync::atomic::AtomicUsize>,
     finished: Arc<Mutex<Vec<usize>>>,
-    /// known only after the job is built in the background (until then „Wird vorbereitet …“):
+    /// known only after the job is built in the background (until then „Preparing …“):
     /// whether loudness is measured beforehand (first part of the progress), FFmpeg's preview file
     job: Arc<Mutex<Option<(bool, Option<PathBuf>)>>>,
     result: Arc<Mutex<Option<Result<(), String>>>>,
@@ -268,7 +268,7 @@ impl Running {
                         *pr.lock().unwrap() = at + x * w;
                         c2.request_repaint();
                     });
-                    if let Err(e) = &r { log::error!(target: "export", "{} · Befehl: {}", crate::applog::anon(&e.to_string()), crate::applog::ffmpeg_cmd(e.failed_args().unwrap_or(&job.args))); }
+                    if let Err(e) = &r { log::error!(target: "export", "{} · command: {}", crate::applog::anon(&e.to_string()), crate::applog::ffmpeg_cmd(e.failed_args().unwrap_or(&job.args))); }
                     r
                 });
                 match r {
@@ -450,9 +450,9 @@ pub struct ExportDialog {
     custom_kbps: u32,
     /// In/out range of the timeline, if set
     range_avail: Option<(Time, Time)>,
-    /// „Seitenverhältnis“: 0 = project, otherwise entry `aspect - 1` of [`ASPECTS`]
+    /// „Aspect ratio“: 0 = project, otherwise entry `aspect - 1` of [`ASPECTS`]
     aspect: usize,
-    /// „Bild“ with another aspect ratio: 0 Füllen, 1 Person folgen, 2 Einpassen (only in memory)
+    /// „Image“ with another aspect ratio: 0 fill, 1 follow person, 2 fit (only in memory)
     fit: usize,
     /// rebuilt snapshot (project state, format, picture, state of the tracks) for preview and export
     pub(crate) framed: Option<((u64, (u32, u32), usize, u64), Arc<Project>)>,
@@ -467,7 +467,7 @@ pub struct ExportDialog {
     also_srt: bool,
     /// Write markers as chapters (Settings → Projects → Export); set by the app each frame
     pub chapters: bool,
-    /// Show the hint about chapters under 10 s; „Nicht mehr anzeigen“ reports `chapter_hint_off`
+    /// Show the hint about chapters under 10 s; „Don't show again“ reports `chapter_hint_off`
     pub chapter_hint: bool,
     pub chapter_hint_off: bool,
     encoders: Arc<Mutex<Option<Vec<Encoder>>>>,
@@ -487,12 +487,12 @@ pub struct ExportDialog {
     done: Option<(Instant, f32)>,
     /// Project state when the dialog was opened
     rev: u64,
-    /// Project state, file and settings of the last finished export („Zur Datei“ instead of „Exportieren“)
+    /// Project state, file and settings of the last finished export („Go to file“ instead of „Export“)
     exported: Option<(u64, PathBuf, ExportSettings)>,
     /// Target file exists: ask before starting
     confirm_overwrite: bool,
     /// Question opened only in this frame: do not evaluate Enter/Esc yet
-    /// (the Enter that triggered „Exportieren“ is still pressed in the same frame)
+    /// (the Enter that triggered „Export“ is still pressed in the same frame)
     confirm_fresh: bool,
     /// Overwrite prompt: any target exists, number of older parts to remove; computed once
     /// when the prompt opens (disk and exports.json, not every frame)
@@ -505,12 +505,12 @@ pub struct ExportDialog {
     right_h: f32,
     /// right column in the last frame: visible height, content height (layout test)
     right_view: (f32, f32),
-    /// „In Teile aufteilen“: on/off, kind (0 count, 1 length, 2 markers), number, seconds per part
+    /// „Split into parts“: on/off, kind (0 count, 1 length, 2 markers), number, seconds per part
     split_on: bool,
     split_by: usize,
     split_count: u32,
     split_secs: u32,
-    /// „Dateigröße: Eigene …“ chosen; value in MB
+    /// "File size: Custom …" chosen; value in MB
     size_custom: bool,
     custom_mb: u32,
 }
@@ -523,10 +523,10 @@ const DIALOG_CHROME_H: f32 = 250.0;
 /// Name of an encoder (export dialog, Settings → Performance)
 pub fn encoder_name(e: Encoder) -> &'static str {
     match e {
-        Encoder::Software => "Software (beste Qualität)",
-        Encoder::Nvenc => "NVIDIA NVENC (schnell)",
-        Encoder::Qsv => "Intel Quick Sync (schnell)",
-        Encoder::Amf => "AMD AMF (schnell)",
+        Encoder::Software => "Software (best quality)",
+        Encoder::Nvenc => "NVIDIA NVENC (fast)",
+        Encoder::Qsv => "Intel Quick Sync (fast)",
+        Encoder::Amf => "AMD AMF (fast)",
         Encoder::Mf => "Windows (Media Foundation)",
     }
 }
@@ -541,7 +541,7 @@ impl ExportDialog {
         self.open
     }
 
-    /// Window close button during an export: hold off closing and ask; „Beenden“ cancels
+    /// Window close button during an export: hold off closing and ask; „End“ cancels
     /// the export and closes (FFmpeg cleans up in [`Self::cancel_and_wait`]).
     pub fn guard_close(&mut self, ctx: &egui::Context) {
         let pending = self.running.iter().count() + self.queue.len();
@@ -555,9 +555,9 @@ impl ExportDialog {
         let (mut quit, mut stay) = (false, false);
         let m = crate::dialog::modal(ctx, "export-quit").show(ctx, |ui| {
             ui.set_width(340.0);
-            let t = theme::count_text(pending, "Export läuft – wirklich beenden?", "{} Exporte ausstehend – wirklich beenden?");
+            let t = theme::count_text(pending, "Export in progress – quit anyway?", "{} exports pending – quit anyway?");
             stay |= crate::dialog::title(ui, &t);
-            let (q, c) = crate::dialog::buttons(ui, theme::danger("Cutline beenden"), true);
+            let (q, c) = crate::dialog::buttons(ui, theme::danger("Quit Cutline"), true);
             quit = q;
             stay |= c;
         });
@@ -671,7 +671,7 @@ impl ExportDialog {
     }
 
     /// Choose a platform preset: export values and the platform's aspect ratio if the
-    /// project has another one (otherwise „Projekt“; only then the project remembers the platform)
+    /// project has another one (otherwise „Project“; only then the project remembers the platform)
     fn pick_platform(&mut self, s: &mut ExportSettings, p: &Project, pl: &'static Platform) {
         Self::apply_platform(s, &mut self.short_edge, &mut self.custom_kbps, pl);
         self.platform = Some(pl.id);
@@ -707,7 +707,7 @@ impl ExportDialog {
         self.framed.as_ref().map(|f| f.1.clone())
     }
 
-    /// „Person folgen“: take over a finished analysis (error → one message; cancel → „Füllen“),
+    /// „Person folgen“: take over a finished analysis (error → one message; cancel → „Fill“),
     /// otherwise compute missing tracks in the background
     fn follow(&mut self, ctx: &egui::Context, p: &Project) -> Option<String> {
         let mut toast = None;
@@ -721,7 +721,7 @@ impl ExportDialog {
             }
             self.focus.extend(found);
             self.focus_gen += 1;
-            toast = err.map(|e| format!("{}: {e}", crate::tr("Auto-Reframe")));
+            toast = err.map(|e| format!("{}: {e}", crate::tr("Auto reframe")));
         }
         // look for missing tracks only after a change (project, format, choice, result)
         let Some(c) = self.canvas(p).filter(|_| self.fit == 1) else { return toast };
@@ -740,8 +740,8 @@ impl ExportDialog {
         self.picked_platform.take()
     }
 
-    /// Project, target file and export settings as at the last finished export: „Zur Datei“ and
-    /// „Erneut exportieren“ (overwrites without asking) instead of „Exportieren“
+    /// Project, target file and export settings as at the last finished export: „Go to file“ and
+    /// „Export again“ (overwrites without asking) instead of „Export“
     fn unchanged_since_export(&self, s: &ExportSettings) -> bool {
         self.split(s).is_none()
             && self
@@ -774,7 +774,7 @@ impl ExportDialog {
         let name = Some(file_safe(&self.name)).filter(|n| !n.trim_end_matches(['.', ' ']).is_empty()).unwrap_or_else(|| "Export".into());
         let dir = self.folder.join(&name);
         let range = s.range.unwrap_or((Time::ZERO, p.duration()));
-        let parts = split_parts(how, range, p.settings.fps, &p.timeline.markers, &name, &crate::tr("Teil"), s.format.extension());
+        let parts = split_parts(how, range, p.settings.fps, &p.timeline.markers, &name, &crate::tr("Part"), s.format.extension());
         let parts = parts.into_iter().map(|(r, f)| (Some(r), dir.join(f))).collect();
         (dir, parts)
     }
@@ -786,7 +786,7 @@ impl ExportDialog {
         (parts.iter().map(|x| len(&x.0)).fold(0.0, f64::max), parts.len())
     }
 
-    /// „Dateigröße“: automatic, fixed target sizes or custom; greyed out without a suitable codec.
+    /// „File size“: automatic, fixed target sizes or custom; greyed out without a suitable codec.
     /// Below it the hint if the picture is downscaled for it.
     fn size_rows(&mut self, ui: &mut egui::Ui, p: &Project, s: &mut ExportSettings) {
         let can = s.target_possible();
@@ -794,22 +794,22 @@ impl ExportDialog {
             s.target_mb = None;
         }
         ui.add_enabled_ui(can, |ui| {
-            theme::row(ui, "Dateigröße", |ui| {
+            theme::row(ui, "File size", |ui| {
                 let label = match s.target_mb {
-                    None => "Automatisch".to_string(),
-                    Some(_) if self.size_custom => "Eigene …".into(),
-                    Some(m) => format!("Höchstens {m} MB"),
+                    None => "Automatic".to_string(),
+                    Some(_) if self.size_custom => "Custom …".into(),
+                    Some(m) => format!("At most {m} MB"),
                 };
                 egui::ComboBox::from_id_salt("exp-size").selected_text(crate::tr(label)).width(200.0).show_ui(ui, |ui| {
-                    if ui.selectable_label(s.target_mb.is_none(), crate::tr("Automatisch")).clicked() {
+                    if ui.selectable_label(s.target_mb.is_none(), crate::tr("Automatic")).clicked() {
                         (s.target_mb, self.size_custom) = (None, false);
                     }
                     for m in [10, 25, 50, 100] {
-                        if ui.selectable_label(s.target_mb == Some(m) && !self.size_custom, crate::tr(format!("Höchstens {m} MB"))).clicked() {
+                        if ui.selectable_label(s.target_mb == Some(m) && !self.size_custom, crate::tr(format!("At most {m} MB"))).clicked() {
                             (s.target_mb, self.size_custom) = (Some(m), false);
                         }
                     }
-                    if ui.selectable_label(s.target_mb.is_some() && self.size_custom, crate::tr("Eigene …")).clicked() {
+                    if ui.selectable_label(s.target_mb.is_some() && self.size_custom, crate::tr("Custom …")).clicked() {
                         (s.target_mb, self.size_custom) = (Some(self.custom_mb.max(1)), true);
                     }
                 });
@@ -824,25 +824,25 @@ impl ExportDialog {
         let t = s.for_target(self.longest_part(p, s).0, audible(p, s));
         if let Quality::Bitrate(k) = t.quality {
             if let Some((e, enough)) = cl_export::target_edge(k, (s.width, s.height), s.fps.as_f64()) {
-                let h = if enough { format!("Wird in {e}p exportiert") } else { format!("Wird in {e}p exportiert – auch dafür ist die Größe knapp") };
+                let h = if enough { format!("Will be exported in {e}p") } else { format!("Will be exported in {e}p – the size is tight even for that") };
                 ui.label(RichText::new(crate::tr(h)).small().color(theme::WARN_TEXT()));
             }
         }
     }
 
-    /// „In Teile aufteilen“ with kind, number or length and result line (section „Video“)
+    /// „Split into parts“ with kind, number or length and result line (section „Video“)
     fn split_rows(&mut self, ui: &mut egui::Ui, p: &Project, s: &ExportSettings) {
-        theme::row(ui, "", |ui| crate::widgets::check(ui, &mut self.split_on, crate::tr("In Teile aufteilen")));
+        theme::row(ui, "", |ui| crate::widgets::check(ui, &mut self.split_on, crate::tr("Split into parts")));
         let Some(how) = self.split(s) else { return };
         let range = s.range.unwrap_or((Time::ZERO, p.duration()));
         let parts = |how| split_parts(how, range, p.settings.fps, &p.timeline.markers, "", "", "");
-        // „Marker“ only with at least one marker in the range (otherwise one part would remain)
+        // „Markers“ only with at least one marker in the range (otherwise one part would remain)
         let marks = parts(Split::Markers).len() > 1;
         if !marks && how == Split::Markers {
             self.split_by = 0;
         }
-        theme::row(ui, "Aufteilen nach", |ui| {
-            ui.allocate_ui(vec2(200.0, 24.0), |ui| crate::widgets::segmented_some(ui, &["Anzahl", "Länge", "Marker"], &mut self.split_by, &[true, true, marks]));
+        theme::row(ui, "Split by", |ui| {
+            ui.allocate_ui(vec2(200.0, 24.0), |ui| crate::widgets::segmented_some(ui, &["Count", "Length", "Markers"], &mut self.split_by, &[true, true, marks]));
         });
         theme::row(ui, "", |ui| {
             match self.split_by {
@@ -862,12 +862,12 @@ impl ExportDialog {
         files.iter().any(|f| f.1.exists()) || self.running.as_ref().is_some_and(|r| r.src.out == out) || self.queue.iter().any(|q| q.out == out)
     }
 
-    /// Running export for the exports list: name (with parts „Name · Teil 3 von 6“) and progress
+    /// Running export for the exports list: name (with parts "Name · Part 3 of 6") and progress
     pub fn current(&self) -> Option<(String, f32)> {
         self.running.as_ref().map(|r| {
             let mut name = r.src.out.file_name().unwrap_or_default().to_string_lossy().to_string();
             if let Some((i, n)) = r.part_of() {
-                name = format!("{name} · {}", crate::tr(format!("Teil {i} von {n}")));
+                name = format!("{name} · {}", crate::tr(format!("Part {i} of {n}")));
             }
             (name, *r.progress.lock().unwrap())
         })
@@ -919,12 +919,12 @@ impl ExportDialog {
         });
         match finished {
             Some((Some(res), secs, cancelled)) => {
-                let run = self.running.take().expect("läuft");
+                let run = self.running.take().expect("running");
                 let done = run.finished.lock().unwrap().clone();
                 let src = run.src;
                 let s = &src.settings;
                 let res = res.map_err(|e| (!cancelled).then_some(e));
-                log::info!(target: "export", "{} nach {secs:.1} s: {} · {} von {} Teilen · {:?}", match res { Ok(()) => "fertig", Err(None) => "abgebrochen", Err(Some(_)) => "Fehler" }, src.out.display(), done.len(), src.parts.len(), (s.width, s.height, s.fps, s.format, s.codec, s.quality, s.encoder, s.include_audio, s.target_mb));
+                log::info!(target: "export", "{} after {secs:.1} s: {} · {} of {} parts · {:?}", match res { Ok(()) => "done", Err(None) => "canceled", Err(Some(_)) => "Error" }, src.out.display(), done.len(), src.parts.len(), (s.width, s.height, s.fps, s.format, s.codec, s.quality, s.encoder, s.include_audio, s.target_mb));
                 // finished parts (even if others failed or it was cancelled afterwards):
                 // write side files, assigned to the project the export comes from (not
                 // the currently open one), under the project name, not the (changeable) file name
@@ -939,16 +939,16 @@ impl ExportDialog {
                 match res {
                     Ok(()) => {
                         self.done = Some((Instant::now(), secs));
-                        // „Zur Datei“ only in the dialog of the project the export comes from; after
-                        // parts „Im Explorer zeigen“ (folder) stays
+                        // „Go to file“ only in the dialog of the project the export comes from; after
+                        // parts „Show in Explorer“ (folder) stays
                         if src.project_path == self.project_path && group.is_none() {
                             self.exported = Some((src.rev, src.out.clone(), src.settings.clone()));
                         }
                         // the app translates toasts
-                        let what = group.map_or_else(|| "Export fertig".to_string(), |n| format!("{n} Teile fertig"));
+                        let what = group.map_or_else(|| "Export finishedv".to_string(), |n| format!("{n} parts finished"));
                         let mut msg = format!("{} {what} ({})", icon::CHECK_CIRCLE, theme::secs(secs as f64, 1));
                         if !failed.is_empty() {
-                            let e = format!("{}: {}", crate::tr("Begleitdatei nicht gespeichert"), failed.join(", "));
+                            let e = format!("{}: {}", crate::tr("Could not save companion file"), failed.join(", "));
                             msg = format!("{} {e}", icon::WARNING_CIRCLE);
                             self.error = Some(e);
                         }
@@ -957,7 +957,7 @@ impl ExportDialog {
                     Err(Some(e)) => {
                         // group: how many parts finished, plus the first error
                         let e = match group {
-                            Some(n) => format!("{}: {e}", crate::tr(format!("{} von {n} Teilen fertig", done.len()))),
+                            Some(n) => format!("{}: {e}", crate::tr(format!("{} of {n} parts finished", done.len()))),
                             None => e,
                         };
                         // with the dialog closed the error would not be seen otherwise (the queue keeps running)
@@ -978,7 +978,7 @@ impl ExportDialog {
         toast
     }
 
-    /// Shows the dialog. Returns a message for a toast („Kapitel kopiert“).
+    /// Shows the dialog. Returns a message for a toast ("Chapters copied").
     pub fn show(
         &mut self,
         ctx: &egui::Context,
@@ -1005,8 +1005,8 @@ impl ExportDialog {
             return toast;
         };
         s.chapters = self.chapters;
-        s.chapter_name = crate::tr("Kapitel");
-        // preselection by „Hardware-Kodierung“ until something is chosen in the dialog (detection in the background)
+        s.chapter_name = crate::tr("Chapter");
+        // preselection by „Hardware encoding“ until something is chosen in the dialog (detection in the background)
         if !self.encoder_picked {
             let found = self.encoders.lock().unwrap().clone().unwrap_or_default();
             s.encoder = cl_export::export_default(&found, &crate::proxy::encoder_pref());
@@ -1016,9 +1016,9 @@ impl ExportDialog {
         let framed = self.framed(p, fonts);
         let mut open = true;
         let mut start = false;
-        // overwrite without asking (confirmed or „Erneut exportieren“)
+        // overwrite without asking (confirmed or „Export again“)
         let mut overwrite = false;
-        let title = format!("{}  Exportieren", icon::EXPORT);
+        let title = format!("{}  Export", icon::EXPORT);
         crate::dialog::window(ctx, crate::tr(title.as_str()), "export-dialog")
             .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .fixed_size(vec2(720.0, 0.0))
@@ -1073,12 +1073,12 @@ impl ExportDialog {
                                 Some(m) if n > 1 => format!("{} {n} × {m} MB", icon::HARD_DRIVES),
                                 Some(m) => format!("{} {m} MB", icon::HARD_DRIVES),
                                 None if exact => format!("{} {est:.0} MB", icon::HARD_DRIVES),
-                                None => format!("{} ca. {est:.0} MB", icon::HARD_DRIVES),
+                                None => format!("{} approx. {est:.0} MB", icon::HARD_DRIVES),
                             };
                             ui.label(RichText::new(crate::tr(txt)).small().color(theme::TEXT_DIM()));
                         }
                         if live {
-                            ui.label(RichText::new(crate::tr("Live-Vorschau")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
+                            ui.label(RichText::new(crate::tr("Live preview")).size(theme::FS_HINT).color(theme::TEXT_DIM()));
                         }
                     });
                     ui.add_space(12.0);
@@ -1098,13 +1098,13 @@ impl ExportDialog {
                         // adjustable during an export too: the next one is queued
                         ui.scope(|ui| {
                             theme::row(ui, "Name", |ui| ui.add(egui::TextEdit::singleline(&mut self.name).desired_width(300.0)));
-                            theme::row(ui, "Speichern in", |ui| {
+                            theme::row(ui, "Save to", |ui| {
                                 // leave room for the folder button, otherwise the row reaches beyond the window
                                 let w = (ui.available_width() - 32.0).max(40.0);
                                 ui.allocate_ui(vec2(w, 20.0), |ui| {
                                     ui.add(egui::Label::new(RichText::new(crate::paths::shown(&self.folder)).small()).truncate());
                                 });
-                                if theme::icon_button(ui, icon::FOLDER_OPEN, "Ordner wählen", true, false).clicked() {
+                                if theme::icon_button(ui, icon::FOLDER_OPEN, "Choose folder", true, false).clicked() {
                                     if let Some(d) = crate::dialog().set_directory(&self.folder).pick_folder() {
                                         self.folder = d;
                                     }
@@ -1121,7 +1121,7 @@ impl ExportDialog {
                                 let mut only = s.range.is_some();
                                 let fmt = |t: Time| format!("{:02}:{:02}.{:02}", (t.as_secs_f64() / 60.0) as u32, t.as_secs_f64() as u32 % 60, ((t.as_secs_f64().fract()) * 100.0) as u32);
                                 theme::row(ui, "", |ui| {
-                                    if crate::widgets::check(ui, &mut only, crate::tr(format!("Nur In/Out-Bereich ({} – {})", fmt(a), fmt(b)))).changed() {
+                                    if crate::widgets::check(ui, &mut only, crate::tr(format!("In/Out range only ({} – {})", fmt(a), fmt(b)))).changed() {
                                         s.range = only.then_some((a, b));
                                     }
                                 });
@@ -1129,8 +1129,8 @@ impl ExportDialog {
                             if !s.format.audio_only() {
                                 theme::section(ui, "Video");
                                 // platform presets: set format, codec, size, frame rate and quality
-                                theme::row(ui, "Plattform", |ui| {
-                                    let sel = self.platform.and_then(platform).map(|pl| crate::tr(pl.name)).unwrap_or_else(|| crate::tr("Plattform wählen …"));
+                                theme::row(ui, "Platform", |ui| {
+                                    let sel = self.platform.and_then(platform).map(|pl| crate::tr(pl.name)).unwrap_or_else(|| crate::tr("Choose platform …"));
                                     egui::ComboBox::from_id_salt("exp-preset").selected_text(sel).width(200.0).show_ui(ui, |ui| {
                                         for pl in PLATFORMS {
                                             if ui.selectable_label(self.platform == Some(pl.id), crate::tr(pl.name)).clicked() {
@@ -1140,8 +1140,8 @@ impl ExportDialog {
                                     });
                                 });
                                 // other aspect ratio: the snapshot is rebuilt, the project stays
-                                theme::row(ui, "Seitenverhältnis", |ui| {
-                                    let label = |i: usize| ASPECTS.get(i.wrapping_sub(1)).map_or_else(|| crate::tr("Projekt"), |(a, b)| format!("{a}:{b}"));
+                                theme::row(ui, "Aspect ratio", |ui| {
+                                    let label = |i: usize| ASPECTS.get(i.wrapping_sub(1)).map_or_else(|| crate::tr("Project"), |(a, b)| format!("{a}:{b}"));
                                     egui::ComboBox::from_id_salt("exp-aspect").selected_text(label(self.aspect)).width(200.0).show_ui(ui, |ui| {
                                         for i in 0..=ASPECTS.len() {
                                             ui.selectable_value(&mut self.aspect, i, label(i));
@@ -1150,21 +1150,21 @@ impl ExportDialog {
                                 });
                                 let canvas = self.canvas(p);
                                 if canvas.is_some() {
-                                    theme::row(ui, "Bild", |ui| {
-                                        ui.allocate_ui(vec2(300.0, 24.0), |ui| crate::widgets::segmented(ui, &["Füllen", "Auto-Reframe", "Einpassen"], &mut self.fit));
+                                    theme::row(ui, "Image", |ui| {
+                                        ui.allocate_ui(vec2(300.0, 24.0), |ui| crate::widgets::segmented(ui, &["Fill", "Auto reframe", "Fit~verb"], &mut self.fit));
                                     });
                                     if let Some(j) = &self.focus_job {
                                         ui.horizontal(|ui| {
                                             let (r, _) = ui.allocate_exact_size(vec2((ui.available_width() - 36.0).max(20.0), 3.0), egui::Sense::hover());
                                             crate::widgets::task_line(ui.painter(), egui::Id::new("exp-follow"), r, *j.progress.lock().unwrap());
-                                            if theme::icon_button(ui, icon::X, "Abbrechen", true, false).clicked() {
+                                            if theme::icon_button(ui, icon::X, "Cancel", true, false).clicked() {
                                                 j.cancel.store(true, Ordering::Relaxed);
                                             }
                                         });
                                         ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
                                     }
                                 }
-                                theme::row(ui, "Auflösung", |ui| {
+                                theme::row(ui, "Resolution", |ui| {
                                     let (pw, ph) = canvas.unwrap_or((p.settings.width, p.settings.height));
                                     let label = |e: u32| res_label(e, (pw, ph));
                                     egui::ComboBox::from_id_salt("exp-res").selected_text(crate::tr(label(self.short_edge))).width(200.0).show_ui(ui, |ui| {
@@ -1196,24 +1196,24 @@ impl ExportDialog {
                                         });
                                     });
                                     if s.alpha_possible() {
-                                        theme::row(ui, "Hintergrund", |ui| {
-                                            crate::widgets::check(ui, &mut s.transparent, crate::tr(if s.codec == Codec::ProRes { "Transparent (ProRes 4444)" } else { "Transparent (VP9 mit Alpha)" }))
-                                                .on_hover_text(crate::tr("Leere Bereiche und freigestellte Personen bleiben durchsichtig, z. B. für Overlays in anderen Programmen"));
+                                        theme::row(ui, "Background", |ui| {
+                                            crate::widgets::check(ui, &mut s.transparent, crate::tr(if s.codec == Codec::ProRes { "Transparent (ProRes 4444)" } else { "Transparent (VP9 with alpha)" }))
+                                                .on_hover_text(crate::tr("Empty areas and cut-out people stay transparent, e.g. for overlays in other apps"));
                                         });
                                     }
                                     // with a target size it determines the bitrate
-                                    ui.add_enabled_ui(s.target_mb.is_none(), |ui| theme::row(ui, "Qualität", |ui| {
+                                    ui.add_enabled_ui(s.target_mb.is_none(), |ui| theme::row(ui, "Quality", |ui| {
                                         let label = match s.quality {
-                                            Quality::Lower => "Kleinere Datei".to_string(),
-                                            Quality::Recommended => "Empfohlen".into(),
-                                            Quality::Higher => "Höher".into(),
+                                            Quality::Lower => "Smaller file".to_string(),
+                                            Quality::Recommended => "Recommended".into(),
+                                            Quality::Higher => "Higher".into(),
                                             Quality::Bitrate(k) => format!("{k} kbit/s"),
                                         };
                                         egui::ComboBox::from_id_salt("exp-q").selected_text(crate::tr(label)).width(200.0).show_ui(ui, |ui| {
-                                            ui.selectable_value(&mut s.quality, Quality::Lower, crate::tr("Kleinere Datei"));
-                                            ui.selectable_value(&mut s.quality, Quality::Recommended, crate::tr("Empfohlen"));
-                                            ui.selectable_value(&mut s.quality, Quality::Higher, crate::tr("Höher"));
-                                            ui.selectable_value(&mut s.quality, Quality::Bitrate(self.custom_kbps), crate::tr("Benutzerdefinierte Bitrate"));
+                                            ui.selectable_value(&mut s.quality, Quality::Lower, crate::tr("Smaller file"));
+                                            ui.selectable_value(&mut s.quality, Quality::Recommended, crate::tr("Recommended"));
+                                            ui.selectable_value(&mut s.quality, Quality::Higher, crate::tr("Higher"));
+                                            ui.selectable_value(&mut s.quality, Quality::Bitrate(self.custom_kbps), crate::tr("Custom bitrate"));
                                         });
                                     }));
                                     if let Quality::Bitrate(_) = s.quality {
@@ -1222,7 +1222,7 @@ impl ExportDialog {
                                         });
                                         s.quality = Quality::Bitrate(self.custom_kbps);
                                     }
-                                    theme::row(ui, "Bildrate", |ui| {
+                                    theme::row(ui, "Frame rate", |ui| {
                                         egui::ComboBox::from_id_salt("exp-fps").selected_text(crate::tr(format!("{} fps", theme::dec(s.fps.as_f64(), 3)))).width(200.0).show_ui(ui, |ui| {
                                             for f in ["23.976", "24", "25", "29.97", "30", "50", "59.94", "60"] {
                                                 let r = cl_core::Rational::parse(f).unwrap();
@@ -1245,8 +1245,8 @@ impl ExportDialog {
                                         });
                                     }));
                                     self.split_rows(ui, p, &s);
-                                    theme::section(ui, "Ton");
-                                    crate::widgets::check(ui, &mut s.include_audio, crate::tr(format!("Ton exportieren (AAC {} kbit/s, bei WebM Opus)", s.audio_kbps.unwrap_or(256))));
+                                    theme::section(ui, "Audio~sound");
+                                    crate::widgets::check(ui, &mut s.include_audio, crate::tr(format!("Export audio (AAC {} kbit/s, Opus for WebM)", s.audio_kbps.unwrap_or(256))));
                                     ui.add_enabled_ui(s.include_audio, |ui| loudness_row(ui, &mut s.loudness));
                                 } else {
                                     self.split_rows(ui, p, &s);
@@ -1255,15 +1255,15 @@ impl ExportDialog {
                                 loudness_row(ui, &mut s.loudness);
                             }
                             if !s.format.audio_only() {
-                                crate::widgets::check(ui, &mut self.also_srt, crate::tr("Texte zusätzlich als Untertiteldateien (SRT und VTT) speichern"));
+                                crate::widgets::check(ui, &mut self.also_srt, crate::tr("Also save texts as subtitle files (SRT and VTT)"));
                                 let ms = &p.timeline.markers;
                                 if self.chapters && !ms.is_empty() {
-                                    theme::section(ui, "Kapitel");
+                                    theme::section(ui, "Chapter");
                                     ui.horizontal(|ui| {
-                                        ui.label(RichText::new(format!("{} {}", ms.len(), crate::tr("aus Markern"))).small().color(theme::TEXT_DIM()));
-                                        if ui.add(theme::secondary(format!("{}  Kapitel kopieren", icon::COPY))).clicked() {
+                                        ui.label(RichText::new(format!("{} {}", ms.len(), crate::tr("from markers"))).small().color(theme::TEXT_DIM()));
+                                        if ui.add(theme::secondary(format!("{}  Copy chapters", icon::COPY))).clicked() {
                                             ui.ctx().copy_text(crate::navigate::chapters(ms));
-                                            toast = Some(crate::tr("Kapitel in die Zwischenablage kopiert"));
+                                            toast = Some(crate::tr("Chapters copied to the clipboard"));
                                         }
                                     });
                                     let (a, b) = s.range.unwrap_or((Time::ZERO, p.duration()));
@@ -1290,8 +1290,8 @@ impl ExportDialog {
                             icon::WARNING,
                             theme::count_text(
                                 self.missing.len(),
-                                "{} Inhalt fehlt und wird ohne ihn exportiert: {}",
-                                "{} Inhalte fehlen und werden ohne sie exportiert: {}",
+                                "{} item is missing; the export continues without it: {}",
+                                "{} items are missing; the export continues without them: {}",
                             )
                             .replacen("{}", &self.missing.join(", "), 1)
                         )))
@@ -1303,7 +1303,7 @@ impl ExportDialog {
                     // a mask finished while the dialog is open: the warning goes
                     self.masks = cl_fx::missing_masks(p);
                     ui.label(
-                        RichText::new(crate::tr(format!("{}  Maske fehlt oder ist noch nicht fertig: {}", icon::WARNING, self.masks.join(", "))))
+                        RichText::new(crate::tr(format!("{}  Mask is missing or not finished yet: {}", icon::WARNING, self.masks.join(", "))))
                             .small()
                             .color(theme::WARN_TEXT()),
                     );
@@ -1322,7 +1322,7 @@ impl ExportDialog {
                         }
                         None => {
                             ui.horizontal(|ui| {
-                                ui.label(RichText::new(crate::tr("Wird vorbereitet …")).color(theme::TEXT()));
+                                ui.label(RichText::new(crate::tr("Preparing …")).color(theme::TEXT()));
                                 waiting_count(ui, self.queue.len());
                             });
                             ui.add_space(4.0);
@@ -1340,7 +1340,7 @@ impl ExportDialog {
                 ui.horizontal(|ui| {
                     if let Some(out) = &self.last_output {
                         if self.running.is_none() && out.exists() && self.exported.as_ref().is_none_or(|(r, f, used)| *r != self.rev || f != out || *used != s) {
-                            if ui.add(theme::secondary(format!("{}  Im Explorer zeigen", icon::FOLDER_OPEN))).clicked() {
+                            if ui.add(theme::secondary(format!("{}  Show in Explorer", icon::FOLDER_OPEN))).clicked() {
                                 crate::home::reveal(out);
                             }
                         }
@@ -1350,32 +1350,32 @@ impl ExportDialog {
                         let full = self.queue.len() >= QUEUE_MAX || self.focus_job.is_some();
                         if self.running.is_none() && self.unchanged_since_export(&s) {
                             // unchanged since the last export: straight to the finished file
-                            if ui.add(theme::primary(format!("{}  Zur Datei", icon::FOLDER_OPEN))).clicked() || std::mem::take(&mut main) {
+                            if ui.add(theme::primary(format!("{}  Go to file", icon::FOLDER_OPEN))).clicked() || std::mem::take(&mut main) {
                                 if let Some((_, f, _)) = &self.exported {
                                     crate::home::reveal(f);
                                 }
                             }
-                            if ui.add(theme::secondary(format!("{}  Erneut exportieren", icon::ARROW_CLOCKWISE))).clicked() {
+                            if ui.add(theme::secondary(format!("{}  Export again", icon::ARROW_CLOCKWISE))).clicked() {
                                 start = true;
                                 overwrite = true;
                             }
                         } else {
-                            // if one is already running, „Exportieren“ queues at the back too
-                            let tip = crate::tr(format!("Höchstens {QUEUE_MAX} wartende Exporte"));
-                            if ui.add_enabled(!full, theme::primary(format!("{}  Exportieren", icon::EXPORT))).on_disabled_hover_text(&tip).clicked() || (!full && std::mem::take(&mut main)) {
+                            // if one is already running, „Export“ queues at the back too
+                            let tip = crate::tr(format!("At most {QUEUE_MAX} waiting exports"));
+                            if ui.add_enabled(!full, theme::primary(format!("{}  Export", icon::EXPORT))).on_disabled_hover_text(&tip).clicked() || (!full && std::mem::take(&mut main)) {
                                 start = true;
                             }
-                            if ui.add_enabled(!full, theme::secondary(format!("{}  In Warteschlange", icon::LIST_PLUS))).on_disabled_hover_text(&tip).clicked() {
-                                // like „Exportieren“: starts at once if none is running; the window stays open
+                            if ui.add_enabled(!full, theme::secondary(format!("{}  Add to queue", icon::LIST_PLUS))).on_disabled_hover_text(&tip).clicked() {
+                                // like „Export“: starts at once if none is running; the window stays open
                                 start = true;
                             }
                         }
                         if self.running.is_some() {
-                            if ui.add(theme::secondary(format!("{}  Abbrechen", icon::X))).clicked() {
+                            if ui.add(theme::secondary(format!("{}  Cancel", icon::X))).clicked() {
                                 self.cancel_current();
                             }
                         } else {
-                            let close_label = if self.done.is_some() || self.unchanged_since_export(&s) { "Schließen" } else { "Abbrechen" };
+                            let close_label = if self.done.is_some() || self.unchanged_since_export(&s) { "Close" } else { "Cancel" };
                             if ui.add(theme::secondary(close_label)).clicked() {
                                 open = false;
                             }
@@ -1403,7 +1403,7 @@ impl ExportDialog {
             let split = self.split(&s).is_some();
             let (exists, old) = *self.overwrite_facts.get_or_insert_with(|| {
                 let exists = parts.iter().any(|f| f.1.exists());
-                // parts of an earlier run that no longer exist this time (e.g. „Teil 06“ of 6, now 4)
+                // parts of an earlier run that no longer exist this time (e.g. "Part 06" of 6, now 4)
                 let keep: Vec<PathBuf> = parts.iter().map(|f| f.1.clone()).collect();
                 let stale = if split {
                     let recorded: Vec<PathBuf> = crate::exports::for_project(&p.name, self.project_path.as_deref()).into_iter().map(|e| e.path).collect();
@@ -1416,25 +1416,25 @@ impl ExportDialog {
             let m = crate::dialog::modal(ctx, "export-overwrite").show(ctx, |ui| {
                 ui.set_width(380.0);
                 let t = match (exists, parts.len() > 1) {
-                    (false, _) => "Name schon in der Warteschlange",
-                    (true, false) => "Datei existiert bereits",
-                    (true, true) => "Dateien existieren bereits",
+                    (false, _) => "Name already in the queue",
+                    (true, false) => "File already exists",
+                    (true, true) => "Files already exist",
                 };
                 if crate::dialog::title(ui, t) {
                     choice = Some(2);
                 }
                 ui.label(RichText::new(crate::paths::shown(&file)).small().color(theme::TEXT_DIM()));
                 if old > 0 {
-                    ui.label(RichText::new(crate::tr(format!("Beim Überschreiben werden {old} ältere Teile entfernt"))).small().color(theme::TEXT_DIM()));
+                    ui.label(RichText::new(crate::tr(format!("{old} older parts will be removed when overwriting"))).small().color(theme::TEXT_DIM()));
                 }
                 crate::dialog::footer(ui, |ui| {
-                    if ui.add(theme::primary("Anderen Namen")).clicked() {
+                    if ui.add(theme::primary("Different name")).clicked() {
                         choice = Some(1);
                     }
-                    if ui.add(theme::danger("Überschreiben")).clicked() {
+                    if ui.add(theme::danger("Overwrite")).clicked() {
                         choice = Some(0);
                     }
-                    if ui.add(theme::secondary("Abbrechen")).clicked() {
+                    if ui.add(theme::secondary("Cancel")).clicked() {
                         choice = Some(2);
                     }
                 });
@@ -1483,7 +1483,7 @@ impl ExportDialog {
                 s.encoder = cl_export::export_default(&found, &crate::proxy::encoder_pref());
                 *self.encoders.lock().unwrap() = Some(found);
             }
-            // anew after „Anderen Namen“
+            // anew after „Different name“
             let (out, parts) = self.targets(p, &s);
             let parts = parts
                 .into_iter()
@@ -1536,7 +1536,8 @@ fn stale_parts(dir: &Path, ext: &str, keep: &[PathBuf], recorded: &[PathBuf]) ->
             return false;
         };
         match rest.split_once(' ') {
-            Some(("Teil" | "Part", t)) => nr(t),
+            // „Part“, or the word exports of versions up to 0.19.3 carry
+            Some((w, t)) if w == "Part" || w == cl_core::legacy::old("export_part") => nr(t),
             Some((h, t)) => nr(h) && !t.trim().is_empty(),
             None => nr(rest),
         }
@@ -1550,7 +1551,7 @@ fn stale_parts(dir: &Path, ext: &str, keep: &[PathBuf], recorded: &[PathBuf]) ->
     v
 }
 
-/// „In Teile aufteilen“: equally long parts, parts of fixed length (seconds) or cut at markers
+/// „Split into parts“: equally long parts, parts of fixed length (seconds) or cut at markers
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Split {
     Count(u32),
@@ -1560,12 +1561,12 @@ enum Split {
 
 /// Maximum number of parts (count, length, markers)
 const SPLIT_MAX: u32 = 50;
-/// A shorter remainder with „Länge“ is added to the second-to-last part
+/// A shorter remainder with „Length“ is added to the second-to-last part
 const SPLIT_MIN_REST: Time = Time(3_000_000);
 
 /// Parts of an export from `a` to `b`: range and file name per part, gapless and without
 /// overlap; cuts lie on frame boundaries of the project (`fps`). `name` is already
-/// file-safe, `part` is the word „Teil“ in the UI language.
+/// file-safe, `part` is the word „Part“ in the UI language.
 fn split_parts(how: Split, (a, b): (Time, Time), fps: cl_core::Rational, markers: &[cl_core::Marker], name: &str, part: &str, ext: &str) -> Vec<((Time, Time), String)> {
     let snap = |t: Time| t.snap_to_frame(fps);
     // cut points with marker name (empty without marker)
@@ -1613,21 +1614,21 @@ fn split_parts(how: Split, (a, b): (Time, Time), fps: cl_core::Rational, markers
         .collect()
 }
 
-/// Result line under „Aufteilen nach“: „6 Teile · je 1:00“ or „4 Teile · 0:42 bis 2:10“
+/// Result line under "Split by": "6 parts · 1:00 each" or "4 parts · 0:42 to 2:10"
 fn split_summary(parts: &[((Time, Time), String)]) -> String {
     let durs = parts.iter().map(|((a, b), _)| *b - *a);
     // rounded to whole seconds: 59.97 s (frame grid) shows 1:00 like the other parts
     let t = |d: Option<Time>| crate::navigate::chapter_time(Time((d.unwrap_or_default().0 + 500_000) / 1_000_000 * 1_000_000));
     let (lo, hi) = (t(durs.clone().min()), t(durs.max()));
     if lo == hi {
-        crate::tr(format!("{} Teile · je {lo}", parts.len()))
+        crate::tr(format!("{} parts · {lo} each", parts.len()))
     } else {
-        crate::tr(format!("{} Teile · {lo} bis {hi}", parts.len()))
+        crate::tr(format!("{} parts · {lo} to {hi}", parts.len()))
     }
 }
 
 /// Side files next to `out` (path, content) for the export range: subtitles (SRT, VTT)
-/// and chapters like „Kapitel kopieren“ (only if switched on), times from the range start.
+/// and chapters like „Copy chapters“ (only if switched on), times from the range start.
 fn sidecars(p: &Project, s: &ExportSettings, subs: bool, out: &Path) -> Vec<(PathBuf, String)> {
     let mut v = Vec::new();
     if s.format.audio_only() {
@@ -1654,9 +1655,9 @@ fn sidecars(p: &Project, s: &ExportSettings, subs: bool, out: &Path) -> Vec<(Pat
 fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32, measuring: bool, part: Option<(usize, usize)>, waiting: usize) {
     ui.horizontal(|ui| {
         let what = match part {
-            _ if measuring => "Lautheit messen …".to_string(),
-            Some((i, n)) => format!("Exportiere Teil {i} von {n} …"),
-            None => "Exportiere …".into(),
+            _ if measuring => "Measuring loudness …".to_string(),
+            Some((i, n)) => format!("Exporting part {i} of {n} …"),
+            None => "Exporting …".into(),
         };
         ui.label(RichText::new(crate::tr(what)).color(theme::TEXT()));
         waiting_count(ui, waiting);
@@ -1664,7 +1665,7 @@ fn export_progress(ui: &mut egui::Ui, prog: f32, elapsed: f32, measuring: bool, 
             if prog > 0.03 && elapsed > 2.0 {
                 let left = (elapsed / prog * (1.0 - prog)).max(0.0) as u32;
                 ui.label(
-                    RichText::new(crate::tr(format!("noch ca. {}:{:02}", left / 60, left % 60)))
+                    RichText::new(crate::tr(format!("about {}:{:02} left", left / 60, left % 60)))
                         .color(theme::TEXT_DIM()),
                 );
             }
@@ -1704,7 +1705,7 @@ fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
             egui::FontId::proportional(13.0 * pop.max(0.01)),
             theme::SUCCESS_BG,
         );
-        ui.label(RichText::new(crate::tr(format!("Fertig in {}", theme::secs(secs as f64, 1)))).strong());
+        ui.label(RichText::new(crate::tr(format!("Done in {}", theme::secs(secs as f64, 1)))).strong());
     });
     if age < dur {
         ui.ctx().request_repaint();
@@ -1718,24 +1719,24 @@ fn export_done(ui: &mut egui::Ui, at: Instant, secs: f32) -> bool {
 fn loudness_row(ui: &mut egui::Ui, l: &mut Option<f32>) {
     let name = |l: Option<f32>| match l {
         Some(x) if x > -15.0 => "YouTube (−14 LUFS)",
-        Some(_) => "Sprache (−16 LUFS)",
-        None => "Aus",
+        Some(_) => "Speech (−16 LUFS)",
+        None => "Off",
     };
-    theme::row(ui, "Lautheit", |ui| {
+    theme::row(ui, "Loudness", |ui| {
         egui::ComboBox::from_id_salt("exp-loud").selected_text(crate::tr(name(*l))).width(200.0).show_ui(ui, |ui| {
             for v in [Some(-14.0), Some(-16.0), None] {
                 ui.selectable_value(l, v, crate::tr(name(v)));
             }
         })
         .response
-        .on_hover_text(crate::tr("Misst den Ton vorab und hebt oder senkt ihn gleichmäßig, Spitzen höchstens −1 dBTP"));
+        .on_hover_text(crate::tr("Measures the audio first and raises or lowers it evenly, peaks at most −1 dBTP"));
     });
 }
 
 /// Estimate the file size; `true` = from a fixed target bitrate (video + sound) × duration.
 /// With constant quality (CRF) roughly from pixels × frame rate, calibrated to
-/// 1080p30 „Empfohlen“ ≈ 23 Mbit/s (what libx264 actually delivers with CRF 20);
-/// each +6 CRF about half the size (Kleiner = CRF 26, Höher = CRF 16). Other codecs relative
+/// 1080p30 „Recommended“ ≈ 23 Mbit/s (what libx264 actually delivers with CRF 20);
+/// each +6 CRF about half the size (smaller = CRF 26, higher = CRF 16). Other codecs relative
 /// to it (VP9/AV1 with their CRF values about 0.3, HEVC 0.5), ProRes fixed ≈ 220 Mbit/s (HQ),
 /// GIF from area × frames (palette with dithering, for film material ≈ 0.6 bytes per pixel).
 fn estimate_mb(s: &ExportSettings, d: Time) -> (f64, bool) {
@@ -1849,7 +1850,7 @@ fn estimate_per_format_within_factor_two_of_real_exports() {
     let mut s = ExportSettings::from_project(&Project::new("t"));
     (s.width, s.height, s.fps) = (1920, 1080, cl_core::Rational::parse("30").unwrap());
     s.range = Some((Time::from_secs_f64(5.03), Time::from_secs_f64(9.038)));
-    // WebM/VP9 „Empfohlen“ + Opus, 4.008 s: 3.73 MB (estimated 12 MB before)
+    // WebM/VP9 „Recommended“ + Opus, 4.008 s: 3.73 MB (estimated 12 MB before)
     (s.format, s.codec) = (Format::WebM, Codec::Vp9);
     let (mb, _) = estimate_mb(&s, Time::ZERO);
     assert!(within(mb, 3.73), "WebM {mb}");
@@ -1860,7 +1861,7 @@ fn estimate_per_format_within_factor_two_of_real_exports() {
     assert!(within(mb, 11.08) && !exact, "GIF {mb}");
     // the dialog shows the same size the export writes
     assert_eq!(s.output_size(), (720, 406));
-    // portrait Shorts H.264 „Höher“, 18 s: 17.6 MB – still images, CRF estimates too high here;
+    // portrait Shorts H.264 „Higher“, 18 s: 17.6 MB – still images, CRF estimates too high here;
     // only roughly plausible (not an order of magnitude off)
     (s.format, s.codec, s.quality, s.width, s.height) = (Format::Mp4, Codec::H264, Quality::Higher, 1080, 1920);
     s.range = None;
@@ -1894,9 +1895,9 @@ fn every_text_style_reaches_the_export_like_the_preview() {
         assert!(g.contains(&format!("fontcolor=0x{r:02x}{gr:02x}{b:02x}@{:.3}", a as f32 / 255.0)), "{name}: colour");
         // face from the same toggles as the preview: bold = second print, italic = shear
         // one print per line; karaoke: second version in the highlight colour
-        let zeilen = st.text.lines().filter(|l| !l.trim().is_empty()).count();
-        let fassungen = if st.karaoke.is_some() { 2 } else { 1 };
-        assert_eq!(g.matches("drawtext=").count(), zeilen * fassungen * if st.bold { 2 } else { 1 }, "{name}: bold");
+        let lines = st.text.lines().filter(|l| !l.trim().is_empty()).count();
+        let versions = if st.karaoke.is_some() { 2 } else { 1 };
+        assert_eq!(g.matches("drawtext=").count(), lines * versions * if st.bold { 2 } else { 1 }, "{name}: bold");
         assert_eq!(g.contains("shear=shx=0.25"), st.italic, "{name}: italic");
         assert_eq!(g.contains(":borderw="), st.outline.is_some(), "{name}: outline");
         // box as one rectangle around all lines
@@ -1940,16 +1941,16 @@ fn cancel_while_preparing_ends_at_once_without_error() {
     d.running.as_ref().unwrap().cancel.store(true, Ordering::Relaxed);
     frame(&mut d, &ctx, &p, false);
     assert!(d.running.is_none() && d.error.is_none());
-    // abort while FFmpeg runs: the thread reports „Abgebrochen“, which is not an error
-    let r = running(Some(Err("Abgebrochen".into())));
+    // abort while FFmpeg runs: the thread reports „Canceled“, which is not an error
+    let r = running(Some(Err("Canceled".into())));
     r.cancel.store(true, Ordering::Relaxed);
     d.running = Some(r);
     frame(&mut d, &ctx, &p, false);
     assert!(d.running.is_none() && d.error.is_none());
     // a real error stays one
-    d.running = Some(running(Some(Err("FFmpeg: kaputt".into()))));
+    d.running = Some(running(Some(Err("FFmpeg: broken".into()))));
     frame(&mut d, &ctx, &p, false);
-    assert_eq!(d.error.as_deref(), Some("FFmpeg: kaputt"));
+    assert_eq!(d.error.as_deref(), Some("FFmpeg: broken"));
 }
 
 #[test]
@@ -1972,11 +1973,11 @@ fn enter_that_opened_overwrite_prompt_does_not_confirm_it() {
     let mut d = ExportDialog { folder: dir.path().to_path_buf(), ..Default::default() };
     *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
     d.open_for(&p, None, 0, None);
-    // as after Enter on „Exportieren“: question opened in the same frame, Enter still pressed
+    // as after Enter on „Export“: question opened in the same frame, Enter still pressed
     (d.confirm_overwrite, d.confirm_fresh) = (true, true);
     frame(&mut d, &ctx, &p, true);
     assert!(d.confirm_overwrite && d.error.is_none());
-    // only a new Enter confirms – with „Anderen Namen“, never overwrite
+    // only a new Enter confirms – with „Different name“, never overwrite
     // (empty project: start fails with an error)
     frame(&mut d, &ctx, &p, true);
     assert!(!d.confirm_overwrite);
@@ -2021,7 +2022,7 @@ fn export_job_is_built_off_the_ui_thread() {
     frame(&mut d, &ctx, &p, true);
     assert!(d.running.is_some() && d.error.is_none(), "job built in the caller");
     finish(&mut d, &ctx, &p);
-    assert_eq!(d.error.as_deref(), Some("Das Projekt ist leer"));
+    assert_eq!(d.error.as_deref(), Some("The project is empty"));
 }
 
 #[test]
@@ -2033,7 +2034,7 @@ fn reexport_only_with_unchanged_settings() {
     std::fs::write(&out, b"x").unwrap();
     d.exported = Some((0, out, s.clone()));
     assert!(d.unchanged_since_export(&s));
-    // other quality: „Exportieren“ again (asks if the file exists)
+    // other quality: „Export“ again (asks if the file exists)
     let mut q = s.clone();
     q.quality = Quality::Bitrate(1234);
     assert!(!d.unchanged_since_export(&q));
@@ -2135,7 +2136,7 @@ fn window_close_during_export_asks_and_cancels() {
     std::thread::spawn(move || {
         wait_until("cancel", 10, || cancel.load(Ordering::Relaxed));
         std::thread::sleep(std::time::Duration::from_millis(100));
-        *result.lock().unwrap() = Some(Err("Abgebrochen".into()));
+        *result.lock().unwrap() = Some(Err("Canceled".into()));
     });
     let t0 = Instant::now();
     d.cancel_and_wait(std::time::Duration::from_secs(10));
@@ -2149,23 +2150,23 @@ fn sidecars_follow_range_and_wait_for_success() {
     let mut p = Project::new("t");
     let mut t = Track::new(TrackKind::Text);
     let txt = |s: &str| ClipContent::Text(TextStyle { text: s.into(), ..Default::default() });
-    t.clips.push(Clip::new(txt("drin"), Time::from_secs_f64(50.0), Time::from_secs_f64(20.0)));
-    t.clips.push(Clip::new(txt("draußen"), Time::from_secs_f64(130.0), Time::from_secs_f64(5.0)));
+    t.clips.push(Clip::new(txt("inside"), Time::from_secs_f64(50.0), Time::from_secs_f64(20.0)));
+    t.clips.push(Clip::new(txt("outside"), Time::from_secs_f64(130.0), Time::from_secs_f64(5.0)));
     p.timeline.tracks.push(t);
     let mk = |id, at: f64, name: &str| Marker { id, at: Time::from_secs_f64(at), duration: Time::ZERO, name: name.into(), note: String::new(), color: 0 };
-    p.timeline.markers = vec![mk(1, 75.0, "Mitte"), mk(2, 125.0, "Später")];
+    p.timeline.markers = vec![mk(1, 75.0, "Middle"), mk(2, 125.0, "Later")];
     let mut s = ExportSettings::from_project(&p);
     s.range = Some((Time::from_secs_f64(60.0), Time::from_secs_f64(120.0)));
     let home = TestHome::new();
     let dir = &home.dir;
     let v = sidecars(&p, &s, true, &dir.path().join("a.mp4"));
     let get = |ext: &str| v.iter().find(|(f, _)| f.to_string_lossy().ends_with(ext)).unwrap().1.clone();
-    assert_eq!(get(".chapters.txt"), "0:00 Intro\n0:15 Mitte");
+    assert_eq!(get(".chapters.txt"), "0:00 Intro\n0:15 Middle");
     // chapters switched off: no chapter file, subtitles stay
     let off = sidecars(&p, &ExportSettings { chapters: false, ..s.clone() }, true, &dir.path().join("a.mp4"));
     assert_eq!(off.len(), 2);
     assert!(off.iter().all(|(f, _)| !f.to_string_lossy().ends_with(".chapters.txt")));
-    assert_eq!(get(".srt"), "1\n00:00:00,000 --> 00:00:10,000\ndrin\n");
+    assert_eq!(get(".srt"), "1\n00:00:00,000 --> 00:00:10,000\ninside\n");
     // write side files only after a successful export (success records in `exports.json`)
     let (ctx, mut d) = (egui::Context::default(), ExportDialog::default());
     for ok in [false, true] {
@@ -2187,13 +2188,13 @@ fn queue_takes_turns_names_limit_and_keeps_its_snapshot() {
     *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
     d.open_for(&p, None, 0, None);
     d.folder = dir.path().to_path_buf();
-    // one already running: „Exportieren“ (Enter) queues at the back instead of being rejected
+    // one already running: „Export“ (Enter) queues at the back instead of being rejected
     d.running = Some(running(None));
     frame(&mut d, &ctx, &p, true);
     assert_eq!(d.queue.len(), 1);
     assert_eq!(d.queue[0].out, dir.path().join("t.mp4"));
     // same target path as a queued one: question as for an existing file,
-    // Enter chooses „Anderen Namen“
+    // Enter chooses „Different name“
     frame(&mut d, &ctx, &p, true);
     assert!(d.confirm_overwrite && d.queue.len() == 1);
     frame(&mut d, &ctx, &p, true);
@@ -2201,7 +2202,7 @@ fn queue_takes_turns_names_limit_and_keeps_its_snapshot() {
     assert_eq!(d.queue.iter().map(|q| q.out.clone()).collect::<Vec<_>>(), [dir.path().join("t.mp4"), dir.path().join("t (2).mp4")]);
     // the open project changes: the snapshot stays
     let mut changed = p.clone();
-    changed.name = "geändert".into();
+    changed.name = "changed".into();
     frame(&mut d, &ctx, &changed, false);
     assert!(d.queue.iter().all(|q| *q.project == p));
     // remove a single waiting one
@@ -2212,10 +2213,10 @@ fn queue_takes_turns_names_limit_and_keeps_its_snapshot() {
     while d.queue.len() < QUEUE_MAX {
         d.queue.push_back(queued(&p, &dir.path().join(format!("{}.mp4", d.queue.len()))));
     }
-    d.name = "frei".into();
+    d.name = "free".into();
     frame(&mut d, &ctx, &p, true);
     assert!(d.queue.len() == QUEUE_MAX && !d.confirm_overwrite);
-    // „Alle wartenden entfernen“: the running one stays
+    // „Remove all waiting“: the running one stays
     d.remove_waiting(None);
     assert!(d.queue.is_empty() && d.running.is_some());
     // cancelling the running one starts the next; failures do not stop the queue
@@ -2226,7 +2227,7 @@ fn queue_takes_turns_names_limit_and_keeps_its_snapshot() {
     assert_eq!((d.current().map(|c| c.0), d.queue.len()), (Some("x.mp4".to_string()), 1));
     finish(&mut d, &ctx, &p);
     assert!(d.running.is_none() && d.queue.is_empty());
-    assert_eq!(d.error.as_deref(), Some("Das Projekt ist leer"));
+    assert_eq!(d.error.as_deref(), Some("The project is empty"));
     // quitting with waiting exports: the question names the number, closing clears the queue
     d.running = Some(running(None));
     d.queue.push_back(queued(&p, &dir.path().join("z.mp4")));
@@ -2234,7 +2235,7 @@ fn queue_takes_turns_names_limit_and_keeps_its_snapshot() {
     raw.viewports.insert(egui::ViewportId::ROOT, egui::ViewportInfo { events: vec![egui::ViewportEvent::Close], ..Default::default() });
     let _ = ctx.run(raw, |ctx| d.guard_close(ctx));
     assert!(d.quit_ask);
-    d.running.as_ref().unwrap().result.lock().unwrap().replace(Err("Abgebrochen".into()));
+    d.running.as_ref().unwrap().result.lock().unwrap().replace(Err("Canceled".into()));
     d.cancel_and_wait(std::time::Duration::from_secs(1));
     assert!(d.queue.is_empty());
 }
@@ -2257,7 +2258,7 @@ fn queued_exports_run_in_turn_from_their_own_snapshot() {
     };
     let (ctx, mut d) = (egui::Context::default(), ExportDialog::default());
     *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
-    let (p, pa) = (project("A", "eins", 1.0), dir.path().join("A.cutline"));
+    let (p, pa) = (project("A", "one", 1.0), dir.path().join("A.cutline"));
     d.open_for(&p, Some(&pa), 0, None);
     d.folder = dir.path().to_path_buf();
     d.also_srt = true;
@@ -2268,7 +2269,7 @@ fn queued_exports_run_in_turn_from_their_own_snapshot() {
     frame(&mut d, &ctx, &p, true);
     assert_eq!(d.queue.len(), 2);
     // another project open and longer, only then do the two run
-    let other = project("Anders", "zwei", 3.0);
+    let other = project("Different", "five", 3.0);
     let po = dir.path().join("Anders.cutline");
     d.open_for(&other, Some(&po), 7, None);
     d.cancel_current();
@@ -2280,10 +2281,10 @@ fn queued_exports_run_in_turn_from_their_own_snapshot() {
         assert!((m.duration.as_secs_f64() - 1.0).abs() < 0.2 && m.width == 320, "{f}: {:?}", m.duration);
     }
     // side file from the snapshot
-    assert!(std::fs::read_to_string(dir.path().join("A kurz.srt")).unwrap().contains("eins"));
+    assert!(std::fs::read_to_string(dir.path().join("A kurz.srt")).unwrap().contains("one"));
     // exports list: assigned to the project they come from
     assert_eq!(crate::exports::for_project("A", Some(&pa)).len(), 2);
-    assert!(crate::exports::for_project("Anders", Some(&po)).is_empty());
+    assert!(crate::exports::for_project("Different", Some(&po)).is_empty());
 }
 
 /// Test project 320×180, one text over `secs` seconds
@@ -2298,7 +2299,7 @@ fn text_project(name: &str, txt: &str, secs: f64) -> Project {
     p
 }
 
-/// Dialog with „In Teile aufteilen“ (count) for `p`, target `dir`
+/// Dialog with „Split into parts“ (count) for `p`, target `dir`
 #[cfg(test)]
 fn split_dialog(p: &Project, dir: &Path, n: u32) -> ExportDialog {
     let mut d = ExportDialog::default();
@@ -2326,7 +2327,7 @@ fn split_export_writes_parts_into_a_folder_as_one_entry() {
     let home = TestHome::new();
     let dir = &home.dir;
     let ctx = egui::Context::default();
-    let p = text_project("Film", "eins", 4.0);
+    let p = text_project("Film", "one", 4.0);
     let mut d = split_dialog(&p, dir.path(), 4);
     d.also_srt = true;
     // one already running: the group waits as one entry
@@ -2336,22 +2337,22 @@ fn split_export_writes_parts_into_a_folder_as_one_entry() {
     assert_eq!(d.waiting().map(|(f, _, n)| (f.to_path_buf(), n)).collect::<Vec<_>>(), [(dir.path().join("Film"), 4)]);
     d.cancel_current();
     frame(&mut d, &ctx, &p, false);
-    assert_eq!(d.current().unwrap().0, "Film · Teil 1 von 4");
+    assert_eq!(d.current().unwrap().0, "Film · Part 1 of 4");
     drain(&mut d, &ctx, &p);
     assert_eq!(d.error, None);
     let folder = dir.path().join("Film");
     let mut names: Vec<String> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).filter(|n| n.ends_with(".mp4")).collect();
     names.sort();
-    assert_eq!(names, ["Film – Teil 01.mp4", "Film – Teil 02.mp4", "Film – Teil 03.mp4", "Film – Teil 04.mp4"]);
+    assert_eq!(names, ["Film – Part 01.mp4", "Film – Part 02.mp4", "Film – Part 03.mp4", "Film – Part 04.mp4"]);
     for n in &names {
         let m = cl_media::probe(&folder.join(n)).unwrap();
         assert!((m.duration.as_secs_f64() - 1.0).abs() < 0.1, "{n}: {:?}", m.duration);
     }
     // subtitles per part, times from the part start
-    assert_eq!(std::fs::read_to_string(folder.join("Film – Teil 03.srt")).unwrap(), "1\n00:00:00,000 --> 00:00:01,000\neins\n");
+    assert_eq!(std::fs::read_to_string(folder.join("Film – Part 03.srt")).unwrap(), "1\n00:00:00,000 --> 00:00:01,000\none\n");
     // exports list: every part
     assert_eq!(crate::exports::for_project("Film", Some(&dir.path().join("p.cutline"))).len(), 4);
-    // once more: one question for the whole group, „Anderen Namen“ (Enter) → new folder
+    // once more: one question for the whole group, „Different name“ (Enter) → new folder
     frame(&mut d, &ctx, &p, true);
     assert!(d.confirm_overwrite && d.queue.is_empty());
     frame(&mut d, &ctx, &p, true);
@@ -2360,9 +2361,9 @@ fn split_export_writes_parts_into_a_folder_as_one_entry() {
     drain(&mut d, &ctx, &p);
     assert_eq!(d.error, None);
     // the first group untouched, the new one complete and listed as well
-    assert!(folder.join("Film – Teil 04.mp4").is_file());
+    assert!(folder.join("Film – Part 04.mp4").is_file());
     assert_eq!(std::fs::read_dir(dir.path().join("Film (2)")).unwrap().filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().ends_with(".mp4")).count(), 4);
-    assert!(dir.path().join("Film (2)").join("Film (2) – Teil 04.mp4").is_file());
+    assert!(dir.path().join("Film (2)").join("Film (2) – Part 04.mp4").is_file());
     assert_eq!(crate::exports::for_project("Film", Some(&dir.path().join("p.cutline"))).len(), 8);
 }
 
@@ -2376,8 +2377,8 @@ fn failed_part_does_not_stop_the_others() {
     let dir = &home.dir;
     let ctx = egui::Context::default();
     // part 3 (2–3 s) needs a video that is missing by now
-    let mut p = text_project("Film", "eins", 4.0);
-    let v = dir.path().join("weg.mp4");
+    let mut p = text_project("Film", "one", 4.0);
+    let v = dir.path().join("gone.mp4");
     assert!(cl_media::ffmpeg_command().unwrap().args(["-v", "error", "-y", "-f", "lavfi", "-i", "color=red:size=320x180:rate=30:duration=1"]).arg(&v).status().unwrap().success());
     let m = cl_media::probe(&v).unwrap();
     std::fs::remove_file(&v).unwrap();
@@ -2389,10 +2390,10 @@ fn failed_part_does_not_stop_the_others() {
     frame(&mut d, &ctx, &p, true);
     drain(&mut d, &ctx, &p);
     let e = d.error.clone().unwrap_or_default();
-    assert!(e.starts_with("3 von 4 Teilen fertig: ") && e.contains("weg.mp4"), "{e}");
+    assert!(e.starts_with("3 of 4 parts finished: ") && e.contains("gone.mp4"), "{e}");
     let folder = dir.path().join("Film");
     for (n, there) in [(1, true), (2, true), (3, false), (4, true)] {
-        assert_eq!(folder.join(format!("Film – Teil 0{n}.mp4")).is_file(), there, "part {n}");
+        assert_eq!(folder.join(format!("Film – Part 0{n}.mp4")).is_file(), there, "part {n}");
     }
 }
 
@@ -2404,7 +2405,7 @@ fn cancel_stops_the_whole_group_without_half_files() {
     let home = TestHome::new();
     let dir = &home.dir;
     let ctx = egui::Context::default();
-    let p = text_project("Film", "eins", 8.0);
+    let p = text_project("Film", "one", 8.0);
     let folder = dir.path().join("Film");
     // cancelled at once (during preparation): `poll` reports right away, the thread cleans up only
     // afterwards. A new export started at once into the same folder must not be hit by this cleanup
@@ -2417,7 +2418,7 @@ fn cancel_stops_the_whole_group_without_half_files() {
     // right away again: cancelled after the first part → finished parts stay, no half file, rest missing.
     // Parts by a marker at 1 s: 1 s, then 1 h. The cancel comes within 20 ms of part 1 being reported,
     // while part 2 needs minutes to encode – the group cannot be finished before the cancel lands.
-    let mut long = text_project("Film", "eins", 3600.0);
+    let mut long = text_project("Film", "one", 3600.0);
     long.timeline.markers = vec![cl_core::Marker { id: 1, at: Time::from_secs_f64(1.0), duration: Time::ZERO, name: String::new(), note: String::new(), color: 0 }];
     d.split_by = 2;
     frame(&mut d, &ctx, &long, true);
@@ -2452,15 +2453,15 @@ fn dialog_layout(d: &mut ExportDialog, p: &Project, w: f32, h: f32) -> (Rect, (f
 
 #[test]
 fn export_dialog_shows_all_settings_when_there_is_room() {
-    let mut p = text_project("Film", "eins", 600.0);
+    let mut p = text_project("Film", "one", 600.0);
     (p.settings.width, p.settings.height) = (1920, 1080);
     let mut d = ExportDialog::default();
     *d.encoders.lock().unwrap() = Some(vec![Encoder::Software]);
     d.open_for(&p, None, 0, None);
-    // full version: parts with result line, target size with hint („wird in 360p exportiert“)
+    // full version: parts with result line, target size with hint („is exported in 360p“)
     d.split_on = true;
     d.settings.as_mut().unwrap().target_mb = Some(10);
-    // other aspect ratio: rows „Seitenverhältnis“ and „Bild“
+    // other aspect ratio: rows „Aspect ratio“ and „Image“
     d.aspect = 2;
     // 1440×900: everything visible, nothing scrolls
     let (win, (shown, content)) = dialog_layout(&mut d, &p, 1440.0, 900.0);
@@ -2478,32 +2479,33 @@ fn overwriting_a_group_finds_only_its_own_older_parts() {
     let dir = tempfile::tempdir().unwrap();
     let d = &dir.path().join("Film");
     std::fs::create_dir(d).unwrap();
+    // "Teil" is the word of versions up to 0.19.3: its parts count too
     let files = [
-        "Film – Teil 01.mp4", "Film – Teil 04.mp4", "Film – Teil 05.mp4", "Film – Teil 06.mp4", "Film – Teil 06.srt",
-        "Film – Teil 06.vtt", "Film – Teil 06.chapters.txt", "Film – Part 07.mp4", "Film – 08 Ende.mp4", "Film – 09.mp4",
+        "Film – Part 01.mp4", "Film – Part 04.mp4", "Film – Part 05.mp4", "Film – Part 06.mp4", "Film – Part 06.srt",
+        "Film – Part 06.vtt", "Film – Part 06.chapters.txt", "Film – Teil 07.mp4", "Film – 08 End.mp4", "Film – 09.mp4",
         // foreign: other extension, other name, suffix, single-digit number, notes
-        "Film – Teil 06.mov", "Film – Teil 06 Kopie.mp4", "Anderer – Teil 06.mp4", "Film – Teil 6.mp4", "Notizen.txt", "Film.mp4",
+        "Film – Part 06.mov", "Film – Part 06 Copy.mp4", "Other – Part 06.mp4", "Film – Part 6.mp4", "Notes.txt", "Film.mp4",
         "Film – 10 .mp4",
         // fits the pattern but not written by Cutline (own file, part without entry)
-        "Film – 2023 Sommer.mp4", "Film – Teil 12.mp4", "Film – Teil 12.srt",
+        "Film – 2023 Summer.mp4", "Film – Part 12.mp4", "Film – Part 12.srt",
     ];
     for f in files {
         std::fs::write(d.join(f), b"x").unwrap();
     }
-    std::fs::create_dir(d.join("Film – Teil 11.mp4")).unwrap();
-    let keep: Vec<PathBuf> = (1..=4).map(|i| d.join(format!("Film – Teil 0{i}.mp4"))).collect();
+    std::fs::create_dir(d.join("Film – Part 11.mp4")).unwrap();
+    let keep: Vec<PathBuf> = (1..=4).map(|i| d.join(format!("Film – Part 0{i}.mp4"))).collect();
     // exports list: all videos except the two foreign ones
-    let recorded: Vec<PathBuf> = files.iter().filter(|f| f.ends_with(".mp4") && !["Film – 2023 Sommer.mp4", "Film – Teil 12.mp4"].contains(f)).map(|f| d.join(f)).collect();
+    let recorded: Vec<PathBuf> = files.iter().filter(|f| f.ends_with(".mp4") && !["Film – 2023 Summer.mp4", "Film – Part 12.mp4"].contains(f)).map(|f| d.join(f)).collect();
     let stale: Vec<String> = stale_parts(d, "mp4", &keep, &recorded).iter().map(|f| f.file_name().unwrap().to_string_lossy().to_string()).collect();
     assert_eq!(
         stale,
-        ["Film – 08 Ende.mp4", "Film – 09.mp4", "Film – Part 07.mp4", "Film – Teil 05.mp4", "Film – Teil 06.chapters.txt", "Film – Teil 06.mp4", "Film – Teil 06.srt", "Film – Teil 06.vtt"]
+        ["Film – 08 End.mp4", "Film – 09.mp4", "Film – Part 05.mp4", "Film – Part 06.chapters.txt", "Film – Part 06.mp4", "Film – Part 06.srt", "Film – Part 06.vtt", "Film – Teil 07.mp4"]
     );
     // side file of a remaining part stays
-    std::fs::write(d.join("Film – Teil 01.srt"), b"x").unwrap();
-    assert!(!stale_parts(d, "mp4", &keep, &recorded).iter().any(|f| f.ends_with("Film – Teil 01.srt")));
+    std::fs::write(d.join("Film – Part 01.srt"), b"x").unwrap();
+    assert!(!stale_parts(d, "mp4", &keep, &recorded).iter().any(|f| f.ends_with("Film – Part 01.srt")));
     // without folder: nothing
-    assert!(stale_parts(&d.join("fehlt"), "mp4", &keep, &recorded).is_empty());
+    assert!(stale_parts(&d.join("missing"), "mp4", &keep, &recorded).is_empty());
 }
 
 /// Overwriting a group: older parts are removed only by the new export when its first part
@@ -2516,27 +2518,27 @@ fn overwrite_removes_old_parts_when_its_export_starts() {
     let home = TestHome::new();
     let dir = &home.dir;
     let ctx = egui::Context::default();
-    let p = text_project("Film", "eins", 2.0);
+    let p = text_project("Film", "one", 2.0);
     let mut d = split_dialog(&p, dir.path(), 2);
     let folder = dir.path().join("Film");
     std::fs::create_dir(&folder).unwrap();
-    for f in ["Film – Teil 03.mp4", "Film – Teil 03.srt", "Film – 2023 Sommer.mp4"] {
+    for f in ["Film – Part 03.mp4", "Film – Part 03.srt", "Film – 2023 Summer.mp4"] {
         std::fs::write(folder.join(f), b"x").unwrap();
     }
     let pp = dir.path().join("p.cutline");
-    crate::exports::record_all("Film", Some(&pp), &[&folder.join("Film – Teil 03.mp4")]);
+    crate::exports::record_all("Film", Some(&pp), &[&folder.join("Film – Part 03.mp4")]);
     // another export is running: the overwriting one waits, nothing removed yet
     d.running = Some(running(None));
     let (out, parts) = d.targets(&p, d.settings.as_ref().unwrap());
     let parts = parts.into_iter().map(|(range, out)| Part { range, out, sidecars: Vec::new() }).collect();
     d.queue.push_back(Queued { parts, project_path: Some(pp), clean: true, ..queued(&p, &out) });
-    assert!(folder.join("Film – Teil 03.mp4").is_file());
+    assert!(folder.join("Film – Part 03.mp4").is_file());
     d.cancel_current();
     drain(&mut d, &ctx, &p);
     assert_eq!(d.error, None);
     let mut names: Vec<String> = std::fs::read_dir(&folder).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
     names.sort();
-    assert_eq!(names, ["Film – 2023 Sommer.mp4", "Film – Teil 01.mp4", "Film – Teil 02.mp4"]);
+    assert_eq!(names, ["Film – 2023 Summer.mp4", "Film – Part 01.mp4", "Film – Part 02.mp4"]);
 }
 
 /// First export of a session while the encoder probe still runs: the start waits for the list
@@ -2549,7 +2551,7 @@ fn export_started_during_encoder_probe_uses_the_probed_list() {
     let home = TestHome::new();
     let dir = &home.dir;
     let ctx = egui::Context::default();
-    let p = text_project("Probe", "eins", 1.0);
+    let p = text_project("Probe", "one", 1.0);
     let mut d = ExportDialog::default();
     d.open_for(&p, Some(&dir.path().join("p.cutline")), 0, None);
     d.folder = dir.path().to_path_buf();
@@ -2557,7 +2559,7 @@ fn export_started_during_encoder_probe_uses_the_probed_list() {
     wait_until("encoder probe", 60, || d.encoders.lock().unwrap().is_some());
     *d.encoders.lock().unwrap() = None;
     // The start probes on its own (the list cannot be handed in), so the expectation is fixed by the
-    // setting instead: the first hardware encoder found, chosen in „Hardware-Kodierung“. Not waiting
+    // setting instead: the first hardware encoder found, chosen in „Hardware encoding“. Not waiting
     // for the list would give software. Without hardware (CI) only the stored list is checked.
     let found = cl_export::available_encoders();
     let want = found.iter().copied().find(|e| *e != Encoder::Software).unwrap_or(Encoder::Software);
@@ -2580,22 +2582,22 @@ fn overwrite_prompt_checks_the_disk_once() {
     let home = TestHome::new();
     let dir = &home.dir;
     let ctx = egui::Context::default();
-    let p = text_project("Film", "eins", 2.0);
+    let p = text_project("Film", "one", 2.0);
     let mut d = split_dialog(&p, dir.path(), 2);
     let folder = dir.path().join("Film");
     std::fs::create_dir(&folder).unwrap();
-    for f in ["Film – Teil 01.mp4", "Film – Teil 03.mp4"] {
+    for f in ["Film – Part 01.mp4", "Film – Part 03.mp4"] {
         std::fs::write(folder.join(f), b"x").unwrap();
     }
-    crate::exports::record_all("Film", Some(&dir.path().join("p.cutline")), &[&folder.join("Film – Teil 03.mp4")]);
+    crate::exports::record_all("Film", Some(&dir.path().join("p.cutline")), &[&folder.join("Film – Part 03.mp4")]);
     frame(&mut d, &ctx, &p, true);
     assert!(d.confirm_overwrite);
     assert_eq!(d.overwrite_facts, Some((true, 1)));
     // changes on disk while the prompt is open are not looked up again
-    std::fs::remove_file(folder.join("Film – Teil 03.mp4")).unwrap();
+    std::fs::remove_file(folder.join("Film – Part 03.mp4")).unwrap();
     frame(&mut d, &ctx, &p, false);
     assert_eq!(d.overwrite_facts, Some((true, 1)));
-    // closed („Anderen Namen“): facts forgotten for the next prompt
+    // closed („Different name“): facts forgotten for the next prompt
     frame(&mut d, &ctx, &p, true);
     assert!(!d.confirm_overwrite && d.overwrite_facts.is_none());
     assert_eq!(d.running.as_ref().map(|r| r.src.out.clone()), Some(dir.path().join("Film (2)")));
@@ -2631,8 +2633,8 @@ fn split_folder_is_never_the_chosen_folder_and_survives_cancel() {
     let home = TestHome::new();
     let dir = &home.dir;
     let ctx = egui::Context::default();
-    let p = text_project("Film", "eins", 8.0);
-    let chosen = dir.path().join("Ziel");
+    let p = text_project("Film", "one", 8.0);
+    let chosen = dir.path().join("Target");
     std::fs::create_dir(&chosen).unwrap();
     let mut d = split_dialog(&p, &chosen, 8);
     for n in ["", "  ", ".", "..", "..."] {
@@ -2667,7 +2669,7 @@ fn target_size_applies_per_part() {
     let ctx = egui::Context::default();
     // strong noise (otherwise the encoder undercuts any bitrate) and sound (the planned
     // share would otherwise stay unused)
-    let v = dir.path().join("rauschen.mp4");
+    let v = dir.path().join("noise.mp4");
     let st = cl_media::ffmpeg_command()
         .unwrap()
         .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=480x270:rate=30:duration=4,noise=alls=40:allf=t"])
@@ -2678,7 +2680,7 @@ fn target_size_applies_per_part() {
         .unwrap();
     assert!(st.success());
     let m = cl_media::probe(&v).unwrap();
-    let mut p = Project::new("Klein");
+    let mut p = Project::new("Small");
     (p.settings.width, p.settings.height) = (480, 270);
     let mut t = Track::new(TrackKind::Video);
     t.clips.push(Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(4.0)));
@@ -2689,9 +2691,9 @@ fn target_size_applies_per_part() {
     frame(&mut d, &ctx, &p, true);
     drain(&mut d, &ctx, &p);
     assert_eq!(d.error, None);
-    for n in ["Klein – Teil 01.mp4", "Klein – Teil 02.mp4"] {
-        let size = std::fs::metadata(dir.path().join("Klein").join(n)).unwrap().len();
-        eprintln!("Zielgröße 1 MB je Teil (2 s): {n} {size} Byte");
+    for n in ["Small – Part 01.mp4", "Small – Part 02.mp4"] {
+        let size = std::fs::metadata(dir.path().join("Small").join(n)).unwrap().len();
+        eprintln!("target size 1 MB per part (2 s): {n} {size} bytes");
         assert!((850_000..=1_000_000).contains(&size), "{n}: {size}");
     }
 }
@@ -2700,7 +2702,7 @@ fn target_size_applies_per_part() {
 fn split_parts_are_gapless_on_frames_with_names() {
     let fps = cl_core::Rational::new(30, 1);
     let s = Time::from_secs_f64;
-    let parts = |how, a: f64, b: f64, ms: &[cl_core::Marker]| split_parts(how, (s(a), s(b)), fps, ms, "Film", "Teil", "mp4");
+    let parts = |how, a: f64, b: f64, ms: &[cl_core::Marker]| split_parts(how, (s(a), s(b)), fps, ms, "Film", "Part", "mp4");
     // gapless, without overlap, sum = range, cuts on frame boundaries
     let check = |v: &[((Time, Time), String)], a: f64, b: f64| {
         assert_eq!((v[0].0 .0, v.last().unwrap().0 .1), (s(a), s(b)));
@@ -2714,24 +2716,24 @@ fn split_parts_are_gapless_on_frames_with_names() {
     // count: 10 s (in/out from 1 s) into 3 parts → 3.333 s rounded to frames
     let v = parts(Split::Count(3), 1.0, 11.0, &[]);
     check(&v, 1.0, 11.0);
-    assert_eq!(v.iter().map(|p| p.1.as_str()).collect::<Vec<_>>(), ["Film – Teil 01.mp4", "Film – Teil 02.mp4", "Film – Teil 03.mp4"]);
+    assert_eq!(v.iter().map(|p| p.1.as_str()).collect::<Vec<_>>(), ["Film – Part 01.mp4", "Film – Part 02.mp4", "Film – Part 03.mp4"]);
     assert_eq!(v[0].0 .1, Time(4_333_333));
-    assert_eq!(split_summary(&v), "3 Teile · je 0:03");
+    assert_eq!(split_summary(&v), "3 parts · 0:03 each");
     // at most 50, at least 2 parts; digits grow with the number (at least two)
     assert_eq!(parts(Split::Count(80), 0.0, 100.0, &[]).len(), 50);
     assert_eq!(parts(Split::Count(1), 0.0, 100.0, &[]).len(), 2);
     // 1 s per part over 120 s: at most 50 parts, length raised to 3 s → 40 parts
     let v = parts(Split::Length(1), 0.0, 120.0, &[]);
     check(&v, 0.0, 120.0);
-    assert_eq!((v.len(), v[0].1.as_str(), v[39].1.as_str()), (40, "Film – Teil 01.mp4", "Film – Teil 40.mp4"));
-    assert_eq!(split_summary(&v), "40 Teile · je 0:03");
+    assert_eq!((v.len(), v[0].1.as_str(), v[39].1.as_str()), (40, "Film – Part 01.mp4", "Film – Part 40.mp4"));
+    assert_eq!(split_summary(&v), "40 parts · 0:03 each");
     // 2 hours in 1 s parts: not 7199 parts
     assert!(parts(Split::Length(1), 0.0, 7200.0, &[]).len() <= SPLIT_MAX as usize);
     // length: a remainder from 3 s stays its own part, below that it goes to the second-to-last
     let v = parts(Split::Length(60), 0.0, 363.0, &[]);
     check(&v, 0.0, 363.0);
     assert_eq!(v.iter().map(|p| (p.0 .1 - p.0 .0).as_secs_f64()).collect::<Vec<_>>(), [60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 3.0]);
-    assert_eq!(split_summary(&v), "7 Teile · 0:03 bis 1:00");
+    assert_eq!(split_summary(&v), "7 parts · 0:03 to 1:00");
     let v = parts(Split::Length(60), 0.0, 362.9, &[]);
     assert_eq!((v.len(), (v[5].0 .1 - v[5].0 .0).as_secs_f64()), (6, 62.9));
     // shorter than one part: one part
@@ -2739,12 +2741,12 @@ fn split_parts_are_gapless_on_frames_with_names() {
     // markers: outside and exactly at the end do not count, exactly at the start names part 1;
     // names cleaned, empty → number only, duplicate names stay unique thanks to the number
     let mk = |at: f64, name: &str| cl_core::Marker { id: 0, at: s(at), duration: Time::ZERO, name: name.into(), note: String::new(), color: 0 };
-    let ms = [mk(1.0, "Vorher"), mk(2.0, "Start"), mk(4.01, "a/b: c?"), mk(6.0, ""), mk(7.0, "Ende"), mk(7.0, "Ende"), mk(9.0, "Ende"), mk(10.0, "Rand"), mk(12.0, "Danach")];
+    let ms = [mk(1.0, "Before"), mk(2.0, "Start"), mk(4.01, "a/b: c?"), mk(6.0, ""), mk(7.0, "End"), mk(7.0, "End"), mk(9.0, "End"), mk(10.0, "Edge"), mk(12.0, "After")];
     let v = parts(Split::Markers, 2.0, 10.0, &ms);
     check(&v, 2.0, 10.0);
     assert_eq!(
         v.iter().map(|p| p.1.as_str()).collect::<Vec<_>>(),
-        ["Film – 01 Start.mp4", "Film – 02 a_b_ c_.mp4", "Film – 03.mp4", "Film – 04 Ende.mp4", "Film – 05 Ende.mp4"]
+        ["Film – 01 Start.mp4", "Film – 02 a_b_ c_.mp4", "Film – 03.mp4", "Film – 04 End.mp4", "Film – 05 End.mp4"]
     );
     // a marker at 4.01 s snaps to the frame at 4 s
     assert_eq!(v[1].0 .0, s(4.0));
@@ -2769,14 +2771,14 @@ fn split_markers_capped_at_split_max() {
     let s = Time::from_secs_f64;
     // 200 markers → 50 parts; markers after the 49th cut do not count, the last part runs to the end
     let ms: Vec<cl_core::Marker> = (1..=200).map(|i| cl_core::Marker { id: i, at: s(i as f64), duration: Time::ZERO, name: String::new(), note: String::new(), color: 0 }).collect();
-    let v = split_parts(Split::Markers, (s(0.0), s(210.0)), fps, &ms, "Film", "Teil", "mp4");
+    let v = split_parts(Split::Markers, (s(0.0), s(210.0)), fps, &ms, "Film", "Part", "mp4");
     assert_eq!(v.len(), SPLIT_MAX as usize);
     assert_eq!((v[0].0 .0, v[48].0, v[49].0 .1), (s(0.0), (s(48.0), s(49.0)), s(210.0)));
     for w in v.windows(2) {
         assert_eq!(w[0].0 .1, w[1].0 .0);
     }
     assert_eq!((v[0].1.as_str(), v[49].1.as_str()), ("Film – 01.mp4", "Film – 50.mp4"));
-    assert_eq!(split_summary(&v), "50 Teile · 0:01 bis 2:41");
+    assert_eq!(split_summary(&v), "50 parts · 0:01 to 2:41");
 }
 
 /// Test image 320×180, 2 s with sound: red where the FFmpeg expression `inside` holds, grey value `gray` elsewhere
@@ -2805,7 +2807,7 @@ fn circle_video(dir: &Path) -> cl_core::MediaRef {
 fn circle_project(dir: &Path, secs: f64) -> Project {
     use cl_core::{Clip, ClipContent, MediaKind, Track, TrackKind};
     let m = circle_video(dir);
-    let mut p = Project::new("Kreis");
+    let mut p = Project::new("Circle");
     (p.settings.width, p.settings.height) = (320, 180);
     let mut t = Track::new(TrackKind::Video);
     t.main = true;
@@ -2885,7 +2887,7 @@ fn shorts_dialog(p: &Project, dir: &Path) -> ExportDialog {
 
 #[test]
 fn platform_template_sets_the_aspect_and_leaves_the_project_alone() {
-    let (ctx, p) = (egui::Context::default(), text_project("Film", "eins", 2.0));
+    let (ctx, p) = (egui::Context::default(), text_project("Film", "one", 2.0));
     let mut wide = p.clone();
     (wide.settings.width, wide.settings.height) = (1920, 1080);
     let mut d = ExportDialog::default();
@@ -2899,7 +2901,7 @@ fn platform_template_sets_the_aspect_and_leaves_the_project_alone() {
     frame(&mut d, &ctx, &wide, false);
     let s = d.settings.clone().unwrap();
     assert_eq!((s.width, s.height), (1080, 1920));
-    // Instagram: 4:5; preset in the project format: „Projekt“, remembered in the project
+    // Instagram: 4:5; preset in the project format: „Project“, remembered in the project
     let mut s = d.settings.clone().unwrap();
     d.pick_platform(&mut s, &wide, platform("instagram").unwrap());
     assert_eq!(ASPECTS[d.aspect - 1], (4, 5));
@@ -2919,7 +2921,7 @@ fn platform_template_sets_the_aspect_and_leaves_the_project_alone() {
 /// 2K (1440p): 2560×1440 at 16:9, the shorter edge 1440 in every other aspect ratio
 #[test]
 fn resolution_2k_in_every_aspect() {
-    let (ctx, mut p) = (egui::Context::default(), text_project("Film", "eins", 2.0));
+    let (ctx, mut p) = (egui::Context::default(), text_project("Film", "one", 2.0));
     (p.settings.width, p.settings.height) = (1920, 1080);
     assert_eq!(res_label(1440, (1920, 1080)), "2K (1440p)");
     assert_eq!(res_label(2160, (1920, 1080)), "4K (2160p)");
@@ -2952,13 +2954,13 @@ fn cover_preview_comes_from_the_reframed_snapshot() {
     assert!(d.framed(&p, &HashMap::new()).is_none(), "project format: no rebuild");
     d.aspect = 2;
     let unit = Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-    // „Füllen“: one layer, covers the area (cropped at the sides)
+    // „Fill“: one layer, covers the area (cropped at the sides)
     let f = d.framed(&p, &HashMap::new()).unwrap();
     assert_eq!((f.settings.width, f.settings.height), (1080, 1920));
     let l = cover_layers(&f, id, Time::ZERO);
     assert_eq!(l.len(), 1);
     assert!(l[0].0.contains_rect(unit) && (l[0].0.height() - 1.0).abs() < 1e-3, "{l:?}");
-    // „Einpassen“: blurred, opaque background, the whole picture on top
+    // „Fit“: blurred, opaque background, the whole picture on top
     d.fit = 2;
     let l = cover_layers(&d.framed(&p, &HashMap::new()).unwrap(), id, Time::ZERO);
     assert_eq!(l.iter().map(|x| x.2).collect::<Vec<_>>(), [true, false]);
@@ -2966,7 +2968,7 @@ fn cover_preview_comes_from_the_reframed_snapshot() {
     assert!(unit.expand(1e-3).contains_rect(l[1].0) && (l[1].0.width() - 1.0).abs() < 1e-3, "{l:?}");
 }
 
-/// Real export 16:9 → 9:16: portrait file, „Füllen“ without bars, „Einpassen“ with
+/// Real export 16:9 → 9:16: portrait file, „Fill“ without bars, „Fit“ with
 /// blurred background; the circle stays round; the project stays unchanged.
 #[test]
 fn vertical_export_fills_or_fits_with_a_blurred_background() {
@@ -2981,25 +2983,25 @@ fn vertical_export_fills_or_fits_with_a_blurred_background() {
     for fit in [0, 2] {
         let mut d = shorts_dialog(&p, dir.path());
         d.fit = fit;
-        d.name = format!("Kreis {fit}");
+        d.name = format!("Circle {fit}");
         frame(&mut d, &ctx, &p, true);
         drain(&mut d, &ctx, &p);
         assert_eq!(d.error, None);
         assert_eq!(d.take_picked_platform(), None, "no history step in the project");
-        let img = grab(&dir.path().join(format!("Kreis {fit}.mp4")), 15);
+        let img = grab(&dir.path().join(format!("Circle {fit}.mp4")), 15);
         assert_eq!((img.0, img.1), (180, 320));
         let (top, mid, bottom) = (region(&img, 2..170, 2..60), region(&img, 2..170, 115..140), region(&img, 2..170, 262..316));
         let edges = [region(&img, 0..3, 0..319), region(&img, 176..179, 0..319)];
-        eprintln!("fit={fit}: oben {top:?}, Mitte {mid:?}, unten {bottom:?}, Ränder {edges:?}");
+        eprintln!("fit={fit}: top {top:?}, middle {mid:?}, bottom {bottom:?}, edges {edges:?}");
         assert!(top.0 > 40.0 && bottom.0 > 40.0, "fit={fit}: top/bottom black");
         assert!(edges.iter().all(|e| e.0 > 40.0), "fit={fit}: sides black");
         if fit == 0 {
-            // „Füllen“: the checkerboard everywhere (sharp)
+            // „Fill“: the checkerboard everywhere (sharp)
             assert!(top.1 > 20.0 && bottom.1 > 20.0, "fit=0: top/bottom not the picture");
             let (w, h) = red_box(&img, 0..320);
             assert!((95..=115).contains(&w) && w.abs_diff(h) <= 3, "fit=0: circle {w}×{h}");
         } else {
-            // „Einpassen“: blurred top/bottom, the sharp picture in the middle
+            // „Fit“: blurred top/bottom, the sharp picture in the middle
             assert!(top.1 < 8.0 && bottom.1 < 8.0 && mid.1 > 20.0, "fit=2: background not soft");
             let (w, h) = red_box(&img, 112..208);
             assert!((30..=40).contains(&w) && w.abs_diff(h) <= 3, "fit=2: circle {w}×{h}");
@@ -3025,7 +3027,7 @@ fn censor_stays_on_its_subject_after_reframing() {
     frame(&mut d, &ctx, &p, true);
     drain(&mut d, &ctx, &p);
     assert_eq!(d.error, None);
-    let img = grab(&dir.path().join("Kreis.mp4"), 15);
+    let img = grab(&dir.path().join("Circle.mp4"), 15);
     let (inside, beside) = (region(&img, 58..122, 40..88), region(&img, 3..36, 40..88));
     eprintln!("Zensur: innen {inside:?}, daneben {beside:?}");
     assert!(inside.1 < 8.0, "pattern still there under the area: {inside:?}");
@@ -3042,7 +3044,7 @@ fn split_parts_have_every_frame_exactly_once() {
     let home = TestHome::new();
     let dir = &home.dir;
     // frame number in binary as 8 stripes of 40 px (white = 1, least significant bit on the left)
-    let src = dir.path().join("zaehler.mp4");
+    let src = dir.path().join("counter.mp4");
     let st = cl_media::ffmpeg_command()
         .unwrap()
         .args(["-v", "error", "-y", "-threads", "2", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=30:d=4"])
@@ -3052,7 +3054,7 @@ fn split_parts_have_every_frame_exactly_once() {
         .unwrap();
     assert!(st.success());
     let m = cl_media::probe(&src).unwrap();
-    let mut p = Project::new("Zaehler");
+    let mut p = Project::new("Counter");
     (p.settings.width, p.settings.height, p.settings.fps) = (320, 180, cl_core::Rational::new(30, 1));
     let mut t = Track::new(TrackKind::Video);
     t.main = true;
@@ -3066,7 +3068,7 @@ fn split_parts_have_every_frame_exactly_once() {
     assert_eq!(d.error, None);
     let mut seen = Vec::new();
     for n in 1..=4 {
-        let f = dir.path().join("Zaehler").join(format!("Zaehler – Teil {n:02}.mp4"));
+        let f = dir.path().join("Counter").join(format!("Counter – Part {n:02}.mp4"));
         let o = cl_media::ffmpeg_command()
             .unwrap()
             .args(["-v", "error", "-threads", "2", "-i"])
@@ -3075,7 +3077,7 @@ fn split_parts_have_every_frame_exactly_once() {
             .output()
             .unwrap();
         let part: Vec<usize> = o.stdout.chunks_exact(320 * 180).map(|px| (0..8).filter(|b| px[90 * 320 + b * 40 + 20] > 128).map(|b| 1 << b).sum()).collect();
-        eprintln!("Teil {n}: {part:?}");
+        eprintln!("Part {n}: {part:?}");
         seen.extend(part);
     }
     assert_eq!(seen, (0..120).collect::<Vec<_>>());
@@ -3097,14 +3099,14 @@ fn vertical_split_with_target_size() {
     frame(&mut d, &ctx, &p, true);
     drain(&mut d, &ctx, &p);
     assert_eq!(d.error, None);
-    for n in ["Kreis – Teil 01.mp4", "Kreis – Teil 02.mp4"] {
-        let f = dir.path().join("Kreis").join(n);
+    for n in ["Circle – Part 01.mp4", "Circle – Part 02.mp4"] {
+        let f = dir.path().join("Circle").join(n);
         let m = cl_media::probe(&f).unwrap();
         let size = std::fs::metadata(&f).unwrap().len();
         assert_eq!((m.width, m.height), (180, 320), "{n}");
         assert!((m.duration.as_secs_f64() - 2.0).abs() < 0.1 && size <= 1_000_000, "{n}: {:?} {size}", m.duration);
     }
-    assert_eq!(crate::exports::for_project("Kreis", Some(&dir.path().join("p.cutline"))).len(), 2);
+    assert_eq!(crate::exports::for_project("Circle", Some(&dir.path().join("p.cutline"))).len(), 2);
 }
 
 /// One frame of the dialog; returns the message (toast)
@@ -3124,13 +3126,13 @@ fn frame_toast(d: &mut ExportDialog, ctx: &egui::Context, p: &Project, enter: bo
 }
 
 /// „Person folgen“, analysis fails (file missing): no crash, at most one message, clip centred like
-/// „Füllen“, no new attempt
+/// „Fill“, no new attempt
 #[test]
 fn follow_person_failure_keeps_the_clip_centred_with_one_toast() {
     use cl_core::{Clip, ClipContent, MediaKind, MediaRef, Track, TrackKind};
     let dir = tempfile::tempdir().unwrap();
     let mut p = Project::new("t");
-    let m = MediaRef { id: cl_core::MediaId::new(), path: dir.path().join("fehlt.mp4"), kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None, has_alpha: false };
+    let m = MediaRef { id: cl_core::MediaId::new(), path: dir.path().join("missing.mp4"), kind: MediaKind::Video, duration: Time::from_secs_f64(9.0), width: 1920, height: 1080, fps: None, has_audio: true, audio_streams: 1, video_codec: None, audio_codec: None, has_alpha: false };
     let mut t = Track::new(TrackKind::Video);
     let c = Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(9.0));
     let id = c.id;
@@ -3187,7 +3189,7 @@ fn follow_person_with_split_parts_and_target_size() {
     let dir = &home.dir;
     let ctx = egui::Context::default();
     let m = walker_video(dir.path());
-    let mut p = Project::new("Lauf");
+    let mut p = Project::new("Run");
     (p.settings.width, p.settings.height) = (320, 180);
     let mut t = Track::new(TrackKind::Video);
     t.main = true;
@@ -3207,8 +3209,8 @@ fn follow_person_with_split_parts_and_target_size() {
     frame(&mut d, &ctx, &p, true);
     drain(&mut d, &ctx, &p);
     assert_eq!(d.error, None);
-    for (n, at) in [("Lauf – Teil 01.mp4", 18), ("Lauf – Teil 02.mp4", 12)] {
-        let f = dir.path().join("Lauf").join(n);
+    for (n, at) in [("Run – Part 01.mp4", 18), ("Run – Part 02.mp4", 12)] {
+        let f = dir.path().join("Run").join(n);
         let size = std::fs::metadata(&f).unwrap().len();
         assert!(size <= 1_000_000, "{n}: {size}");
         let img = grab(&f, at);

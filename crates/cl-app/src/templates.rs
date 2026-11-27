@@ -45,26 +45,26 @@ fn safe(name: &str) -> String {
 pub enum TplDialog {
     Save { name: String },
     Rename { path: PathBuf, name: String },
-    /// „Aus Vorlage einfügen“: list of all templates (loaded on open) with insert position
+    /// „Insert from template“: list of all templates (loaded on open) with insert position
     Insert(Vec<(String, Project)>),
 }
 
 /// Bundled templates (not deletable), generated in code.
-const BUILTIN: [&str; 3] = ["Intro-Titel", "Endkarte", "Kapitel-Titel"];
+const BUILTIN: [&str; 3] = ["Intro title", "End card", "Chapter title"];
 
 fn builtin(i: usize) -> Project {
     // (text, size, bold, background, y, fade-in in s)
     type Part = (&'static str, f32, bool, Option<[u8; 4]>, f32, f64);
     let (secs, parts): (f64, Vec<Part>) = match i {
-        0 => (3.0, vec![("Dein Titel", 120.0, true, None, 0.0, 1.0), ("Untertitel", 56.0, false, None, 110.0, 1.0)]),
+        0 => (3.0, vec![("Your title", 120.0, true, None, 0.0, 1.0), ("Captions", 56.0, false, None, 110.0, 1.0)]),
         1 => (
             8.0,
             vec![
-                ("Danke fürs Zuschauen", 110.0, true, Some([0, 0, 0, 200]), -60.0, 1.0),
-                ("Abonnieren nicht vergessen", 56.0, false, Some([200, 30, 30, 255]), 100.0, 1.0),
+                ("Thanks for watching", 110.0, true, Some([0, 0, 0, 200]), -60.0, 1.0),
+                ("Don't forget to subscribe", 56.0, false, Some([200, 30, 30, 255]), 100.0, 1.0),
             ],
         ),
-        _ => (2.0, vec![("Kapitel 1", 100.0, true, Some([0, 0, 0, 160]), 0.0, 0.4)]),
+        _ => (2.0, vec![("Chapter 1", 100.0, true, Some([0, 0, 0, 160]), 0.0, 0.4)]),
     };
     let mut d = Document::new(Project::new(BUILTIN[i]));
     for (text, size, bold, background, y, fade) in parts {
@@ -169,12 +169,12 @@ fn template_row(ui: &mut egui::Ui, name: &str) -> egui::Response {
 }
 
 impl App {
-    /// Start page: list of templates under „Neues Projekt“.
+    /// Start page: list of templates under „New project“.
     pub fn home_templates(&mut self, ui: &mut egui::Ui) {
         let list = list();
         ui.add_space(8.0);
         ui.label(
-            RichText::new(crate::tr("Aus Vorlage"))
+            RichText::new(crate::tr("From template"))
                 .small()
                 .color(theme::TEXT_DIM()),
         );
@@ -193,10 +193,10 @@ impl App {
                 open = Some(p.clone());
             }
             r.context_menu(|ui| {
-                if crate::timeline::menu_item(ui, icon::PENCIL_SIMPLE, "Umbenennen", "") {
+                if crate::timeline::menu_item(ui, icon::PENCIL_SIMPLE, "Rename", "") {
                     rename = Some((p.clone(), name.clone()));
                 }
-                if crate::timeline::menu_item(ui, icon::TRASH, "Entfernen", "") {
+                if crate::timeline::menu_item(ui, icon::TRASH, "Remove", "") {
                     remove = Some(p.clone());
                 }
             });
@@ -208,12 +208,12 @@ impl App {
             self.tpl_dialog = Some(TplDialog::Rename { path, name });
         }
         if let Some(p) = remove {
-            let trash = paths::data_dir().join("Papierkorb");
+            let trash = paths::data_dir().join("Trash");
             let _ = std::fs::create_dir_all(&trash);
             // unique name: an earlier removed template of the same name stays kept
             let to = crate::library::unique(&trash, p.file_name().unwrap_or_default().to_string_lossy().into_owned());
             if std::fs::rename(&p, to).is_ok() {
-                self.toast("Vorlage in den Papierkorb verschoben");
+                self.toast("Template moved to trash");
             }
         }
     }
@@ -235,7 +235,7 @@ impl App {
         proj.name = crate::home::next_project_name();
         self.set_doc(proj);
         self.screen = Screen::Editor;
-        self.toast("Neues Projekt aus Vorlage");
+        self.toast("New project from template");
     }
 
     /// Insert a template into the open project (`mode`: 0 start, 1 playhead, 2 end), one undo step.
@@ -250,8 +250,8 @@ impl App {
         let added = needs_overlay_track(tpl, &self.project)
             && self.apply(EditOp::InsertTrack { index: self.project.timeline.tracks.len(), kind: TrackKind::Video }).is_some();
         let ops = insert_ops(tpl, &self.project, at);
-        if !ops.is_empty() && self.apply(EditOp::Batch { label: "Vorlage einfügen".into(), ops }).is_some() {
-            self.toast("Vorlage eingefügt");
+        if !ops.is_empty() && self.apply(EditOp::Batch { label: "Insert template".into(), ops }).is_some() {
+            self.toast("Template inserted");
         } else if added {
             // Insert failed: remove the empty track again
             let _ = self.doc.lock().unwrap_or_else(|e| e.into_inner()).undo();
@@ -265,13 +265,13 @@ impl App {
         };
         let mut pick: Option<(Project, u8)> = None;
         let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-        crate::dialog::window(ctx, crate::tr("Aus Vorlage einfügen"), "tpl-insert").anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -60.0)).show(ctx, |ui| {
-            close |= crate::dialog::title(ui, "Aus Vorlage einfügen");
+        crate::dialog::window(ctx, crate::tr("Insert from template"), "tpl-insert").anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, -60.0)).show(ctx, |ui| {
+            close |= crate::dialog::title(ui, "Insert from template");
             for (name, proj) in list {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(crate::tr(name.as_str())).size(theme::FS_UI));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        for (mode, t) in [(2u8, "Am Ende"), (1, "Am Playhead"), (0, "Am Anfang")] {
+                        for (mode, t) in [(2u8, "At end"), (1, "At playhead"), (0, "At start")] {
                             if ui.add(theme::secondary(t)).clicked() {
                                 pick = Some((proj.clone(), mode));
                             }
@@ -299,13 +299,13 @@ impl App {
         crate::dialog::window(ctx, crate::tr("Multicam"), "multicam-hint").anchor(egui::Align2::RIGHT_TOP, egui::vec2(-12.0, 60.0)).show(ctx, |ui| {
             ui.set_max_width(300.0);
             cancel |= crate::dialog::title(ui, "Multicam");
-            ui.label(RichText::new(crate::tr("Multicam: Wiedergabe starten und mit 1–9 den Blickwinkel wählen, Stopp übernimmt den Schnitt")).size(theme::FS_UI));
+            ui.label(RichText::new(crate::tr("Multicam: start playback and pick the angle with 1–9, stopping applies the edit")).size(theme::FS_UI));
             ui.add_space(6.0);
-            ui.label(RichText::new(crate::tr("Ton von")).small().color(theme::TEXT_DIM()));
-            let names: Vec<String> = (1..=n).map(|i| format!("{} {i}", crate::tr("Kamera"))).collect();
+            ui.label(RichText::new(crate::tr("Audio from")).small().color(theme::TEXT_DIM()));
+            let names: Vec<String> = (1..=n).map(|i| format!("{} {i}", crate::tr("Camera shutter"))).collect();
             let items: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
             crate::widgets::segmented(ui, &items, &mut sel);
-            cancel |= crate::dialog::footer(ui, |ui| ui.add(theme::secondary("Abbrechen")).clicked());
+            cancel |= crate::dialog::footer(ui, |ui| ui.add(theme::secondary("Cancel")).clicked());
         });
         self.multicam_audio = sel;
         if cancel {
@@ -313,7 +313,7 @@ impl App {
         }
     }
 
-    /// „Als Vorlage speichern“ / „Vorlage umbenennen“ dialog.
+    /// „Save as template“ / „Rename template“ dialog.
     pub fn template_dialog(&mut self, ctx: &egui::Context) {
         self.multicam_hint(ctx);
         if matches!(self.tpl_dialog, Some(TplDialog::Insert(_))) {
@@ -327,8 +327,8 @@ impl App {
         let err = self.dialog_error.clone();
         let mut edited = false;
         let title = match d {
-            TplDialog::Save { .. } => "Als Vorlage speichern",
-            TplDialog::Rename { .. } => "Vorlage umbenennen",
+            TplDialog::Save { .. } => "Save as template",
+            TplDialog::Rename { .. } => "Rename template",
             TplDialog::Insert(_) => return,
         };
         let modal = crate::dialog::modal(ctx, "tpl-dialog").show(ctx, |ui| {
@@ -337,7 +337,7 @@ impl App {
                 TplDialog::Save { name } | TplDialog::Rename { name, .. } => name,
                 TplDialog::Insert(_) => return,
             };
-            let r = ui.add(egui::TextEdit::singleline(name).hint_text(crate::tr("z. B. Folge mit Intro und Endcard")).desired_width(280.0));
+            let r = ui.add(egui::TextEdit::singleline(name).hint_text(crate::tr("e.g. Episode with intro and end card")).desired_width(280.0));
             r.request_focus();
             edited |= r.changed();
             theme::field_error(ui, err.as_deref());
@@ -361,7 +361,7 @@ impl App {
             match self.tpl_dialog.take() {
                 Some(TplDialog::Save { name }) if dir().join(format!("{}.cutline", safe(&name))).exists() => {
                     self.tpl_dialog = backup;
-                    self.dialog_error = Some("Diesen Namen gibt es schon".into());
+                    self.dialog_error = Some("This name already exists".into());
                 }
                 Some(TplDialog::Save { name }) if !safe(&name).is_empty() => {
                     let _ = std::fs::create_dir_all(dir());
@@ -371,7 +371,7 @@ impl App {
                         &dir().join(format!("{}.cutline", safe(&name))),
                         p.to_json(),
                     ) {
-                        Ok(_) => self.toast(format!("Vorlage „{}“ gespeichert", name.trim())),
+                        Ok(_) => self.toast(format!("Template “{}” saved", name.trim())),
                         Err(e) => {
                             self.tpl_dialog = backup;
                             self.dialog_error = Some(e.to_string());
@@ -384,7 +384,7 @@ impl App {
                     let same = to.to_string_lossy().to_lowercase() == path.to_string_lossy().to_lowercase();
                     if to.exists() && !same {
                         self.tpl_dialog = backup;
-                        self.dialog_error = Some("Diesen Namen gibt es schon".into());
+                        self.dialog_error = Some("This name already exists".into());
                     } else if let Err(e) = std::fs::rename(&path, &to) {
                         self.tpl_dialog = backup;
                         self.dialog_error = Some(e.to_string());
@@ -392,7 +392,7 @@ impl App {
                 }
                 _ => {
                     self.tpl_dialog = backup;
-                    self.dialog_error = Some("Bitte einen Namen eingeben".into());
+                    self.dialog_error = Some("Please enter a name".into());
                 }
             }
         } else if close {
@@ -421,8 +421,8 @@ mod tests {
         let _ = ctx.run(Default::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.allocate_ui(egui::vec2(185.0, 400.0), |ui| {
-                    h.0 = template_row(ui, "Kurz").rect.height();
-                    h.1 = template_row(ui, &"Vorlage mit sehr langem Namen ".repeat(4)).rect.height();
+                    h.0 = template_row(ui, "Short").rect.height();
+                    h.1 = template_row(ui, &"Template with a very long name ".repeat(4)).rect.height();
                 });
             });
         });

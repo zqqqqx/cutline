@@ -120,7 +120,7 @@ pub(crate) fn check_gpu_runtime(m: &cl_analyze::Models) {
     if intact {
         cl_analyze::use_gpu_runtime(dir);
     } else {
-        cl_analyze::note_runtime("Dateien beschädigt".into());
+        cl_analyze::note_runtime("Files damaged".into());
     }
 }
 
@@ -201,7 +201,7 @@ impl RotoLive {
                             rgb = Some(f.to_vec());
                             Ok(())
                         })
-                        .and_then(|_| rgb.ok_or_else(|| "Bild nicht lesbar".to_string()))
+                        .and_then(|_| rgb.ok_or_else(|| "Frame not readable".to_string()))
                         .and_then(|f| live.set_frame(key, &f))
                     };
                     let got = read.and_then(|()| live.mask(&w.prompt));
@@ -285,13 +285,13 @@ impl App {
     pub(crate) fn roto_watch(&mut self, ctx: &egui::Context) {
         if let Some(Pick::Roto(c)) = self.pick {
             if self.selected != Some(c) || self.clip_tab != crate::app::ClipTab::Smart {
-                log::info!(target: "objekt", "Markieren beendet (Auswahl oder Reiter gewechselt)");
+                log::info!(target: "object", "marking ended (selection or tab changed)");
                 self.roto_leave(ctx);
             }
             return;
         }
         if self.roto_tool.is_some() {
-            log::info!(target: "objekt", "Markieren beendet");
+            log::info!(target: "object", "marking ended");
             self.roto_leave(ctx);
         }
     }
@@ -299,17 +299,17 @@ impl App {
     /// Track the clip's marks in the background unless the mask is there or being made. A clip
     /// trimmed since gets its new mask name first (one undo step).
     pub(crate) fn start_roto(&mut self, ctx: &egui::Context, clip: ClipId) {
-        let skip = |why: &str| log::info!(target: "objekt", "Verfolgen nicht gestartet: {why}");
-        let Some(c) = self.clip_view(clip) else { return skip("Clip nicht mehr da") };
-        let ClipContent::Media { media, .. } = c.content else { return skip("kein Medienclip") };
-        let Some(m) = self.project.media(media).cloned() else { return skip("Medium fehlt im Projekt") };
+        let skip = |why: &str| log::info!(target: "object", "tracking not started: {why}");
+        let Some(c) = self.clip_view(clip) else { return skip("clip is gone") };
+        let ClipContent::Media { media, .. } = c.content else { return skip("not a media clip") };
+        let Some(m) = self.project.media(media).cloned() else { return skip("media missing in the project") };
         let (gen, cache) = (crate::paths::generated_dir(), crate::paths::data_dir().join("cache"));
         // no object point or frame: nothing to track (the inspector shows no mask status then)
-        let Some(plan) = roto_plan(&c, &m, &gen, &cache) else { return skip("nichts markiert") };
+        let Some(plan) = roto_plan(&c, &m, &gen, &cache) else { return skip("nothing marked") };
         // a run cancelled by a new mark may still be ending: it must not block the new one
         self.tasks.retire(&format!("roto:{clip}"));
         if self.tasks.running(&format!("roto:{clip}")).is_some() {
-            return skip("läuft schon");
+            return skip("already running");
         }
         let out = plan.out.to_string_lossy().into_owned();
         if c.fx.cutout.as_deref() != Some(out.as_str()) || c.fx.cutout_span != plan.span {
@@ -320,14 +320,14 @@ impl App {
         }
         if plan.out.is_file() {
             self.masks_changed();
-            return skip("Maske schon vorhanden");
+            return skip("mask already there");
         }
         // model or runtime missing: message and the model settings instead of a task that fails later
         if !self.need_models(&["onnxruntime", "sam2"]) {
-            return skip("Modell fehlt");
+            return skip("model missing");
         }
         let models = self.models();
-        log::info!(target: "objekt", "Verfolgen: {} Bilder ab Bild {}", plan.grid.n, plan.key);
+        log::info!(target: "object", "tracking: {} frames from frame {}", plan.grid.n, plan.key);
         let job = cl_analyze::roto::Job {
             src: m.path.clone(),
             grid: plan.grid,
@@ -338,13 +338,13 @@ impl App {
             size: (m.width, m.height),
             rate: m.fps.filter(|f| f.num > 0 && f.den > 0 && is_video(&c)).map_or("25".into(), |f| format!("{}/{}", f.num, f.den)),
         };
-        self.tasks.spawn(ctx, format!("roto:{clip}"), "Objekt wird verfolgt …", move |p, cancel| {
+        self.tasks.spawn(ctx, format!("roto:{clip}"), "Tracking object …", move |p, cancel| {
             match cl_analyze::roto::track(&models, &job, threads(), p, cancel, &crate::proxy::playing) {
                 Ok(()) => TaskDone::Run(Box::new(|app: &mut App| {
                     app.masks_changed();
-                    app.toast("Objekt freigestellt");
+                    app.toast("Object cut out");
                 })),
-                Err(e) => TaskDone::Failed(format!("Objekt: {e}")),
+                Err(e) => TaskDone::Failed(format!("Object: {e}")),
             }
         });
     }
@@ -355,7 +355,7 @@ impl App {
         let ctx = ui.ctx().clone();
         if let Some(e) = self.roto_live.as_mut().and_then(|l| l.poll(&ctx)) {
             (self.roto_live, self.pick, self.roto_tool) = (None, None, None);
-            self.toast_err(format!("Objekt: {e}"));
+            self.toast_err(format!("Object: {e}"));
             return;
         }
         let (Some(c), Some(reg)) = (self.clip_view(clip), regions.iter().find(|r| r.clip == clip).copied()) else { return };
@@ -522,7 +522,7 @@ mod tests {
             .unwrap();
         assert!(st.success());
         let m = cl_media::probe(&v).unwrap();
-        let mut p = Project::new("Objekt");
+        let mut p = Project::new("Object");
         let mut tr = Track::new(TrackKind::Video);
         let (a, b) = (
             Clip::new(ClipContent::Media { media: m.id, kind: MediaKind::Video }, Time::ZERO, Time::from_secs_f64(0.5)),
@@ -696,7 +696,7 @@ mod tests {
         let m = cl_analyze::Models::new(dir.path());
         assert!(m.installed("directml"));
         check_gpu_runtime(&m);
-        assert_eq!(cl_analyze::runtime_note().as_deref(), Some("Dateien beschädigt"));
+        assert_eq!(cl_analyze::runtime_note().as_deref(), Some("Files damaged"));
         assert!(!cl_analyze::gpu_runtime_loaded());
     }
 
