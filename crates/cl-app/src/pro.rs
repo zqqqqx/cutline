@@ -1780,9 +1780,35 @@ pub fn audio_fx_ui(ui: &mut egui::Ui, a: &mut AudioFx) -> Edit {
     e |= theme::row(ui, "Reverb", |ui| {
         Slider::new(&mut a.reverb, 0.0..=1.0).percent().default(0.0).show(ui)
     });
+    theme::row(ui, "Reverb preset", |ui| {
+        let cur = cl_fx::audio::reverb_preset(a);
+        let label = match cur.and_then(|id| cl_fx::audio::REVERBS.iter().find(|p| p.0 == id)) {
+            Some(p) => p.1,
+            None if a.reverb > 0.0 => "Custom",
+            None => "Off",
+        };
+        egui::ComboBox::from_id_salt("clip-reverb-preset").selected_text(crate::tr(label)).show_ui(ui, |ui| {
+            if ui.selectable_label(a.reverb <= 0.0, crate::tr("Off")).clicked() {
+                a.reverb = 0.0;
+                e.commit = true;
+            }
+            for (id, name, _) in cl_fx::audio::REVERBS {
+                if ui.selectable_label(cur == Some(*id), crate::tr(name)).clicked() {
+                    cl_fx::audio::set_reverb(a, id);
+                    e.commit = true;
+                }
+            }
+        });
+    });
     if a.reverb > 0.0 {
         e |= theme::row(ui, "Room size", |ui| {
             Slider::new(&mut a.reverb_size, 0.0..=1.0).percent().default(0.5).show(ui)
+        });
+        e |= theme::row(ui, "Reverb tone", |ui| {
+            Slider::new(&mut a.reverb_tone, 0.0..=1.0).percent().default(0.5).show(ui)
+        });
+        e |= theme::row(ui, "Pre-delay", |ui| {
+            Slider::new(&mut a.reverb_predelay, 0.0..=100.0).suffix(" ms").decimals(0).default(10.0).show(ui)
         });
     }
     if widgets::toggle_row(ui, "Normalize loudness (−14 LUFS)", &mut a.normalize) {

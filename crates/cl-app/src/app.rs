@@ -48,6 +48,48 @@ fn key_focus(typing: bool, focused: bool, space: bool) -> KeyFocus {
     }
 }
 
+/// The play key held this long during playback plays fast until release; shorter is a tap (pause)
+const HOLD_SECS: f64 = 0.3;
+/// Speed while the play key is held
+const HOLD_RATE: f64 = 2.0;
+
+/// Play key (see `keymap`) during playback: a tap pauses on release, a hold plays at [`HOLD_RATE`]
+/// until release and does not pause. While stopped the press starts playback as before.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+enum PlayHold {
+    #[default]
+    Idle,
+    /// pressed during playback at this time, tap or hold not decided yet
+    Down(f64),
+    Fast,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum HoldDo {
+    Nothing,
+    Toggle,
+    /// fast playback on / back to the chosen speed
+    Speed(bool),
+}
+
+/// One UI frame of the play key: `pressed` = pressed anew (no key repeat), `released` = let go
+/// (or window lost the focus).
+fn play_hold(s: PlayHold, pressed: bool, released: bool, playing: bool, now: f64) -> (PlayHold, HoldDo) {
+    match s {
+        // stopped, or press and release in one frame: toggle at once
+        PlayHold::Idle if pressed && (!playing || released) => (PlayHold::Idle, HoldDo::Toggle),
+        PlayHold::Idle if pressed => (PlayHold::Down(now), HoldDo::Nothing),
+        PlayHold::Idle => (PlayHold::Idle, HoldDo::Nothing),
+        PlayHold::Down(_) if released => (PlayHold::Idle, HoldDo::Toggle),
+        // playback ended meanwhile (project end): the release must not start it again
+        PlayHold::Down(_) if !playing => (PlayHold::Idle, HoldDo::Nothing),
+        PlayHold::Down(t) if now - t >= HOLD_SECS => (PlayHold::Fast, HoldDo::Speed(true)),
+        PlayHold::Down(t) => (PlayHold::Down(t), HoldDo::Nothing),
+        PlayHold::Fast if released || !playing => (PlayHold::Idle, HoldDo::Speed(false)),
+        PlayHold::Fast => (PlayHold::Fast, HoldDo::Nothing),
+    }
+}
+
 /// Take the space bar out of the input before drawing unless a text field has the focus: egui would
 /// otherwise trigger the focused button (after Tab e.g. the window X – the app closed). The focus
 /// is released; the shortcuts get the key back (Play/Pause). Enter still triggers focused
@@ -284,6 +326,12 @@ pub struct App {
     pub live: Option<Clip>,
     /// Space bar of this frame, intercepted before drawing (see [`hold_space`])
     held_keys: Vec<egui::Event>,
+    /// Play key: tap or hold (fast playback), and which key is held
+    play_hold: PlayHold,
+    play_hold_key: Option<Key>,
+    /// Keys released since the shortcuts last ran (collected in `raw_input_hook`: a frame without
+    /// shortcuts, e.g. behind a dialog, must not lose the end of a hold)
+    key_ups: Vec<Key>,
     /// Esc came while a text field had the focus: applies only to the field (see [`esc_for_field`])
     esc_field: bool,
     /// Command search (Ctrl+K)
@@ -537,6 +585,9 @@ impl App {
             copy_marker: false,
             live: None,
             held_keys: Vec::new(),
+            play_hold: PlayHold::Idle,
+            play_hold_key: None,
+            key_ups: Vec::new(),
             esc_field: false,
             palette: Default::default(),
             playhead: Time::ZERO,
@@ -2609,7 +2660,7 @@ impl App {
         if self.voiceover.recorder.is_some() && self.voiceover.mute_project {
             return;
         }
-        match AudioPlayer::start_synced(self.audio_project(), at) {
+        match AudioPlayer::start_synced(self.audio_project(), at, self.core.rate()) {
             Ok(a) => {
                 if anchor {
                     a.anchor(Instant::now());
@@ -2710,6 +2761,10 @@ impl App {
             recording: self.voiceover.recorder.is_some(),
             max_quality_level: max_q,
         };
+        // a recording runs in real time
+        if t.recording && self.core.streaming() {
+            self.core.set_rate(1.0, t.now);
+        }
         // a jump during playback ends the playback for the log (the next begins there)
         if self.core.playing() && self.playhead != self.core.pos() {
             self.end_play_log();
@@ -2888,14 +2943,36 @@ impl App {
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
+        let ups = std::mem::take(&mut self.key_ups);
+        let focused = ctx.input(|i| i.focused);
+        let pressed = self.shortcut_keys(ctx);
+        let key = pressed.or(self.play_hold_key);
+        let released = !focused || key.is_some_and(|k| ups.contains(&k));
+        let now = self.core_now();
+        let (state, act) = play_hold(self.play_hold, pressed.is_some(), released, self.core.playing(), now);
+        self.play_hold = state;
+        self.play_hold_key = key.filter(|_| state != PlayHold::Idle);
+        match act {
+            HoldDo::Nothing => {}
+            HoldDo::Toggle => self.toggle_play(),
+            HoldDo::Speed(on) => {
+                self.core.set_rate(if on { HOLD_RATE } else { self.core.speed() }, now);
+                self.run_core();
+            }
+        }
+    }
+
+    /// Run the shortcuts of this frame. Returns the play key if it was pressed anew: tap or hold
+    /// is decided in [`play_hold`].
+    fn shortcut_keys(&mut self, ctx: &egui::Context) -> Option<Key> {
         // open context menu: Esc belongs to the menu (otherwise the shortcut uses up the key)
         if self.settings_open || self.dialog_open() || ctx.is_context_menu_open() {
-            return;
+            return None;
         }
         // an open popup (colour picker, dropdown): Esc closes that and nothing else
         #[allow(deprecated)]
         if ctx.memory(|m| m.any_popup_open()) && ctx.input(|i| i.key_pressed(Key::Escape)) {
-            return;
+            return None;
         }
         let held = std::mem::take(&mut self.held_keys);
         let space = !held.is_empty() || ctx.input(|i| i.key_pressed(Key::Space));
@@ -2906,15 +2983,26 @@ impl App {
             crate::widgets::mark_field_esc(ctx);
         }
         match key_focus(typing(ctx), ctx.wants_keyboard_input(), space) {
-            KeyFocus::Keep => return,
+            KeyFocus::Keep => return None,
             KeyFocus::Release => release_text_focus(ctx),
             KeyFocus::Shortcuts => {}
         }
         let mut actions: Vec<&str> = Vec::new();
         let binds = crate::keymap::bindings(&self.settings.shortcuts);
         let multicam_on = self.multicam.is_some();
+        let mut play_key = None;
         ctx.input_mut(|i| {
             for (c, a) in &binds {
+                if *a == "play" {
+                    // key repeats while held do nothing
+                    let fresh = i.events.iter().any(|e| {
+                        matches!(e, egui::Event::Key { key, pressed: true, repeat: false, modifiers, .. } if *key == c.key && modifiers.matches_logically(c.mods))
+                    });
+                    if i.consume_key(c.mods, c.key) && fresh {
+                        play_key = Some(c.key);
+                    }
+                    continue;
+                }
                 if i.consume_key(c.mods, c.key) {
                     actions.push(a);
                 }
@@ -2983,6 +3071,7 @@ impl App {
         for a in actions {
             self.run_action(ctx, a);
         }
+        play_key
     }
 
     /// First binding of an action as text (for menu rows), empty without a binding.
@@ -3373,6 +3462,13 @@ impl eframe::App for App {
     /// Click tests without a real mouse pointer (only with `CUTLINE_SHOTS`), see `devinput.rs`
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         crate::devinput::feed(ctx, raw);
+        for e in &raw.events {
+            if let egui::Event::Key { key, pressed: false, .. } = e {
+                if !self.key_ups.contains(key) {
+                    self.key_ups.push(*key);
+                }
+            }
+        }
         self.held_keys = hold_space(ctx, raw);
         let esc = raw.events.iter().any(|e| matches!(e, egui::Event::Key { key: Key::Escape, pressed: true, .. }));
         self.esc_field = esc_for_field(typing(ctx), esc);
@@ -4414,6 +4510,27 @@ mod frame_rate_tests {
         assert_eq!(key_focus(false, false, false), KeyFocus::Shortcuts, "nothing focused");
         assert_eq!(key_focus(false, false, true), KeyFocus::Shortcuts);
         assert_eq!(key_focus(false, true, true), KeyFocus::Release, "button + space: play");
+    }
+
+    /// Play key: a tap toggles as before, a hold during playback plays fast and does not pause.
+    #[test]
+    fn play_key_tap_toggles_and_hold_plays_fast() {
+        use {HoldDo::*, PlayHold::*};
+        // stopped: the press starts at once; the later release and key repeats do nothing
+        assert_eq!(play_hold(Idle, true, false, false, 0.0), (Idle, Toggle));
+        assert_eq!(play_hold(Idle, false, true, true, 0.1), (Idle, Nothing));
+        // playing, tap: pause on release (also when press and release fall into one frame)
+        assert_eq!(play_hold(Idle, true, false, true, 1.0), (Down(1.0), Nothing));
+        assert_eq!(play_hold(Down(1.0), false, false, true, 1.1), (Down(1.0), Nothing));
+        assert_eq!(play_hold(Down(1.0), false, true, true, 1.2), (Idle, Toggle));
+        assert_eq!(play_hold(Idle, true, true, true, 1.0), (Idle, Toggle));
+        // playing, hold: fast from HOLD_SECS on, normal again on release, never a pause
+        assert_eq!(play_hold(Down(1.0), false, false, true, 1.0 + HOLD_SECS), (Fast, Speed(true)));
+        assert_eq!(play_hold(Fast, false, false, true, 5.0), (Fast, Nothing));
+        assert_eq!(play_hold(Fast, false, true, true, 6.0), (Idle, Speed(false)));
+        // playback ends while the key is down: nothing starts again on release
+        assert_eq!(play_hold(Down(1.0), false, false, false, 1.1), (Idle, Nothing));
+        assert_eq!(play_hold(Fast, false, false, false, 6.0), (Idle, Speed(false)));
         assert_eq!(key_focus(false, true, false), KeyFocus::Keep, "slider + arrow, Tab: stays");
         assert_eq!(key_focus(true, true, true), KeyFocus::Keep, "text field + space: text");
         assert_eq!(key_focus(true, true, false), KeyFocus::Keep, "text field + arrow");
@@ -4504,6 +4621,30 @@ fn export_reframe_snapshot_is_dropped_with_the_project() {
     app.export.framed = Some(((0, (1080, 1920), 0, 0), std::sync::Arc::new(Project::new("Alt"))));
     app.reset_editor();
     assert!(app.export.framed.is_none());
+}
+
+/// Window finding: the release of the held play key got lost once and playback stayed fast. Releases
+/// are kept from the input hook until the shortcuts run, also across frames without shortcuts.
+#[test]
+fn key_releases_wait_for_the_shortcuts() {
+    let mut app = crate::saving::tests::test_app();
+    let ctx = egui::Context::default();
+    let up = egui::Event::Key { key: Key::Space, physical_key: None, pressed: false, repeat: false, modifiers: Modifiers::NONE };
+    let mut hook = |app: &mut App, events: Vec<egui::Event>| {
+        let mut raw = egui::RawInput { events, ..Default::default() };
+        eframe::App::raw_input_hook(app, &ctx, &mut raw);
+        raw
+    };
+    hook(&mut app, vec![up.clone()]);
+    // frames without shortcuts (export window, tour) and a second release in between
+    hook(&mut app, vec![]);
+    hook(&mut app, vec![up]);
+    assert_eq!(app.key_ups, vec![Key::Space]);
+    (app.play_hold, app.play_hold_key) = (PlayHold::Fast, Some(Key::Space));
+    let raw = hook(&mut app, vec![]);
+    let _ = ctx.run(raw, |ctx| app.shortcuts(ctx));
+    assert_eq!((app.play_hold, app.play_hold_key), (PlayHold::Idle, None), "the hold ends");
+    assert!(app.key_ups.is_empty());
 }
 
 /// Command search in the flow of a frame: Ctrl+K opens, the field has the focus, the space bar types

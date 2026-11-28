@@ -508,6 +508,14 @@ pub(crate) fn needs(project: &Project, layers: &[Layer], now: Time, playing: boo
     out
 }
 
+/// Preview speeds offered in the player
+pub(crate) const SPEEDS: [f64; 7] = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+
+/// "1×", "0.5×"; with a decimal comma in German
+pub(crate) fn speed_label(s: f64) -> String {
+    theme::local_num(format!("{s}×"))
+}
+
 /// Can the clip run as a stream? (Reverse and speed curves: only single frames)
 pub(crate) fn streamable(c: &Clip) -> bool {
     matches!(&c.content, ClipContent::Media { kind: MediaKind::Video, .. }) && !c.fx.reverse && c.fx.speed_curve.is_none()
@@ -1102,6 +1110,15 @@ mod shader_tests {
         // half transitions together reach at most across the whole length of the short clip
         let (a, b) = span(1);
         assert!(a.unwrap() / 2.0 + b.unwrap() / 2.0 <= 0.2 + 1e-9);
+    }
+
+    #[test]
+    fn speed_labels_are_short_and_local() {
+        let _g = crate::paths::test_lock();
+        cl_i18n::set_ui_lang(cl_i18n::Lang::De);
+        assert_eq!(SPEEDS.map(speed_label), ["0,25×", "0,5×", "0,75×", "1×", "1,25×", "1,5×", "2×"]);
+        cl_i18n::set_ui_lang(cl_i18n::Lang::En);
+        assert_eq!(speed_label(0.25), "0.25×");
     }
 
     /// Reverse window only when playing forwards a video running in reverse from the
@@ -3483,8 +3500,8 @@ impl App {
             self.toggle_play();
         }
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(right).layout(egui::Layout::right_to_left(egui::Align::Center)), |ui| {
-            // the labelled chips need about 310 px; below that they ran under the play button
-            let compact = ui.available_width() < 320.0;
+            // the labelled chips need about 350 px; below that they ran under the play button
+            let compact = ui.available_width() < 360.0;
             let (g, tip) = if self.player_max { (icon::CORNERS_IN, "Normal view (F)") } else { (icon::CORNERS_OUT, "Large player (F)") };
             if theme::icon_button(ui, g, tip, true, self.player_max).clicked() {
                 self.player_max = !self.player_max;
@@ -3542,6 +3559,22 @@ impl App {
                 for (n, p) in AspectPreset::PRESETS {
                     if ui.selectable_label(self.project.settings.aspect == p, crate::tr(n)).clicked() {
                         self.set_aspect(p);
+                    }
+                }
+            });
+            // preview speed: only how fast the player runs, never project or export
+            let speed = self.core.speed();
+            let resp = theme::chip(ui, &speed_label(speed)).on_hover_text(crate::tr("Playback speed"));
+            let popup = ui.make_persistent_id("speed-popup");
+            if resp.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(popup));
+            }
+            egui::popup_above_or_below_widget(ui, popup, &resp, egui::AboveOrBelow::Above, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(64.0);
+                for s in SPEEDS {
+                    if ui.selectable_label((speed - s).abs() < 1e-6, speed_label(s)).clicked() {
+                        self.core.set_speed(s, self.core_now());
+                        self.run_core();
                     }
                 }
             });

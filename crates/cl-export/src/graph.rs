@@ -1426,8 +1426,8 @@ pub(crate) fn audio_part(
                 chain.push(at);
             }
         }
-        chain.extend(cl_fx::audio::audio_chain(&c.audio));
-        // the reverb rings on after the clip end (aecho flushes its delays) and is mixed over what follows
+        chain.extend(cl_fx::audio::audio_chain_tagged(&c.audio, &i.to_string()));
+        // the reverb rings on after the clip end and is mixed over what follows
         let keep = dur + cl_fx::audio::reverb_tail(&c.audio);
         // audio stretched longer: fill with silence (counted from the first sample read)
         chain.push(format!("apad=whole_dur={}", f(keep - skip)));

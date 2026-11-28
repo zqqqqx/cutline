@@ -34,6 +34,8 @@ pub const PRE_MS: u64 = 200;
 pub const FADE_MS: u64 = 15;
 /// Crossfade from the running mix to a rebuilt one (audible change during playback)
 pub const XFADE_MS: u64 = 30;
+/// Extra mix behind a window at preview speed ≠ 1 (see [`open_window`])
+const TEMPO_TAIL_MS: u64 = 150;
 
 pub struct AudioPlayer {
     /// Control of the output thread (true = play, false = pause); dropping it ends the thread
@@ -43,7 +45,10 @@ pub struct AudioPlayer {
     shared: Arc<Shared>,
     /// Peak level left/right since the last query (f32 bits)
     peaks: Arc<[AtomicU32; 2]>,
+    /// Sample rate of the output device
     rate: u32,
+    /// Sample frames per timeline second (`rate` / preview speed): the unit of windows and clock
+    tl_rate: u32,
     pub start: Time,
     /// Newest audible state waiting for its rebuild ([`Self::remix`])
     queued: Option<Project>,
@@ -66,6 +71,9 @@ struct Shared {
     /// All started FFmpeg processes (killed on stop so blocked readers get free)
     kids: Mutex<Vec<Arc<Mutex<Child>>>>,
     first_sound: OnceLock<Instant>,
+    /// Sample rate of the output device and preview speed (pitch kept): what FFmpeg mixes with
+    dev_rate: u32,
+    tempo: f64,
 }
 
 /// Chosen output device (name); `None` = system default
@@ -399,8 +407,11 @@ impl Drop for Win {
 /// or the scrub thread that keeps the sound until the end), and from `cl-audio-feed`, which lives
 /// until the sound ends – important on Linux: `PR_SET_PDEATHSIG` ends the child with the
 /// *starting thread* (see `cl_media::proc`), not only with the process.
+/// `rate`: sample frames per timeline second (see `AudioPlayer::tl_rate`).
 fn open_window(project: &Project, plan: WindowPlan, rate: u32, shared: &Arc<Shared>) -> Result<Win, String> {
-    let (mut child, workdir) = cl_export::spawn_audio_window(project, plan.mix_from, plan.mix_to, rate)
+    // at another speed `atempo` settles a few ms: mix a little further, the surplus is discarded
+    let tail = if (shared.tempo - 1.0).abs() > 1e-6 { Time(TEMPO_TAIL_MS as i64 * 1000) } else { Time::ZERO };
+    let (mut child, workdir) = cl_export::spawn_audio_window_tempo(project, plan.mix_from, plan.mix_to + tail, shared.dev_rate, shared.tempo)
         .map_err(|e| e.to_string())?;
     cl_media::raise_priority(&child);
     let mut stdout = child.stdout.take().ok_or("no stdout")?;
@@ -569,24 +580,25 @@ fn render_block(sh: &Shared, pk: &[AtomicU32; 2], rate: u32, n: usize, now: Inst
 impl AudioPlayer {
     /// Plays from `from` as soon as sound is there (scrubbing, preview).
     pub fn start(project: &Project, from: Time) -> Result<Self, String> {
-        Self::open(Cow::Borrowed(project), from, false, false)
+        Self::open(Cow::Borrowed(project), from, false, false, 1.0)
     }
 
     /// For playback with picture: sound is prepared but only comes in after [`Self::anchor`] –
     /// then at the place where the clock stands since the anchor. An own clone (e.g. with solo)
     /// goes to the feed without another copy.
-    pub fn start_synced(project: Cow<'_, Project>, from: Time) -> Result<Self, String> {
-        Self::open(project, from, true, false)
+    /// `tempo`: preview speed (1 = normal); the sound keeps its pitch.
+    pub fn start_synced(project: Cow<'_, Project>, from: Time, tempo: f64) -> Result<Self, String> {
+        Self::open(project, from, true, false, tempo)
     }
 
     /// Like [`Self::start_synced`], but without device: a thread consumes the samples at the pace of
     /// system time (measurement test without window or audible sound; clock, dropouts and windows as real).
     #[cfg(test)]
     pub fn start_null(project: &Project, from: Time) -> Result<Self, String> {
-        Self::open(Cow::Borrowed(project), from, true, true)
+        Self::open(Cow::Borrowed(project), from, true, true, 1.0)
     }
 
-    fn open(project: Cow<'_, Project>, from: Time, synced: bool, null: bool) -> Result<Self, String> {
+    fn open(project: Cow<'_, Project>, from: Time, synced: bool, null: bool, tempo: f64) -> Result<Self, String> {
         let (device, config) = if null {
             (None, None)
         } else {
@@ -611,8 +623,11 @@ impl AudioPlayer {
         let rate = config.as_ref().map_or(48_000, |c| c.sample_rate().0);
         let channels = config.as_ref().map_or(2, |c| c.channels() as usize);
 
+        let tempo = tempo.clamp(0.25, 4.0);
+        // shortcut: rounded to whole frames (exact for the offered speeds at 44.1 and 48 kHz), upgrade if odd device rates drift audibly
+        let tl_rate = (rate as f64 / tempo).round() as u32;
         let end = project.duration();
-        let plan = window_plan(from, end, rate, 0).ok_or_else(|| cl_export::ExportError::Empty.to_string())?;
+        let plan = window_plan(from, end, tl_rate, 0).ok_or_else(|| cl_export::ExportError::Empty.to_string())?;
         let shared = Arc::new(Shared {
             out: Mutex::new(Out::new(if synced { Phase::Waiting } else { Phase::Free }, rate)),
             played: AtomicU64::new(0),
@@ -624,13 +639,15 @@ impl AudioPlayer {
             stop: AtomicBool::new(false),
             kids: Mutex::new(Vec::new()),
             first_sound: OnceLock::new(),
+            dev_rate: rate,
+            tempo,
         });
-        let first = open_window(&project, plan, rate, &shared)?;
+        let first = open_window(&project, plan, tl_rate, &shared)?;
         {
             let (p, sh) = (project.into_owned(), shared.clone());
             std::thread::Builder::new()
                 .name("cl-audio-feed".into())
-                .spawn(move || feed(p, from, rate, sh, first, 0))
+                .spawn(move || feed(p, from, tl_rate, sh, first, 0))
                 .map_err(|e| e.to_string())?;
         }
 
@@ -663,7 +680,7 @@ impl AudioPlayer {
                     }
                 })
                 .map_err(|e| e.to_string())?;
-            return Ok(Self { ctl, failed, shared, peaks, rate, start: from, queued: None, remix_t0: None });
+            return Ok(Self { ctl, failed, shared, peaks, rate, tl_rate, start: from, queued: None, remix_t0: None });
         };
         let out = move || -> Result<(), String> {
             let err = |e| log::warn!("Audio: {e}");
@@ -731,7 +748,7 @@ impl AudioPlayer {
                 }
             })
             .map_err(|e| e.to_string())?;
-        Ok(Self { ctl, failed, shared, peaks, rate, start: from, queued: None, remix_t0: None })
+        Ok(Self { ctl, failed, shared, peaks, rate, tl_rate, start: from, queued: None, remix_t0: None })
     }
 
     /// Release the clock: time runs from `at`; sound comes in at the then current place.
@@ -763,9 +780,9 @@ impl AudioPlayer {
         let Some(p) = self.queued.take() else { return };
         let at = self.shared.out.lock().unwrap().played;
         // `at` frames after `start` (sub-microsecond rounding, far below one sample)
-        let from = self.start + Time((at as u128 * 1_000_000 / self.rate.max(1) as u128) as i64);
-        let Some(plan) = window_plan(from, p.duration(), self.rate, 0) else { return };
-        let first = match open_window(&p, plan, self.rate, &self.shared) {
+        let from = self.start + Time((at as u128 * 1_000_000 / self.tl_rate.max(1) as u128) as i64);
+        let Some(plan) = window_plan(from, p.duration(), self.tl_rate, 0) else { return };
+        let first = match open_window(&p, plan, self.tl_rate, &self.shared) {
             Ok(w) => w,
             Err(e) => return log::warn!("Audio: {e}"),
         };
@@ -775,7 +792,7 @@ impl AudioPlayer {
             o.alt = Some(Alt { gen, at, buf: VecDeque::new() });
             gen
         };
-        let (sh, rate) = (self.shared.clone(), self.rate);
+        let (sh, rate) = (self.shared.clone(), self.tl_rate);
         let spawned = std::thread::Builder::new().name("cl-audio-feed".into()).spawn(move || feed(p, from, rate, sh, first, gen));
         match spawned {
             Ok(_) => self.remix_t0 = Some(Instant::now()),
@@ -816,7 +833,7 @@ impl AudioPlayer {
         } else {
             played
         };
-        self.start + Time::from_secs_f64(frames as f64 / self.rate as f64)
+        self.start + Time::from_secs_f64(frames as f64 / self.tl_rate as f64)
     }
 
     /// Peak level (0…1+) left/right since the last call
@@ -1116,6 +1133,8 @@ mod tests {
             stop: AtomicBool::new(false),
             kids: Mutex::new(Vec::new()),
             first_sound: OnceLock::new(),
+            dev_rate: rate,
+            tempo: 1.0,
         })
     }
 
@@ -1371,7 +1390,7 @@ mod tests {
         p.timeline.tracks[0].muted = true; // silence from own source
         for i in 0..5 {
             let t0 = Instant::now();
-            let a = AudioPlayer::start_synced(Cow::Borrowed(&p), Time(S)).unwrap();
+            let a = AudioPlayer::start_synced(Cow::Borrowed(&p), Time(S), 1.0).unwrap();
             let opened = t0.elapsed();
             a.anchor(t0);
             while a.first_sound().is_none() && t0.elapsed() < Duration::from_secs(5) {
@@ -1383,6 +1402,39 @@ mod tests {
             eprintln!("run {i}: call {:.0} ms, first sample {:?} ms, clock − system time {:+.1} ms", opened.as_secs_f64() * 1e3, first.map(|d| (d.as_secs_f64() * 1e3).round()), diff * 1e3);
             assert!(diff.abs() < 0.005, "handover without a jump: {diff}");
         }
+    }
+
+    /// Preview speed: FFmpeg delivers half the frames at double speed with the pitch kept (300 Hz stay
+    /// 300 Hz), and the audio clock runs twice as fast as the system time.
+    #[test]
+    fn tempo_halves_the_frames_keeps_the_pitch_and_scales_the_clock() {
+        if !cl_media::test_tools() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let p = test_project(dir.path(), 30.0);
+        let (mut child, _wd) = cl_export::spawn_audio_window_tempo(&p, Time(S), Time(5 * S), 48_000, 2.0).unwrap();
+        let mut buf = Vec::new();
+        child.stdout.as_mut().unwrap().read_to_end(&mut buf).unwrap();
+        child.wait().unwrap();
+        let left: Vec<f32> = buf.chunks_exact(8).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+        assert!((left.len() as f64 / 96_000.0 - 1.0).abs() < 0.02, "4 s at double speed = 2 s: {} frames", left.len());
+        // middle second: 300 Hz have 600 zero crossings
+        let mid = &left[24_000..72_000];
+        let crossings = mid.windows(2).filter(|w| (w[0] < 0.0) != (w[1] < 0.0)).count();
+        assert!((560..=640).contains(&crossings), "pitch kept: {crossings} zero crossings per second");
+
+        let a = AudioPlayer::open(Cow::Borrowed(&p), Time(S), true, true, 2.0).unwrap();
+        let t0 = Instant::now();
+        a.anchor(t0);
+        while a.first_sound().is_none() && t0.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(a.first_sound().is_some());
+        std::thread::sleep(Duration::from_millis(700));
+        // comes in at the clock's place and runs on at double speed (null output: 10 ms steps)
+        let diff = a.position().as_secs_f64() - 1.0 - 2.0 * t0.elapsed().as_secs_f64();
+        assert!(diff.abs() < 0.08, "audio clock at double speed: {diff:+.3} s");
     }
 
     /// Before the anchor: ready as soon as the first window delivers samples (the clock waits for that)

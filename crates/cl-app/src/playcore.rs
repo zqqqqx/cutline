@@ -12,7 +12,8 @@
 //! - `Pause` --Play at the same place without change--> `Playing` (without new streams)
 //! - `Pause` --playhead moved or project changed--> `Stopped` (streams freed)
 //! - `Playing`/`Buffering` --jump--> `Buffering` from the new place
-//! - J/K/L (`shuttle`) --> `Playing` with speed ≠ 1 (single frames, no sound)
+//! - J/K/L (`shuttle`) --> `Playing` at another speed (beyond [`MAX_STREAM_RATE`] and backwards: single frames, no sound)
+//! - Preview speed ([`PlayCore::set_speed`], [`PlayCore::set_rate`]): streams keep running, the sound is rebuilt at the new speed
 //! - Stop, project end, project change --> `Stopped`
 //!
 //! In sync instead of behind: if a stream lies more than two frame intervals behind the clock for
@@ -195,6 +196,13 @@ const KEY_SETTLE: f64 = 0.15;
 const STILL_PATIENCE: f64 = 10.0;
 /// Stopped: a neighbour shows and the exact frame has not come after this long – request it again
 const NEAR_RETRY: f64 = 0.5;
+/// Fastest forward speed that still runs on streams with sound; beyond it and backwards: single frames
+pub const MAX_STREAM_RATE: f64 = 2.0;
+
+/// Does this speed run on streams with sound?
+fn stream_rate(rate: f64) -> bool {
+    rate > 0.0 && rate <= MAX_STREAM_RATE + 1e-6
+}
 
 struct Slot<S: Source> {
     src: S,
@@ -286,6 +294,8 @@ pub struct PlayCore<S: Source> {
     mode: Mode,
     pos: Time,
     rate: f64,
+    /// Preview speed chosen by the user: what Play runs at (`rate` differs while shuttling or holding the play key)
+    speed: f64,
     /// (wall time, place): system clock as long as no sound runs
     clock: Option<(f64, Time)>,
     warm_since: f64,
@@ -335,6 +345,7 @@ impl<S: Source> Default for PlayCore<S> {
             mode: Mode::Stopped,
             pos: Time::ZERO,
             rate: 1.0,
+            speed: 1.0,
             clock: None,
             warm_since: 0.0,
             paused: None,
@@ -395,7 +406,44 @@ impl<S: Source> PlayCore<S> {
     }
     /// Frames come from streams (otherwise single frames)
     pub fn streaming(&self) -> bool {
-        self.playing() && (self.rate - 1.0).abs() < 1e-6
+        self.playing() && stream_rate(self.rate)
+    }
+    pub fn speed(&self) -> f64 {
+        self.speed
+    }
+
+    /// Choose the preview speed; a running playback continues at it (paused sound was mixed at the old one: stop).
+    pub fn set_speed(&mut self, speed: f64, now: f64) {
+        self.speed = speed;
+        match self.mode {
+            Mode::Stopped => self.rate = speed,
+            Mode::Pause => self.stop(),
+            _ if stream_rate(self.rate) => self.set_rate(speed, now),
+            _ => {}
+        }
+    }
+
+    /// Change the speed of a running playback at the place reached: streams stay, the sound is mixed anew
+    /// (until it arrives the clock runs on system time).
+    pub fn set_rate(&mut self, rate: f64, now: f64) {
+        if !self.playing() || (rate - self.rate).abs() < 1e-6 {
+            return;
+        }
+        self.rate = rate;
+        // the automatic quality counts frames against the speed: a window across the change would
+        // look like a stream that is too slow
+        self.win_start = now;
+        self.win_catch_up = false;
+        for s in self.cur.values_mut() {
+            s.win_frames = 0;
+            s.behind_since = None;
+        }
+        let anchor = self.mode == Mode::Playing;
+        if anchor {
+            self.audio_due = None;
+            self.clock = Some((now, self.pos));
+        }
+        self.start_audio(self.pos, anchor);
     }
     #[cfg(test)]
     /// Layer with the last delivered frame (`None`: none ever came)
@@ -479,7 +527,7 @@ impl<S: Source> PlayCore<S> {
 
     fn start_audio(&mut self, at: Time, anchor: bool) {
         self.cmds.push(Cmd::StopAudio);
-        if (self.rate - 1.0).abs() < 1e-6 {
+        if stream_rate(self.rate) {
             self.cmds.push(Cmd::StartAudio { at, anchor });
         }
     }
@@ -516,7 +564,7 @@ impl<S: Source> PlayCore<S> {
     fn reset(&mut self, at: Time) {
         self.clear_streams();
         self.mode = Mode::Stopped;
-        self.rate = 1.0;
+        self.rate = self.speed;
         self.pos = at;
         self.clock = None;
         self.paused = None;
@@ -535,10 +583,10 @@ impl<S: Source> PlayCore<S> {
         self.requested.iter().any(|(id, (k, _))| self.shown.get(id) != Some(k))
     }
 
-    /// Pause. Only with sound running at speed 1 (`can_hold`, e.g. not with multicam) do
+    /// Pause. Only with sound running at a stream speed (`can_hold`, e.g. not with multicam) do
     /// streams and sound stay open, otherwise it stops.
     pub fn pause(&mut self, revision: u64, audio_running: bool, can_hold: bool) {
-        if self.mode != Mode::Playing || !audio_running || !can_hold || (self.rate - 1.0).abs() > 1e-6 {
+        if self.mode != Mode::Playing || !audio_running || !can_hold || !stream_rate(self.rate) {
             self.stop();
             return;
         }
@@ -577,10 +625,12 @@ impl<S: Source> PlayCore<S> {
             Mode::Pause => self.stop(),
             Mode::Buffering | Mode::Playing => {
                 let rate = self.rate;
-                if (rate - 1.0).abs() > 1e-6 {
-                    self.shuttle(rate, at, now);
-                } else {
+                if stream_rate(rate) {
                     self.play(at, 0, now);
+                    // the driver reads the speed when it carries out the audio command
+                    self.rate = rate;
+                } else {
+                    self.shuttle(rate, at, now);
                 }
             }
         }
@@ -762,7 +812,7 @@ impl<S: Source> PlayCore<S> {
             };
             let active = now - first.max(ws);
             if active >= 0.5 && !s.ended {
-                let r = s.win_frames as f64 / (active * s.fps);
+                let r = s.win_frames as f64 / (active * s.fps * self.rate.abs().max(0.01));
                 ratio = Some(ratio.map_or(r, |x: f64| x.min(r)));
             }
             s.win_frames = 0;
@@ -776,7 +826,7 @@ impl<S: Source> PlayCore<S> {
     }
 
     /// Should a stream be opened for layer `w`? `Some(open)`: open from `open.at` and report back with
-    /// [`Self::attach_alias`] (or [`Self::open_failed`]). Only during playback at speed 1.
+    /// [`Self::attach_alias`] (or [`Self::open_failed`]). Only during playback at a stream speed.
     pub fn want(&mut self, w: &Want, now: f64) -> Option<Open> {
         if !self.streaming() {
             return None;

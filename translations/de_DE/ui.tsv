@@ -1886,6 +1886,7 @@ Playback louder	Wiedergabe lauter
 Playback quieter	Wiedergabe leiser
 Playback volume: {} %	Lautstärke der Wiedergabe: {} %
 Playback volume: muted	Lautstärke der Wiedergabe: stumm
+Playback speed	Wiedergabegeschwindigkeit
 {} older parts will be removed when overwriting	Beim Überschreiben werden {} ältere Teile entfernt
 This project was saved with a newer version of Cutline. Please update Cutline.	Dieses Projekt wurde mit einer neueren Cutline-Version gespeichert. Bitte Cutline aktualisieren.
 Cannot read file: “{}”	Datei kann nicht gelesen werden: „{}“
@@ -1901,6 +1902,13 @@ Remove color key	Farbschlüssel entfernen
 Key blend	Farbübergang
 Reverb	Hall
 Room size	Raumgröße
+Reverb preset	Hall-Vorlage
+Reverb tone	Klangfarbe
+Pre-delay	Vorverzögerung
+Room	Raum
+Voice	Stimme
+Plate	Platte
+Cathedral	Kathedrale
 Angle	Winkel
 Softness	Weichheit
 Send error reports	Fehlerberichte senden

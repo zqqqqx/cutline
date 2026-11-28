@@ -71,11 +71,13 @@ struct Aud {
     cut_at: Option<f64>,
     starts: u32,
     remixes: u32,
+    /// Speed the running sound was mixed at (the driver reads it from the core on start)
+    rate: f64,
 }
 
 impl Aud {
     fn new() -> Self {
-        Self { st: AState::Off, latency: 0.1, fail: false, cut_at: None, starts: 0, remixes: 0 }
+        Self { st: AState::Off, latency: 0.1, fail: false, cut_at: None, starts: 0, remixes: 0, rate: 1.0 }
     }
     fn input(&mut self, now: f64) -> AudioIn {
         if let AState::Prep { at, ready, anchor: Some(a) } = self.st {
@@ -92,7 +94,7 @@ impl Aud {
             AState::Prep { .. } => AudioIn::Pending,
             AState::Run { at, anchor, paused_at, paused } => {
                 let now = paused_at.unwrap_or(now);
-                AudioIn::Running(at + Time::from_secs_f64(now - anchor - paused))
+                AudioIn::Running(at + Time::from_secs_f64((now - anchor - paused) * self.rate))
             }
             AState::Failed => AudioIn::Failed,
             AState::Done => AudioIn::Finished,
@@ -226,6 +228,9 @@ impl World {
     fn cmds(&mut self) {
         let now = self.now();
         for c in self.core.cmds() {
+            if matches!(c, Cmd::StartAudio { .. }) {
+                self.aud.rate = self.core.rate();
+            }
             self.aud.apply(c, now);
         }
         self.playhead = self.core.pos();
@@ -827,19 +832,118 @@ fn audio_start_failure_is_not_a_hang() {
     assert!((w.core.pos().as_secs_f64() - 1.9).abs() < 0.2);
 }
 
+/// Preview speed: Play runs at the chosen speed on streams with sound; a change during playback
+/// keeps the streams, moves the clock at the new speed from the place reached and mixes the sound anew.
+#[test]
+fn preview_speed_drives_clock_streams_and_sound() {
+    let mut core: PlayCore<Sim> = PlayCore::default();
+    let tick = |core: &mut PlayCore<Sim>, now: f64, playhead: Time| {
+        core.tick(&Tick { now, playhead, revision: 0, audio: AudioIn::None, end: Time::from_secs_f64(100.0), fps: 30.0, loop_range: None, recording: false, max_quality_level: 0 })
+    };
+    core.set_speed(0.5, 0.0);
+    core.play(Time::ZERO, 0, 0.0);
+    assert!(core.streaming(), "half speed runs on streams");
+    assert!(core.cmds().contains(&Cmd::StartAudio { at: Time::ZERO, anchor: false }), "with sound");
+    // buffering ends without streams after WARM_MAX; the clock starts there
+    let p = tick(&mut core, 1.0, Time::ZERO);
+    assert_eq!(core.mode(), Mode::Playing);
+    let p = tick(&mut core, 3.0, p);
+    assert!((p.as_secs_f64() - 1.0).abs() < 1e-6, "2 s at half speed = 1 s: {p:?}");
+    core.cmds();
+    // hold: twice as fast from here, sound rebuilt at the place reached
+    core.set_rate(2.0, 3.0);
+    assert_eq!(core.cmds(), vec![Cmd::StopAudio, Cmd::StartAudio { at: p, anchor: true }]);
+    let p = tick(&mut core, 4.0, p);
+    assert!((p.as_secs_f64() - 3.0).abs() < 1e-6, "1 s at double speed = 2 s further: {p:?}");
+    assert!(core.streaming(), "double speed still runs on streams");
+    // a jump keeps the held speed
+    let p = tick(&mut core, 4.0, Time::from_secs_f64(10.0));
+    assert_eq!(core.rate(), 2.0);
+    // release: back to the chosen speed; the same speed again changes nothing
+    core.cmds();
+    core.set_rate(core.speed(), 5.0);
+    assert_eq!(core.rate(), 0.5);
+    core.cmds();
+    core.set_rate(0.5, 5.0);
+    assert!(core.cmds().is_empty());
+    // stop and play again: chosen speed, not 1
+    core.stop();
+    core.play(p, 0, 6.0);
+    assert_eq!(core.rate(), 0.5);
+    // faster than streams can go: single frames without sound, as before
+    core.cmds();
+    core.shuttle(4.0, p, 7.0);
+    assert!(!core.streaming());
+    assert_eq!(core.cmds(), vec![Cmd::StopAudio]);
+    // not playing: only remembered
+    core.stop();
+    core.cmds();
+    core.set_rate(2.0, 8.0);
+    assert_eq!(core.rate(), 0.5);
+    assert!(core.cmds().is_empty());
+}
+
+/// With streams and sound: at double speed the picture keeps up with the clock and the sound is the
+/// clock; at half speed the automatic quality does not mistake the slower frame pace for a slow stream.
+#[test]
+fn preview_speed_keeps_picture_and_sound_together() {
+    for speed in [2.0, 0.5] {
+        let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
+        w.max_q = 3;
+        w.core.set_speed(speed, 0.0);
+        w.play();
+        w.run(3.0, DT);
+        assert!(w.core.streaming() && w.core.streams().len() == 1, "speed {speed}: one stream");
+        assert!(matches!(w.aud.input(w.now()), AudioIn::Running(_)), "speed {speed}: sound runs");
+        let p = w.core.pos().as_secs_f64();
+        assert!(p > 2.5 * speed && p <= 3.0 * speed, "speed {speed}: clock at {p}");
+        assert!(p - w.last_frame[&1] < 0.1, "speed {speed}: picture at {} behind clock {p}", w.last_frame[&1]);
+        assert_eq!(w.level, 0, "speed {speed}: quality stays");
+        // pause keeps streams and sound, resume continues at the chosen speed
+        w.pause();
+        assert_eq!(w.core.mode(), Mode::Pause, "speed {speed}");
+        w.run(0.5, DT);
+        w.play();
+        w.run(1.0, DT);
+        let q = w.core.pos().as_secs_f64();
+        assert!((q - p - speed).abs() < 0.1 * speed + 0.02, "speed {speed}: {p} → {q} in 1 s");
+        assert_eq!(w.aud.starts, 1, "speed {speed}: sound started once");
+    }
+}
+
+/// Window finding: holding the play key (1× → 2× in the middle of a measurement window) lowered the
+/// automatic quality, because the frames of the slow part were counted against the fast speed.
+#[test]
+fn speed_change_during_playback_keeps_the_quality() {
+    let mut w = World::new(vec![clip(1, 0.0, 60.0)]);
+    w.max_q = 3;
+    w.play();
+    w.run(2.4, DT);
+    for rate in [2.0, 1.0, 2.0, 0.5] {
+        let now = w.now();
+        w.core.set_rate(rate, now);
+        w.cmds();
+        w.run(2.7, DT);
+        assert_eq!((w.level, w.level_changes), (0, 0), "after the change to {rate}");
+        assert!(matches!(w.aud.input(w.now()), AudioIn::Running(_)), "sound runs again at {rate}");
+        assert!(w.core.pos().as_secs_f64() - w.last_frame[&1] < 0.1, "picture keeps up at {rate}");
+    }
+    assert_eq!(w.opens, 1, "the stream stays across the changes");
+}
+
 #[test]
 fn shuttle_runs_on_stills_at_rate_and_stops_at_zero_backwards() {
     let mut w = World::new(vec![clip(1, 0.0, 30.0)]);
     w.playhead = Time::from_secs_f64(2.0);
-    w.core.shuttle(2.0, w.playhead, w.now());
+    w.core.shuttle(4.0, w.playhead, w.now());
     w.cmds();
     assert!(!w.core.streaming());
     w.run(1.0, DT);
-    assert!((w.core.pos().as_secs_f64() - 4.0).abs() < 0.05);
-    assert!(w.core.streams().is_empty(), "no streams at speed ≠ 1");
+    assert!((w.core.pos().as_secs_f64() - 6.0).abs() < 0.05);
+    assert!(w.core.streams().is_empty(), "no streams beyond MAX_STREAM_RATE");
     // single frames keep coming (the running job is not constantly aborted)
     assert!(w.stills_shown >= 8, "{} single frames", w.stills_shown);
-    w.core.shuttle(-2.0, w.playhead, w.now());
+    w.core.shuttle(-4.0, w.playhead, w.now());
     w.cmds();
     w.run(2.5, DT);
     assert_eq!(w.core.mode(), Mode::Stopped);

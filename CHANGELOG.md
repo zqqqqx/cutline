@@ -21,6 +21,26 @@
 
 **Behoben**
 
+## 0.21.0 – 2026-11-28
+
+### English
+
+**New**
+- **Playback speed in the player.** A small menu in the player bar plays the preview at 0.25× to 2×, with sound at its normal pitch. Project and export stay as they are.
+- **Hold the play key for 2×.** Holding Space during playback plays at double speed until you let go; a short press still pauses.
+
+**Improved**
+- **Reverb sounds smooth instead of tinny.** The reverb is rebuilt: a dense, soft tail without single echoes or hiss. Five presets (Room, Voice, Plate, Hall, Cathedral) and two new controls, tone and pre-delay. Existing projects keep their settings and sound softer and a little quieter at the same value.
+
+### Deutsch
+
+**Neu**
+- **Wiedergabegeschwindigkeit im Player.** Ein kleines Menü in der Player-Leiste spielt die Vorschau mit 0,25× bis 2× ab, der Ton behält seine Tonhöhe. Projekt und Export bleiben unverändert.
+- **Abspieltaste halten für 2×.** Wer die Leertaste während der Wiedergabe hält, sieht doppeltes Tempo, bis er loslässt; ein kurzer Druck pausiert wie bisher.
+
+**Verbessert**
+- **Hall klingt weich statt blechern.** Der Hall ist neu gebaut: ein dichter, weicher Ausklang ohne einzelne Echos und ohne Zischen. Fünf Vorlagen (Raum, Stimme, Platte, Hall, Kathedrale) und zwei neue Regler, Klangfarbe und Vorverzögerung. Bestehende Projekte behalten ihre Werte und klingen beim gleichen Wert weicher und etwas leiser.
+
 ## 0.20.1 – 2026-11-28
 
 ### English

@@ -1758,6 +1758,30 @@ pub fn spawn_audio_window(
     to: Time,
     rate: u32,
 ) -> Result<(Child, tempfile::TempDir)> {
+    spawn_audio_window_tempo(p, from, to, rate, 1.0)
+}
+
+/// `atempo` accepts 0.5–100 per instance: slower speeds chain several.
+fn atempo_chain(mut tempo: f64) -> String {
+    let mut parts = Vec::new();
+    while tempo < 0.5 {
+        parts.push("atempo=0.5".to_string());
+        tempo /= 0.5;
+    }
+    parts.push(format!("atempo={}", f(tempo)));
+    parts.join(",")
+}
+
+/// Like [`spawn_audio_window`], played `tempo` times as fast with the pitch kept (preview speed):
+/// one timeline second becomes `rate / tempo` sample frames.
+pub fn spawn_audio_window_tempo(
+    p: &Project,
+    from: Time,
+    to: Time,
+    rate: u32,
+    tempo: f64,
+) -> Result<(Child, tempfile::TempDir)> {
+    let tempo = tempo.clamp(0.1, 8.0);
     let p = &in_edit_ranges(p);
     let end = p.duration().min(to);
     if end <= from {
@@ -1766,7 +1790,11 @@ pub fn spawn_audio_window(
     let workdir = tempfile::Builder::new()
         .prefix("cutline-audio-")
         .tempdir()?;
-    let (inputs, graph, label) = audio_window_graph(p, from, end)?;
+    let (inputs, mut graph, mut label) = audio_window_graph(p, from, end)?;
+    if (tempo - 1.0).abs() > 1e-6 {
+        graph.push(format!("[{label}]{}[tempo]", atempo_chain(tempo)));
+        label = "tempo".into();
+    }
     std::fs::write(workdir.path().join("graph.txt"), graph.join(";\n"))?;
     let child = cl_media::playback_command()?
         .args(["-v", "error", "-nostdin"])
@@ -1779,7 +1807,7 @@ pub fn spawn_audio_window(
         ])
         .args([
             "-t",
-            &f((end - from).as_secs_f64()),
+            &f((end - from).as_secs_f64() / tempo),
             "-f",
             "f32le",
             "-ar",
@@ -3476,7 +3504,7 @@ mod tests {
         assert!(rms(&dry, 0.0, 2.02, 3.9) < 1e-5, "no reverb: silence after the clip");
         p.timeline.tracks[0].clips[0].audio.reverb = 0.8;
         let tail = cl_fx::audio::reverb_tail(&p.timeline.tracks[0].clips[0].audio);
-        assert!((tail - 1.168).abs() < 1e-9, "{tail}");
+        assert!((tail - 1.039).abs() < 1e-9, "{tail}");
         let wet = preview(&p, 0.0);
         let (r1, r2, r3) = (rms(&wet, 0.0, 2.02, 2.4), rms(&wet, 0.0, 2.6, 3.0), rms(&wet, 0.0, 3.2, 3.9));
         eprintln!("reverb tail rms: {r1:.6} {r2:.6} {r3:.6}");

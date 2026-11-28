@@ -436,6 +436,12 @@ pub struct AudioFx {
     /// Reverb room size 0…1
     #[serde(skip_serializing_if = "is_half")]
     pub reverb_size: f32,
+    /// Reverb tone 0…1 (dark … bright: how fast the highs of the tail die away)
+    #[serde(skip_serializing_if = "is_half")]
+    pub reverb_tone: f32,
+    /// Reverb pre-delay in ms (0…100): gap between the voice and the first reflections
+    #[serde(skip_serializing_if = "is_ten")]
+    pub reverb_predelay: f32,
     /// Channels; `None` = project default
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channels: Option<Channels>,
@@ -508,6 +514,8 @@ impl Default for AudioFx {
             filter_amount: 1.0,
             reverb: 0.0,
             reverb_size: 0.5,
+            reverb_tone: 0.5,
+            reverb_predelay: 10.0,
             channels: None,
         }
     }
@@ -519,6 +527,10 @@ fn is_zero(v: &f32) -> bool {
 
 fn is_one(v: &f32) -> bool {
     *v == 1.0
+}
+
+fn is_ten(v: &f32) -> bool {
+    *v == 10.0
 }
 
 fn is_half(v: &f32) -> bool {
@@ -1146,6 +1158,14 @@ mod tests {
         let s = serde_json::to_string(&r).unwrap();
         assert!(s.contains("\"reverb\":0.4") && s.contains("\"reverb_size\":0.8"), "{s}");
         assert_eq!(serde_json::from_str::<AudioFx>(&s).unwrap(), r);
+        // a project saved before tone and pre-delay existed loads with their defaults and is saved unchanged
+        let r: AudioFx = serde_json::from_str(&s).unwrap();
+        assert_eq!((r.reverb_tone, r.reverb_predelay), (0.5, 10.0));
+        assert!(!s.contains("reverb_tone") && !s.contains("reverb_predelay"), "{s}");
+        let t = AudioFx { reverb_tone: 0.8, reverb_predelay: 25.0, ..r };
+        let s = serde_json::to_string(&t).unwrap();
+        assert!(s.contains("\"reverb_tone\":0.8") && s.contains("\"reverb_predelay\":25.0"), "{s}");
+        assert_eq!(serde_json::from_str::<AudioFx>(&s).unwrap(), t);
     }
 
     /// Effects switched on in an old file load at full strength (= the sound before strengths)
