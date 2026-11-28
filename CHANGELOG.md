@@ -21,13 +21,25 @@
 
 **Behoben**
 
+## 0.20.1 – 2026-11-28
+
+### English
+
+**Fixed**
+- **Bundled effects, transitions and elements no longer show twice after an update.** The update from 0.19.3 left the old pack folders beside the new ones; Cutline removes them at the next start.
+
+### Deutsch
+
+**Behoben**
+- **Mitgelieferte Effekte, Übergänge und Elemente stehen nach einem Update nicht mehr doppelt in der Liste.** Das Update von 0.19.3 ließ die alten Paket-Ordner neben den neuen liegen; Cutline entfernt sie beim nächsten Start.
+
 ## 0.20.0 – 2026-11-28
 
 ### English
 
 **Improved**
 - **English throughout for English users.** Error messages, sample texts of text templates and the names of bundled effects, sounds and elements in file lists are now English in the English interface. German stays German.
-- **Projects from earlier versions are converted when opened.** Bundled effects, transitions, sounds and elements got new internal names; Cutline updates an older project the first time you open it and keeps the file as it was next to it (`<name>.cutline.v6`). Versions up to 0.19.3 cannot open a project saved by this version.
+- **Projects from earlier versions are converted when opened.** Bundled effects, transitions, sounds and elements got new internal names; Cutline updates an older project the first time you open it and keeps the file as it was next to it (name.cutline.v6). Versions up to 0.19.3 cannot open a project saved by this version.
 
 **Fixed**
 - **A canceled export is no longer logged as an error.**
@@ -37,7 +49,7 @@
 
 **Verbessert**
 - **Durchgehend Englisch für englische Nutzer.** Fehlermeldungen, Beispieltexte der Textvorlagen und die Namen mitgelieferter Effekte, Sounds und Elemente in Dateilisten sind in der englischen Oberfläche jetzt englisch. Deutsch bleibt deutsch.
-- **Projekte aus früheren Versionen werden beim Öffnen umgestellt.** Mitgelieferte Effekte, Übergänge, Sounds und Elemente haben neue interne Namen; Cutline stellt ein älteres Projekt beim ersten Öffnen um und legt die Datei im alten Stand daneben (`<name>.cutline.v6`). Versionen bis 0.19.3 können ein mit dieser Version gespeichertes Projekt nicht öffnen.
+- **Projekte aus früheren Versionen werden beim Öffnen umgestellt.** Mitgelieferte Effekte, Übergänge, Sounds und Elemente haben neue interne Namen; Cutline stellt ein älteres Projekt beim ersten Öffnen um und legt die Datei im alten Stand daneben (name.cutline.v6). Versionen bis 0.19.3 können ein mit dieser Version gespeichertes Projekt nicht öffnen.
 
 **Behoben**
 - **Ein abgebrochener Export steht nicht mehr als Fehler im Protokoll.**

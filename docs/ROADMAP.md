@@ -2,7 +2,7 @@
 
 Cutline is the open video editor for creators: easy to use, fast, and entirely on your machine. It is made for
 content creators (YouTube, Shorts/TikTok/Reels, streaming, podcasts) who publish often, in several formats, and need
-to get from a raw recording to a finished clip fast. The current release is v0.20.0; phases 0–4 are done.
+to get from a raw recording to a finished clip fast. The current release is v0.20.1; phases 0–4 are done.
 
 ## Next releases
 

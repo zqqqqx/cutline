@@ -52,9 +52,38 @@ pub fn rename_data_folders(data: &Path) {
     rename(&data.join("Epidemic Sound"), (old("tracks_dir"), cl_core::legacy::TRACKS_DIR));
 }
 
+/// Once at the start, before the packs are read: an update unpacks over the program folder and
+/// leaves the pack folders older versions shipped (`cutline-effekte`) beside the new ones, so every
+/// bundled effect showed twice. An old folder goes only when its new one is there.
+pub fn remove_old_pack_folders(plugins: &Path) {
+    for (old, new) in pairs("pack_folder") {
+        let dir = plugins.join(old);
+        if dir.is_dir() && plugins.join(new).join("plugin.toml").is_file() {
+            match std::fs::remove_dir_all(&dir) {
+                Ok(()) => log::info!(target: "session", "pack folder of an older version removed: {old}"),
+                Err(e) => log::warn!(target: "session", "pack folder {old} not removed: {e}"),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_pack_folders_go_only_beside_their_new_ones() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path();
+        for f in ["cutline-effekte", "cutline-effects", "cutline-elemente", "my-pack"] {
+            std::fs::create_dir_all(p.join(f)).unwrap();
+            std::fs::write(p.join(f).join("plugin.toml"), b"x").unwrap();
+        }
+        remove_old_pack_folders(p);
+        assert!(!p.join("cutline-effekte").exists(), "old folder beside the new one: every effect showed twice");
+        assert!(p.join("cutline-effects/plugin.toml").is_file() && p.join("my-pack").is_dir());
+        assert!(p.join("cutline-elemente").is_dir(), "no new folder: the old one stays");
+    }
 
     #[test]
     fn old_folders_move_once_and_never_over_new_ones() {

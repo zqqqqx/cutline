@@ -421,6 +421,8 @@ impl App {
         let fonts = cl_fonts::FontLibrary::open(paths::font_dir()).unwrap_or_default();
         perf_mark("Fonts");
         let plugin_dirs = paths::plugin_dirs();
+        // the program's own folder only
+        crate::legacy::remove_old_pack_folders(&plugin_dirs[0]);
         let mut plugins = cl_plugin::Registry::scan(plugin_dirs.iter().map(|p| p.as_path()));
         plugins.apply_states(&settings.plugin_states);
         let lang = settings.lang();
