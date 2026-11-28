@@ -1442,6 +1442,10 @@ mod tests {
         // machine may not run the output thread or the feed for a while): first the crossfade is over,
         // so later levels come from the newest mix only, then the first block with sound.
         wait(&mut a, "crossfade over", &mut |a| a.shared.out.lock().unwrap().xf == 0);
+        // the output stores the level of a block only after it released the lock: once a later
+        // block is out, the level of the last crossfade block is stored too and can be discarded
+        let at = a.shared.out.lock().unwrap().played;
+        wait(&mut a, "a block after the crossfade", &mut |a| a.shared.out.lock().unwrap().played > at);
         a.take_peaks();
         let mut l = 0.0;
         wait(&mut a, "sound of the newest mix", &mut |a| {
